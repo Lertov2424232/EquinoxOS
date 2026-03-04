@@ -1,141 +1,91 @@
-// kernel.c
 #include "drivers/vga/vesa.h"
 #include "boot/limine/limine.h"
 #include <stdint.h>
 #include <stddef.h>
-#include "system/pic.h"        // <-- ДОБАВЬ ЭТО
+#include "system/pic.h"
 #include "system/idt.h"
 #include "system/memory.h"
 #include "drivers/mouse/mouse.h"
 #include "drivers/vga/bmp.h"
-#define HHDM_OFFSET 0xFFFFFFFF80000000 
 
-static uint8_t kernel_heap_area[2 * 1024 * 1024];
-
-static volatile struct limine_module_request module_request = {
-    .id = LIMINE_MODULE_REQUEST_ID,
-    .revision = 0
-};
+// 2МБ под кучу
+static uint8_t kernel_heap_area[16 * 1024 * 1024];
 
 static volatile struct limine_framebuffer_request framebuffer_request = {
     .id = LIMINE_FRAMEBUFFER_REQUEST_ID,
     .revision = 0
 };
 
-static uint8_t cursor_shape[16][16] = {
-    {2,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-    {2,1,2,0,0,0,0,0,0,0,0,0,0,0,0,0},
-    {2,1,1,2,0,0,0,0,0,0,0,0,0,0,0,0},
-    {2,1,1,1,2,0,0,0,0,0,0,0,0,0,0,0},
-    {2,1,1,1,1,2,0,0,0,0,0,0,0,0,0,0},
-    {2,1,1,1,1,1,2,0,0,0,0,0,0,0,0,0},
-    {2,1,1,1,1,1,1,2,0,0,0,0,0,0,0,0},
-    {2,1,1,1,1,1,1,1,2,0,0,0,0,0,0,0},
-    {2,1,1,1,1,2,2,2,2,2,0,0,0,0,0,0},
-    {2,1,1,2,1,2,0,0,0,0,0,0,0,0,0,0},
-    {2,1,2,0,2,1,2,0,0,0,0,0,0,0,0,0},
-    {2,2,0,0,2,1,2,0,0,0,0,0,0,0,0,0},
-    {0,0,0,0,0,2,1,2,0,0,0,0,0,0,0,0},
-    {0,0,0,0,0,0,2,2,0,0,0,0,0,0,0,0}
+static volatile struct limine_module_request module_request = {
+    .id = LIMINE_MODULE_REQUEST_ID,
+    .revision = 0
 };
 
-void draw_cursor(int x, int y) {
-    for (int i = 0; i < 16; i++) {
-        for (int j = 0; j < 16; j++) {
-            if (cursor_shape[i][j] == 1) put_pixel(x + j, y + i, 0xFFFFFF);
-            if (cursor_shape[i][j] == 2) put_pixel(x + j, y + i, 0x000000);
+// Простой рисунок курсора
+void draw_cursor_simple(int x, int y) {
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
+            if (i == 0 || j == 0 || i == j) 
+                put_pixel(x + j, y + i, 0xFFFFFF); // Белый контур
+            else
+                put_pixel(x + j, y + i, 0x000000); // Черное тело
         }
     }
 }
 
-
-void keyboard_callback() {
-    // Пока просто пустая функция, чтобы не падало
-    // Когда починим экран, вернем сюда рисование символов через vesa_draw_char
-}
-
 void kmain(void) {
-    // 1. Память - фундамент
+    // 1. Инициализация памяти (обязательно первой!)
     init_heap((uintptr_t)kernel_heap_area, sizeof(kernel_heap_area));
 
+    // 2. Видеорежим
     if (framebuffer_request.response == NULL || 
         framebuffer_request.response->framebuffer_count < 1) {
         while(1) { __asm__("hlt"); }
     }
-
     struct limine_framebuffer *fb = framebuffer_request.response->framebuffers[0];
     init_vesa((uint64_t)fb->address, fb->width, fb->height, fb->pitch);
 
-    // 2. Прерывания и мышь
+    // 3. Прерывания
     __asm__("cli");
-    init_idt();
-    pic_remap();
-    draw_cursor(mouse_x, mouse_y);
-    init_mouse();
+    init_idt();    // Наша новая IDT с паникой
+    pic_remap();   // Переназначение PIC
+    init_mouse();  // Инициализация мыши
     __asm__("sti");
-
-    // 3. Отрисовка интерфейса (ОДИН РАЗ)
-    draw_background();
-    if (module_request.response == NULL || module_request.response->module_count < 1) {
-        vesa_draw_string("Error: Logo module not found!", 10, 10, 0xFF0000);
-    } else {
-        // Берем первый (и единственный) модуль
-        struct limine_file *module = module_request.response->modules[0];
-        draw_bmp((uint8_t*)module->address, 300, 200);
-    }
-    vesa_draw_string("EquinoxOS - Graphics Mode", 110, 110, 0xFFFFFF);
-
-    // 4. ТЕСТ ПАМЯТИ (теперь мы его увидим)
-    void* test = kmalloc(1024);
-    if (test) {
-        vesa_draw_string("MALLOC WORKING!", 110, 130, 0x00FF00); // Зеленым
-        kfree(test);
-    } else {
-        vesa_draw_string("MALLOC FAILED!", 110, 130, 0xFF0000); // Красным
-    }
-
-    volatile int a = 10;
-volatile int b = 0;
-volatile int c = a / b;
-
-    // 5. Подготовка буфера курсора
-    uint32_t* bg_buffer = (uint32_t*)kmalloc(16 * 16 * sizeof(uint32_t));
-    if (!bg_buffer) { while(1); }
-
-    int32_t old_mouse_x = mouse_x;
-    int32_t old_mouse_y = mouse_y;
-
-    // ПЕРВОЕ сохранение фона
-    for (int y = 0; y < 16; y++) {
-        for (int x = 0; x < 16; x++) {
-            uint32_t* pixel_ptr = (uint32_t*)(fb_base_addr + ((old_mouse_y + y) * screen_pitch) + ((old_mouse_x + x) * 4));
-            bg_buffer[y * 16 + x] = *pixel_ptr;
-        }
-    }
-    draw_cursor(old_mouse_x, old_mouse_y); // Рисуем самый первый раз!
-
+    __asm__ volatile("ud2");
+    // --- ГЛАВНЫЙ ЦИКЛ СИСТЕМЫ ---
     while(1) {
-        if (mouse_x != old_mouse_x || mouse_y != old_mouse_y) {
-            // 1. Стираем старый
-            for (int y = 0; y < 16; y++) {
-                for (int x = 0; x < 16; x++) {
-                    put_pixel(old_mouse_x + x, old_mouse_y + y, bg_buffer[y * 16 + x]);
-                }
-            }
-            // 2. Сохраняем новый фон
-            old_mouse_x = mouse_x;
-            old_mouse_y = mouse_y;
-            for (int y = 0; y < 16; y++) {
-                for (int x = 0; x < 16; x++) {
-                    uint32_t* pixel_ptr = (uint32_t*)(fb_base_addr + ((old_mouse_y + y) * screen_pitch) + ((old_mouse_x + x) * 4));
-                    bg_buffer[y * 16 + x] = *pixel_ptr;
-                }
-            }
-            // 3. Рисуем курсор
-            draw_cursor(old_mouse_x, old_mouse_y);
+        // ШАГ 1: Рисуем всё в невидимый буфер (Backbuffer)
+        
+        // Рисуем фон
+        draw_background();
 
-            
+        // Рисуем логотип (если модуль загружен)
+        if (module_request.response != NULL && module_request.response->module_count >= 1) {
+            struct limine_file *module = module_request.response->modules[0];
+            draw_bmp((uint8_t*)module->address, 300, 200);
         }
+
+        // Выводим текст
+        vesa_draw_string("EquinoxOS v0.1 - Running Stable", 20, 20, 0xFFFFFF);
+        
+        // Выводим координаты мыши (для дебага)
+        vesa_draw_string_hex("Mouse X: ", 20, 40, (uint64_t)mouse_x, 0x00FF00);
+        vesa_draw_string_hex("Mouse Y: ", 20, 55, (uint64_t)mouse_y, 0x00FF00);
+
+        // Рисуем курсор поверх всего
+        draw_cursor_simple(mouse_x, mouse_y);
+
+        // ШАГ 2: Копируем готовый кадр на реальный экран
+        // Это убирает мерцание, так как экран обновляется мгновенно
+        vesa_update();
+
+        // ШАГ 3: Даем процессору отдохнуть до следующего прерывания
         __asm__("hlt");
     }
+}
+
+// Заглушка для клавиатуры, чтобы не вылетало
+void keyboard_callback() {
+    // Читаем порт, чтобы очистить буфер клавиатуры, иначе прерывания залипнут
+    inb(0x60); 
 }
