@@ -1,6 +1,7 @@
 #include "memory.h"
 
 static block_header_t* heap_start = NULL;
+size_t used_memory = 0;
 
 size_t align_size(size_t size) {
     return (size + HEAP_ALIGNMENT - 1) & ~(HEAP_ALIGNMENT - 1);
@@ -33,9 +34,11 @@ void* kmalloc(size_t size) {
 
                 current->size = total_needed;
                 current->next = next_node;
+                
             }
-            
+            used_memory += size;
             current->free = 0;
+            used_memory += total_needed; 
             return (void*)((uint8_t*)current + sizeof(block_header_t));
         }
         current = current->next;
