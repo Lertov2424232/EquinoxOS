@@ -9,21 +9,22 @@ uintptr_t fb_base_addr;
 uint32_t screen_width;
 uint32_t screen_height;
 uint32_t screen_pitch;
+uint32_t* backbuffer;
 
 void init_vesa(uint64_t fb_addr, uint32_t width, uint32_t height, uint32_t pitch) {
     fb_base_addr = (uintptr_t)fb_addr;
     screen_width = width;
     screen_height = height;
     screen_pitch = pitch;
+    backbuffer = (uint32_t*)kmalloc(width * height * 4);
 }
+
 
 void put_pixel(int x, int y, uint32_t color) {
     if (x < 0 || x >= (int)screen_width || y < 0 || y >= (int)screen_height) return;
-
-    // Считаем точный адрес байта:
-    // база + (Y * байт_в_строке) + (X * 4 байта на пиксель)
-    uint32_t* pixel_ptr = (uint32_t*)(fb_base_addr + (y * screen_pitch) + (x * 4));
-    *pixel_ptr = color;
+    
+    // Пишем в оперативку (это очень быстро)
+    backbuffer[y * screen_width + x] = color;
 }
 
 void draw_background() {
@@ -98,4 +99,66 @@ void vesa_draw_string_hex(const char* prefix, int x, int y, uint64_t val, uint32
     char buf[17]; // 16 символов для uint64_t + \0
     hex_to_string(val, buf);
     vesa_draw_string(buf, x + 8 * (int)strlen(prefix), y, fg); // Смещаемся на длину префикса
+}
+
+void vesa_update() {
+    uint32_t* vram = (uint32_t*)fb_base_addr;
+    for (uint32_t i = 0; i < screen_width * screen_height; i++) {
+        vram[i] = backbuffer[i];
+    }
+}
+
+
+
+// -------------- DO NOT TOUCH - DIRECT, FOR PANIC! ---------
+void put_pixel_direct(int x, int y, uint32_t color) {
+    if (x < 0 || x >= (int)screen_width || y < 0 || y >= (int)screen_height) return;
+    uint32_t* pixel_ptr = (uint32_t*)(fb_base_addr + (y * screen_pitch) + (x * 4));
+    *pixel_ptr = color;
+}
+
+// Прямоугольник сразу на экран
+void draw_rect_direct(int x, int y, int w, int h, uint32_t color) {
+    for (int i = y; i < y + h; i++) {
+        for (int j = x; j < x + w; j++) {
+            put_pixel_direct(j, i, color);
+        }
+    }
+}
+
+// Символ сразу на экран
+void vesa_draw_char_direct(char c, int x, int y, uint32_t fg) {
+    if (c < 0 || c > 127) return;
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
+            if (font8x8_basic[(int)c][i] & (1 << j)) {
+                put_pixel_direct(x + j, y + i, fg);
+            }
+        }
+    }
+}
+
+// Строка сразу на экран
+void vesa_draw_string_direct(const char* s, int x, int y, uint32_t fg) {
+    while (*s) {
+        vesa_draw_char_direct(*s, x, y, fg);
+        x += 8;
+        s++;
+    }
+}
+
+// Рисует строку + HEX число напрямую в видеопамять
+void vesa_draw_string_hex_direct(const char* prefix, int x, int y, uint64_t val, uint32_t fg) {
+    // 1. Рисуем приставку (например "RIP: ")
+    vesa_draw_string_direct(prefix, x, y, fg);
+    
+    // 2. Переводим число в HEX-строку
+    char buf[17]; 
+    hex_to_string(val, buf); // Эта функция у тебя уже должна быть в string.c или vesa.c
+    
+    // 3. Рисуем само число после приставки (сдвигаемся на длину префикса * 8 пикселей)
+    int offset = 0;
+    while(prefix[offset]) offset++; // Считаем длину строки вручную, чтобы не зависеть от strlen
+    
+    vesa_draw_string_direct(buf, x + (offset * 8), y, fg);
 }
