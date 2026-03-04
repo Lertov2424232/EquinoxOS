@@ -3,8 +3,7 @@
 idt_gate_t idt[256];
 idt_register_t idt_reg;
 
-// Импортируем только один обработчик для теста
-extern void isr0(); 
+extern uint64_t isr_stub_table[];
 extern void keyboard_handler();
 extern void timer_handler();
 extern void mouse_handler();
@@ -20,19 +19,21 @@ void set_idt_gate(int n, uint64_t handler, uint16_t sel) {
 }
 
 void init_idt() {
-    idt_reg.limit = sizeof(idt) - 1;
+    // 1. Сначала СТРОГО подготавливаем структуру дескриптора
+    idt_reg.limit = (uint16_t)(sizeof(idt_gate_t) * 256 - 1);
     idt_reg.base = (uint64_t)&idt;
 
-    // Сначала всё забиваем одной заглушкой (например, isr0)
-    // 0x28 - это стандартный селектор кода в Limine.
-    for (int i = 0; i < 256; i++) {
-        set_idt_gate(i, (uint64_t)isr0, 0x28);
+    // 2. Заполняем таблицу
+    uint16_t sel = 0x28; // Стандарт Limine
+    for (int i = 0; i < 32; i++) {
+        set_idt_gate(i, isr_stub_table[i], sel);
     }
 
-    // Ставим реальные прерывания
-    set_idt_gate(32, (uint64_t)timer_handler, 0x28);
-    set_idt_gate(33, (uint64_t)keyboard_handler, 0x28);
-    set_idt_gate(44, (uint64_t)mouse_handler, 0x28);
+    // Заглушки для IRQ
+    set_idt_gate(32, (uint64_t)timer_handler, sel);
+    set_idt_gate(33, (uint64_t)keyboard_handler, sel);
+    set_idt_gate(44, (uint64_t)mouse_handler, sel);
 
-    __asm__ __volatile__("lidt %0" : : "m" (idt_reg));
+    // 3. ЗАГРУЖАЕМ (Только эта строчка говорит процессору "смотри сюда")
+    __asm__ __volatile__("lidt %0" : : "m"(idt_reg));
 }

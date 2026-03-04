@@ -40,67 +40,64 @@
     pop rax
 %endmacro
 
+; --- СЕКЦИЯ КОДА ---
+section .text
+
 %macro ISR_NOERRCODE 1
+[global isr%1]
 isr%1:
-    push qword 0 ; fake err
-    push qword %1 ; int no
+    push qword 0    ; fake error code
+    push qword %1   ; номер прерывания
     jmp exception_common
 %endmacro
 
 %macro ISR_ERRCODE 1
+[global isr%1]
 isr%1:
-    push qword %1 ; int no
+    ; Код ошибки уже в стеке
+    push qword %1
     jmp exception_common
 %endmacro
 
-ISR_NOERRCODE 1  ; #DB Debug
-ISR_NOERRCODE 2  ; Non-Maskable Interrupt
-ISR_NOERRCODE 3  ; #BP Breakpoint
-ISR_NOERRCODE 4  ; #OF Overflow
-ISR_NOERRCODE 5  ; #BR BOUND Range Exceeded
-ISR_NOERRCODE 6  ; #UD Invalid Opcode
-ISR_NOERRCODE 7  ; #NM Device Not Available
-ISR_NOERRCODE 8  ; #DF Double Fault (Has Error Code, usually handled separately)
-ISR_NOERRCODE 9  ; Coprocessor Segment Overrun
-ISR_NOERRCODE 10 ; #TS Invalid TSS (Has Error Code)
-ISR_NOERRCODE 11 ; #NP Segment Not Present (Has Error Code)
-ISR_NOERRCODE 12 ; #SS Stack-Segment Fault (Has Error Code)
-ISR_NOERRCODE 13 ; #GP General Protection Fault (Has Error Code)
-ISR_NOERRCODE 14 ; #PF Page Fault (Has Error Code)
-ISR_NOERRCODE 15 ; Reserved
-ISR_NOERRCODE 16 ; #MF x87 FPU Floating-Point Error
-ISR_NOERRCODE 17 ; #AC Alignment Check (Has Error Code)
-ISR_NOERRCODE 18 ; #MC Machine Check
-ISR_NOERRCODE 19 ; #XM SIMD Floating-Point Exception
-ISR_NOERRCODE 20 ; #VE Virtualization Exception
-ISR_NOERRCODE 21 ; Control Protection Exception (Has Error Code)
-ISR_NOERRCODE 22 ; Reserved
-ISR_NOERRCODE 23 ; Reserved
-ISR_NOERRCODE 24 ; Reserved
-ISR_NOERRCODE 25 ; Reserved
-ISR_NOERRCODE 26 ; Reserved
-ISR_NOERRCODE 27 ; Reserved
-ISR_NOERRCODE 28 ; Hypervisor Injection Exception
-ISR_NOERRCODE 29 ; VMM Communication Exception (Has Error Code)
-ISR_NOERRCODE 30 ; Security Exception (Has Error Code)
-ISR_NOERRCODE 31 ; Reserved
+; Генерируем 32 исключения (0-31)
+ISR_NOERRCODE 0
+ISR_NOERRCODE 1
+ISR_NOERRCODE 2
+ISR_NOERRCODE 3
+ISR_NOERRCODE 4
+ISR_NOERRCODE 5
+ISR_NOERRCODE 6
+ISR_NOERRCODE 7
+ISR_ERRCODE   8   ; Double Fault
+ISR_NOERRCODE 9
+ISR_ERRCODE   10
+ISR_ERRCODE   11
+ISR_ERRCODE   12
+ISR_ERRCODE   13
+ISR_ERRCODE   14
+ISR_NOERRCODE 15
+ISR_NOERRCODE 16
+ISR_ERRCODE   17
+ISR_NOERRCODE 18
+ISR_NOERRCODE 19
+ISR_NOERRCODE 20
+ISR_ERRCODE   21
+ISR_NOERRCODE 22
+ISR_NOERRCODE 23
+ISR_NOERRCODE 24
+ISR_NOERRCODE 25
+ISR_NOERRCODE 26
+ISR_NOERRCODE 27
+ISR_NOERRCODE 28
+ISR_ERRCODE   29
+ISR_ERRCODE   30
+ISR_NOERRCODE 31
 
 exception_common:
     SAVE_REGS
     mov rdi, rsp
     call panic_handler
-    ; Сюда не возвращаемся
-
-[global isr0]
-isr0:
-    push qword 0 ; fake err
-    push qword 0 ; int no
-    SAVE_REGS
-    mov rdi, rsp
-    call panic_handler
-    RESTORE_REGS ; На всякий случай
-    add rsp, 16
-    iretq
+    ; panic_handler не возвращается
 
 [global keyboard_handler]
 keyboard_handler:
@@ -129,3 +126,13 @@ mouse_handler:
     out 0x20, al
     RESTORE_REGS
     iretq
+
+; --- СЕКЦИЯ ДАННЫХ ---
+section .data
+[global isr_stub_table]
+isr_stub_table:
+%assign i 0
+%rep 32
+    dq isr%+i
+%assign i i+1
+%endrep
