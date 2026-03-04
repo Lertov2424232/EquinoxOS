@@ -2,6 +2,7 @@
 #include "vesa.h"
 #include "font8x8.h"
 #include "../system/string.h"
+#include "../../system/memory.h"
 
 // Используем uintptr_t для хранения адреса, чтобы не было путаницы с размером типа
 uintptr_t fb_base_addr; 

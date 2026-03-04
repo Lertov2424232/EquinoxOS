@@ -3,7 +3,7 @@ LD = x86_64-elf-ld    # Сменил
 ASM = nasm
 OBJCOPY = x86_64-elf-objcopy # Сменил
 
-CFLAGS = -ffreestanding -O2 -Wall -Wextra -fno-exceptions -std=c11 -Isrc -Isrc/drivers -Isrc/shell -Isrc/boot/limine -mcmodel=large
+CFLAGS = -ffreestanding -O2 -Wall -Wextra -fno-exceptions -std=c11 -Isrc -Isrc/drivers -Isrc/shell -Isrc/boot/limine -mcmodel=large -g
 LDFLAGS = -nostdlib -T src/linker.ld -z max-page-size=0x1000
 ASMFLAGS = -f elf64
 
@@ -11,7 +11,7 @@ OBJ_DIR = obj
 OBJ = $(OBJ_DIR)/kernel.o $(OBJ_DIR)/io.o $(OBJ_DIR)/keyboard.o \
       $(OBJ_DIR)/gdt_flush.o $(OBJ_DIR)/idt.o \
       $(OBJ_DIR)/pic.o $(OBJ_DIR)/interrupt.o $(OBJ_DIR)/timer.o $(OBJ_DIR)/ata.o $(OBJ_DIR)/bmp.o \
-      $(OBJ_DIR)/memory.o $(OBJ_DIR)/fs.o $(OBJ_DIR)/vesa.o $(OBJ_DIR)/mouse.o $(OBJ_DIR)/string.o
+      $(OBJ_DIR)/memory.o $(OBJ_DIR)/fs.o $(OBJ_DIR)/vesa.o $(OBJ_DIR)/mouse.o $(OBJ_DIR)/string.o $(OBJ_DIR)/panic.o
 
 all: setup kernel.elf
 
