@@ -7,7 +7,6 @@
 #include "system/idt.h"
 #include "system/memory.h"
 #include "drivers/mouse/mouse.h"
-#include "drivers/vga/equinox_img.h" // Тот самый файл с гигантским массивом
 #include "drivers/vga/bmp.h"
 #define HHDM_OFFSET 0xFFFFFFFF80000000 
 
@@ -95,6 +94,10 @@ void kmain(void) {
         vesa_draw_string("MALLOC FAILED!", 110, 130, 0xFF0000); // Красным
     }
 
+    volatile int a = 10;
+volatile int b = 0;
+volatile int c = a / b;
+
     // 5. Подготовка буфера курсора
     uint32_t* bg_buffer = (uint32_t*)kmalloc(16 * 16 * sizeof(uint32_t));
     if (!bg_buffer) { while(1); }
@@ -130,6 +133,8 @@ void kmain(void) {
             }
             // 3. Рисуем курсор
             draw_cursor(old_mouse_x, old_mouse_y);
+
+            
         }
         __asm__("hlt");
     }
