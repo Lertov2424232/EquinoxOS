@@ -12,6 +12,8 @@ extern void init_fs();
 extern void list_files();
 extern void create_file(char* name, char* content);
 extern void read_file(char* name);
+extern void exec_module_elf();
+extern bool is_app_running;
 
 // Состояние шифта
 static bool shift_pressed = false;
@@ -69,6 +71,13 @@ void keyboard_callback() {
     char c = get_ascii_char(scancode);
 
     if (c > 0) {
+        if (is_app_running) {
+            // Если приложение работает, мы просто кладем символ в буфер
+            // и НЕ очищаем его. Пусть app.c сам заберет его через get_key.
+            shell_buffer[0] = c;
+            // shell_idx нам тут даже не нужен особо, так как get_key смотрит на [0]
+            return; 
+        }
         if (c == '\b') {
             if (shell_idx > 0) {
                 shell_idx--;
@@ -102,6 +111,9 @@ void keyboard_callback() {
             }
             else if (mini_strcmp(shell_buffer, "malloc") == 0) {
                 kmalloc(1024 * 1024); // Кушаем 1 МБ
+            }
+            else if (mini_strcmp(shell_buffer, "run") == 0) {
+                exec_module_elf();
             }
             else if (shell_buffer[0] != '\0') {
                 // Если ввели неизвестную команду (и не пустую)
