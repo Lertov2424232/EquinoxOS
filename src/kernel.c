@@ -8,18 +8,14 @@
 #include "system/memory.h"
 #include "drivers/mouse/mouse.h"
 #include "drivers/vga/bmp.h"
+#include "api.h"
+#include "fs/elf.h"
 
-// --- ПЕРЕМЕННЫЕ ДЛЯ ШЕЛЛА И ТЕРМИНАЛА ---
+bool is_app_running = false;
 char shell_buffer[64] = {0};
 int shell_idx = 0;
-
-// История терминала (8 строк по 64 символа)
 char term_history[8][64] = {0};
-
-// Глобальная переменная памяти (из memory.c)
 extern size_t used_memory; 
-
-// Куча на 16МБ
 static uint8_t kernel_heap_area[16 * 1024 * 1024];
 
 static volatile struct limine_framebuffer_request framebuffer_request = {
@@ -106,6 +102,120 @@ void handle_drag(window_t* win) {
         win->x = mouse_x - win->off_x;
         win->y = mouse_y - win->off_y;
     }
+}
+
+char sys_get_key() {
+    // Сбрасываем старый ввод
+    shell_buffer[0] = 0;
+    shell_idx = 0;
+    
+    // Ждем, пока юзер не нажмет Enter (или любую клавишу, если перепишешь keyboard.c)
+    // Для простоты пока ждем заполнения shell_buffer[0]
+    while(shell_buffer[0] == 0) {
+        __asm__("hlt"); // Спим, пока не прилетит прерывание клавиатуры
+    }
+    return shell_buffer[0];
+}
+
+#define APP_MAX_SIZE 1048576 // 1 MB
+
+__attribute__((aligned(4096))) void app_memory_buffer(void) {
+    // Резервируем 1 МБ. Это увеличит размер самого kernel.elf, но нам пофиг.
+    __asm__ volatile ( ".fill 1048576, 1, 0x90" );
+}
+
+void run_elf(uint8_t* elf_data) {
+    Elf64_Ehdr* hdr = (Elf64_Ehdr*)elf_data;
+    
+    // Проверка Magic
+    if(hdr->e_ident[0] != 0x7F || hdr->e_ident[1] != 'E' || 
+       hdr->e_ident[2] != 'L' || hdr->e_ident[3] != 'F') {
+        term_print("Error: Not a valid ELF file!");
+        return;
+    }
+
+    term_print("ELF found. Overwriting internal buffer...");
+
+    // Получаем адрес нашего "Троянского коня"
+    // (uint8_t*)app_memory_buffer — это адрес начала функции
+    uint8_t* exec_mem = (uint8_t*)&app_memory_buffer;
+
+    // ==========================================
+    // ОТКЛЮЧАЕМ ЗАЩИТУ ЗАПИСИ (CR0 WP bit)
+    // ==========================================
+    uint64_t cr0;
+    __asm__ volatile ("mov %%cr0, %0" : "=r"(cr0));
+    cr0 &= ~0x10000ULL; // Выключаем защиту
+    __asm__ volatile ("mov %0, %%cr0" : : "r"(cr0));
+
+    // Парсим сегменты
+    Elf64_Phdr* phdr = (Elf64_Phdr*)(elf_data + hdr->e_phoff);
+    for(int i = 0; i < hdr->e_phnum; i++) {
+        if(phdr[i].p_type == 1) { // PT_LOAD
+            uint8_t* src = elf_data + phdr[i].p_offset;
+            uint8_t* dst = exec_mem + phdr[i].p_vaddr;
+            
+            uint64_t end_addr = phdr[i].p_vaddr + phdr[i].p_memsz;
+            
+            // ДЕБАГ: Если не влезает, скажи НА СКОЛЬКО
+            if (end_addr > APP_MAX_SIZE) {
+     term_print("Error: App too big!");
+     // term_print сохраняет текст в истории, он не исчезнет!
+     
+     // Возвращаем защиту и выходим
+     cr0 |= 0x10000ULL;
+     __asm__ volatile ("mov %0, %%cr0" : : "r"(cr0));
+     return;
+}
+
+            // Копирование...
+            for(uint64_t j = 0; j < phdr[i].p_filesz; j++) dst[j] = src[j];
+            for(uint64_t j = phdr[i].p_filesz; j < phdr[i].p_memsz; j++) dst[j] = 0;
+        }
+    }
+
+    // ==========================================
+    // ВКЛЮЧАЕМ ЗАЩИТУ ОБРАТНО
+    // ==========================================
+    __asm__ volatile ("mov %%cr0, %0" : "=r"(cr0));
+    cr0 |= 0x10000ULL;
+    __asm__ volatile ("mov %0, %%cr0" : : "r"(cr0));
+
+    term_print("Jumping to application...");
+    
+    // !!! ВКЛЮЧАЕМ РЕЖИМ ПРИЛОЖЕНИЯ !!!
+    is_app_running = true;
+
+    EquinoxAPI api;
+    api.print = term_print;
+    api.draw_rect = draw_rect; // Или draw_rect_direct, если хочешь
+    api.update_screen = vesa_update;
+    api.screen_width = 800; // Или возьми из переменной screen_width
+    api.screen_height = 600;
+    api.get_key = sys_get_key;
+    api.malloc = kmalloc;
+    typedef void (*app_entry_t)(EquinoxAPI*);
+    app_entry_t entry = (app_entry_t)(exec_mem + hdr->e_entry);
+
+    entry(&api);
+
+    // !!! ВЫКЛЮЧАЕМ РЕЖИМ ПРИЛОЖЕНИЯ !!!
+    is_app_running = false;
+
+    term_print("App finished!");
+}
+
+void exec_module_elf() {
+    if (module_request.response == NULL) return;
+    for (uint64_t i = 0; i < module_request.response->module_count; i++) {
+        uint8_t* data = (uint8_t*)module_request.response->modules[i]->address;
+        // Если это ELF
+        if (data[0] == 0x7F && data[1] == 'E') {
+            run_elf(data);
+            return;
+        }
+    }
+    term_print("No .elf file found in modules!");
 }
 
 void kmain(void) {

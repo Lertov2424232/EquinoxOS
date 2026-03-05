@@ -64,10 +64,14 @@ clean:
 	@if exist $(OBJ_DIR) rmdir /s /q $(OBJ_DIR)
 	@if exist kernel.elf del kernel.elf
 
-cleanrun: clean all copykernel iso run
+cleanrun: clean all compile_app copykernel iso run
 
 copykernel:
 	copy /Y kernel.elf iso_root\kernel.elf
+
+# Добавь этот таргет
+compile_app:
+	$(CC) -ffreestanding -fPIC -shared -nostdlib -z max-page-size=0x1000 -Wl,-Ttext=0 app/app.c -o iso_root/app.elf
 
 iso:
 	xorriso -as mkisofs -b limine-bios-cd.bin -no-emul-boot -boot-load-size 4 -boot-info-table --efi-boot limine-bios-cd.bin -efi-boot-part --efi-boot-image -o equos.iso iso_root
