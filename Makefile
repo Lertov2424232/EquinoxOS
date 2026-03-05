@@ -76,4 +76,4 @@ limine:
 	.\limine.exe bios-install equos.iso
 
 run:
-	qemu-system-x86_64 -cdrom equos.iso
+	qemu-system-x86_64 -cdrom equos.iso -drive file=hdd.img,format=raw,index=1,media=disk
