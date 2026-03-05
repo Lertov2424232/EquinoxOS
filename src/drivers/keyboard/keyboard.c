@@ -8,6 +8,10 @@ extern char term_history[8][64];
 extern void* kmalloc(size_t size);
 extern char shell_buffer[64];
 extern int shell_idx;
+extern void init_fs();
+extern void list_files();
+extern void create_file(char* name, char* content);
+extern void read_file(char* name);
 
 // Состояние шифта
 static bool shift_pressed = false;
@@ -72,36 +76,42 @@ void keyboard_callback() {
             }
         } 
         else if (c == '\n') { // ENTER
-            // --- 1. Сдвигаем историю ВВЕРХ ---
-            for (int i = 0; i < 7; i++) {
-                for (int j = 0; j < 64; j++) {
-                    term_history[i][j] = term_history[i+1][j];
-                }
-            }
-            
-            // --- 2. Копируем нашу команду в последнюю строку истории ---
-            for (int j = 0; j < 64; j++) {
-                term_history[7][j] = shell_buffer[j];
-            }
+            // 1. Печатаем саму введенную команду в терминал
+            term_print(shell_buffer);
 
-            // --- 3. Выполняем команду ---
+            // 2. Обрабатываем команды
             if (mini_strcmp(shell_buffer, "panic") == 0) {
                 __asm__ volatile("ud2");
             }
-            else if (mini_strcmp(shell_buffer, "malloc") == 0) {
-                kmalloc(1024 * 1024); // Кушаем 1 МБ
+            else if (mini_strcmp(shell_buffer, "format") == 0) {
+                init_fs();
+            }
+            else if (mini_strcmp(shell_buffer, "ls") == 0) {
+                list_files();
+            }
+            else if (mini_strcmp(shell_buffer, "touch") == 0) {
+                create_file("test.txt", "Hello from EquinoxFS!");
+            }
+            else if (mini_strcmp(shell_buffer, "cat") == 0) {
+                read_file("test.txt");
             }
             else if (mini_strcmp(shell_buffer, "clear") == 0) {
-                // Очистка истории
                 for(int i=0; i<8; i++) 
                     for(int j=0; j<64; j++) 
                         term_history[i][j] = 0;
             }
+            else if (mini_strcmp(shell_buffer, "malloc") == 0) {
+                kmalloc(1024 * 1024); // Кушаем 1 МБ
+            }
+            else if (shell_buffer[0] != '\0') {
+                // Если ввели неизвестную команду (и не пустую)
+                term_print("Unknown command.");
+            }
 
-            // --- 4. Очищаем текущий буфер ---
+            // 3. Очищаем буфер ввода
             for (int i = 0; i < 64; i++) shell_buffer[i] = 0;
             shell_idx = 0;
-        } 
+        }
         else {
             if (shell_idx < 62) {
                 shell_buffer[shell_idx] = c;
