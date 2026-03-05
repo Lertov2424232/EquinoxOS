@@ -2,8 +2,10 @@
 #include "../../io/io.h"
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 
-// Подключаем переменные из kernel.c, чтобы шелл работал
+extern char term_history[8][64];
+extern void* kmalloc(size_t size);
 extern char shell_buffer[64];
 extern int shell_idx;
 
@@ -59,33 +61,49 @@ char get_ascii_char(uint8_t scancode) {
 
 // ОСНОВНОЙ ОБРАБОТЧИК (вызывается из прерывания)
 void keyboard_callback() {
-    // Читаем байт из порта клавиатуры
     uint8_t scancode = inb(0x60);
-
-    // Получаем ASCII символ
     char c = get_ascii_char(scancode);
 
     if (c > 0) {
-        if (c == '\b') { // BACKSPACE
+        if (c == '\b') {
             if (shell_idx > 0) {
                 shell_idx--;
                 shell_buffer[shell_idx] = '\0';
             }
         } 
         else if (c == '\n') { // ENTER
-            // 1. Проверяем команды
-            if (mini_strcmp(shell_buffer, "panic") == 0) {
-                __asm__ volatile("ud2"); // Вызываем краш
+            // --- 1. Сдвигаем историю ВВЕРХ ---
+            for (int i = 0; i < 7; i++) {
+                for (int j = 0; j < 64; j++) {
+                    term_history[i][j] = term_history[i+1][j];
+                }
             }
-            // Тут можно добавить еще команд, например:
-            // else if (mini_strcmp(shell_buffer, "help") == 0) { ... }
+            
+            // --- 2. Копируем нашу команду в последнюю строку истории ---
+            for (int j = 0; j < 64; j++) {
+                term_history[7][j] = shell_buffer[j];
+            }
 
-            // 2. Очищаем буфер для новой команды
+            // --- 3. Выполняем команду ---
+            if (mini_strcmp(shell_buffer, "panic") == 0) {
+                __asm__ volatile("ud2");
+            }
+            else if (mini_strcmp(shell_buffer, "malloc") == 0) {
+                kmalloc(1024 * 1024); // Кушаем 1 МБ
+            }
+            else if (mini_strcmp(shell_buffer, "clear") == 0) {
+                // Очистка истории
+                for(int i=0; i<8; i++) 
+                    for(int j=0; j<64; j++) 
+                        term_history[i][j] = 0;
+            }
+
+            // --- 4. Очищаем текущий буфер ---
             for (int i = 0; i < 64; i++) shell_buffer[i] = 0;
             shell_idx = 0;
         } 
-        else { // ОБЫЧНЫЙ СИМВОЛ
-            if (shell_idx < 62) { // Защита от переполнения
+        else {
+            if (shell_idx < 62) {
                 shell_buffer[shell_idx] = c;
                 shell_idx++;
                 shell_buffer[shell_idx] = '\0';

@@ -58,7 +58,10 @@ typedef struct {
     int off_x, off_y; // Смещение для плавного перетаскивания
 } window_t;
 
+char term_history[8][64] = {0};
+
 window_t main_win = {150, 150, 320, 200, "System Monitor", false, 0, 0};
+window_t term_win = {150, 300, 450, 200, "Terminal", false, 0, 0};
 
 void draw_window(window_t* win) {
     // Тень
@@ -69,6 +72,24 @@ void draw_window(window_t* win) {
     uint32_t header_col = win->dragging ? 0x0055AA : 0x0078D7;
     draw_rect(win->x, win->y, win->w, 25, header_col);
     vesa_draw_string(win->title, win->x + 8, win->y + 6, 0xFFFFFF);
+}
+
+void handle_drag(window_t* win) {
+    if (mouse_left_button) {
+        if (!win->dragging && mouse_x > win->x && mouse_x < win->x + win->w &&
+            mouse_y > win->y && mouse_y < win->y + 25) {
+            win->dragging = true;
+            win->off_x = mouse_x - win->x;
+            win->off_y = mouse_y - win->y;
+        }
+    } else {
+        win->dragging = false;
+    }
+
+    if (win->dragging) {
+        win->x = mouse_x - win->off_x;
+        win->y = mouse_y - win->off_y;
+    }
 }
 
 void kmain(void) {
@@ -88,58 +109,38 @@ void kmain(void) {
     __asm__("sti");
 
     while(1) {
-        // --- ЛОГИКА ОКНА ---
-        if (mouse_left_button) {
-            // Проверка: нажали ли на заголовок?
-            if (!main_win.dragging && mouse_x > main_win.x && mouse_x < main_win.x + main_win.w &&
-                mouse_y > main_win.y && mouse_y < main_win.y + 25) {
-                main_win.dragging = true;
-                main_win.off_x = mouse_x - main_win.x;
-                main_win.off_y = mouse_y - main_win.y;
-            }
-        } else {
-            main_win.dragging = false;
-        }
+        // 1. Обрабатываем перетаскивание ВСЕХ окон
+        handle_drag(&main_win);
+        handle_drag(&term_win);
 
-        if (main_win.dragging) {
-            main_win.x = mouse_x - main_win.off_x;
-            main_win.y = mouse_y - main_win.off_y;
-        }
-
-        // --- ОТРИСОВКА В БУФЕР ---
+        // 2. Отрисовка
         draw_background();
 
-        // Окно
+        // --- ОКНО 1: МОНИТОР ---
         draw_window(&main_win);
-        
-        // Данные внутри окна
         vesa_draw_string_hex("Used RAM: ", main_win.x + 15, main_win.y + 45, used_memory, 0x000000);
-        
-        // Полоска RAM (ProgressBar)
         draw_rect(main_win.x + 15, main_win.y + 65, 200, 12, 0x777777);
         int bar_w = (used_memory * 200) / (16 * 1024 * 1024);
         if (bar_w > 200) bar_w = 200;
         draw_rect(main_win.x + 15, main_win.y + 65, bar_w, 12, 0x00FF00);
 
-        // Шелл (внизу экрана)
-        draw_rect(0, screen_height - 35, screen_width, 35, 0x000000); // Фон шелла
-        vesa_draw_string("Command: ", 10, screen_height - 25, 0xFFFFFF);
-        vesa_draw_string(shell_buffer, 85, screen_height - 25, 0x00FF00);
-        // Мигающий курсор (упрощенно)
-        vesa_draw_string("_", 85 + (shell_idx * 8), screen_height - 25, 0xFFFFFF);
-
-        uint8_t get_rtc_register(int reg) {
-            outb(0x70, reg);
-            return inb(0x71);
+        // --- ОКНО 2: ТЕРМИНАЛ ---
+        draw_window(&term_win);
+        draw_rect(term_win.x + 2, term_win.y + 26, term_win.w - 4, term_win.h - 28, 0x000000); // Черный фон терминала
+        
+        // Рисуем историю команд
+        for(int i = 0; i < 8; i++) {
+            vesa_draw_string(term_history[i], term_win.x + 10, term_win.y + 35 + (i * 15), 0xAAAAAA);
         }
-        uint8_t hour = get_rtc_register(0x04);
-        uint8_t min  = get_rtc_register(0x02);
-        uint8_t sec  = get_rtc_register(0x00);
+        
+        // Рисуем текущую строку ввода
+        vesa_draw_string("> ", term_win.x + 10, term_win.y + 35 + (8 * 15), 0xFFFFFF);
+        vesa_draw_string(shell_buffer, term_win.x + 26, term_win.y + 35 + (8 * 15), 0x00FF00);
+        vesa_draw_string("_", term_win.x + 26 + (shell_idx * 8), term_win.y + 35 + (8 * 15), 0xFFFFFF);
+
+        // 3. Курсор и вывод
         draw_cursor(mouse_x, mouse_y);
-
-        // ШАГ 2: Вывод на экран
         vesa_update();
-
         __asm__("hlt");
     }
 }
