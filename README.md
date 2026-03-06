@@ -1,12 +1,13 @@
 # EquinoxOS
-### A hobby operating system inspired by Windows 7 theme (Frutiger Aero).
+### hobby OS proj
 
 ## Current Features:
-- 16-bit Bootloader
-- 32-bit Protected Mode Kernel
-- GDT & IDT Initialization
-- VGA Screen Driver with Hardware Cursor
+- Limine Bootloader
+- VESA Screen Driver with Hardware Cursor
 - Keyboard Driver (ASCII, Shift support)
+- Windows
+- Command Shell
+- External ELF runner
 
 ## Stack:
 - **Language:** C, x86 Assembly
@@ -20,9 +21,11 @@ xorriso -as mkisofs -b limine-bios-cd.bin -no-emul-boot -boot-load-size 4 -boot-
 .\limine.exe bios-install equos.iso
 qemu-system-x86_64 -cdrom equos.iso
 
-if it doesnt work:
-xorriso -as mkisofs -b limine-bios-cd.bin -no-emul-boot -boot-load-size 4 -boot-info-table -o equos.iso iso_root
+Debug:
+qemu-system-x86_64.exe -cdrom equos.iso -d int,cpu_reset -no-reboot -no-shutdown 2> qemu_log.txt
+OR
+x86_64-elf-addr2line -e kernel.elf FFFFFFFF?????????
 
-Made with help of AI.
+Made with help of AI. IDGAF what you say about AI. I do it like i want it to be.
 
 Trying to finish it.

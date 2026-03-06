@@ -14,6 +14,7 @@ extern void create_file(char* name, char* content);
 extern void read_file(char* name);
 extern void exec_module_elf();
 extern bool is_app_running;
+extern bool should_run_app;
 
 // Состояние шифта
 static bool shift_pressed = false;
@@ -113,7 +114,7 @@ void keyboard_callback() {
                 kmalloc(1024 * 1024); // Кушаем 1 МБ
             }
             else if (mini_strcmp(shell_buffer, "run") == 0) {
-                exec_module_elf();
+                should_run_app = true; 
             }
             else if (shell_buffer[0] != '\0') {
                 // Если ввели неизвестную команду (и не пустую)

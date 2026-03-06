@@ -36,6 +36,8 @@ void _start(EquinoxAPI* sys) {
         sys->update_screen();
         
         // Задержка
-        for(int i=0; i<1000000; i++) __asm__("nop");
+        for(int i = 0; i < 50000000; i++) {
+            __asm__ volatile("nop"); // volatile тут тоже нужен, чтобы GCC не удалил пустой цикл
+        }
     }
 }
