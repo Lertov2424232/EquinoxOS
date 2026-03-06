@@ -10,6 +10,7 @@
 #include "drivers/vga/bmp.h"
 #include "api.h"
 #include "fs/elf.h"
+#include "libc/string.h"
 
 bool is_app_running = false;
 char shell_buffer[64] = {0};
@@ -29,17 +30,15 @@ static volatile struct limine_module_request module_request = {
 // --- ФУНКЦИЯ ВЫВОДА В ТЕРМИНАЛ ИЗ ЛЮБОГО МЕСТА ОС ---
 // Теперь fs.c и keyboard.c будут вызывать её, чтобы печатать текст
 void term_print(const char* str) {
-    // 1. Сдвигаем историю вверх
+    // 1. Сдвигаем историю вверх (MEMCPY вместо циклов!)
     for (int i = 0; i < 7; i++) {
-        for (int j = 0; j < 64; j++) {
-            term_history[i][j] = term_history[i+1][j];
-        }
+        // Копируем 64 байта из нижней строки в верхнюю
+        memcpy(term_history[i], term_history[i+1], 64);
     }
     
-    // 2. Очищаем последнюю строку
-    for(int j = 0; j < 64; j++) term_history[7][j] = 0;
-    
-    // 3. Копируем новый текст
+    // 2. Очищаем последнюю строку (MEMSET вместо цикла!)
+    memset(term_history[7], 0, 64);
+
     for(int j = 0; j < 63 && str[j] != '\0'; j++) {
         term_history[7][j] = str[j];
     }

@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include "../libc/string.h"
 
 extern char term_history[8][64];
 extern void* kmalloc(size_t size);
@@ -73,10 +74,8 @@ void keyboard_callback() {
 
     if (c > 0) {
         if (is_app_running) {
-            // Если приложение работает, мы просто кладем символ в буфер
-            // и НЕ очищаем его. Пусть app.c сам заберет его через get_key.
+
             shell_buffer[0] = c;
-            // shell_idx нам тут даже не нужен особо, так как get_key смотрит на [0]
             return; 
         }
         if (c == '\b') {
@@ -90,30 +89,30 @@ void keyboard_callback() {
             term_print(shell_buffer);
 
             // 2. Обрабатываем команды
-            if (mini_strcmp(shell_buffer, "panic") == 0) {
+            if (strcmp(shell_buffer, "panic") == 0) {
                 __asm__ volatile("ud2");
             }
-            else if (mini_strcmp(shell_buffer, "format") == 0) {
+            else if (strcmp(shell_buffer, "format") == 0) {
                 init_fs();
             }
-            else if (mini_strcmp(shell_buffer, "ls") == 0) {
+            else if (strcmp(shell_buffer, "ls") == 0) {
                 list_files();
             }
-            else if (mini_strcmp(shell_buffer, "touch") == 0) {
+            else if (strcmp(shell_buffer, "touch") == 0) {
                 create_file("test.txt", "Hello from EquinoxFS!");
             }
-            else if (mini_strcmp(shell_buffer, "cat") == 0) {
+            else if (strcmp(shell_buffer, "cat") == 0) {
                 read_file("test.txt");
             }
-            else if (mini_strcmp(shell_buffer, "clear") == 0) {
+            else if (strcmp(shell_buffer, "clear") == 0) {
                 for(int i=0; i<8; i++) 
                     for(int j=0; j<64; j++) 
                         term_history[i][j] = 0;
             }
-            else if (mini_strcmp(shell_buffer, "malloc") == 0) {
+            else if (strcmp(shell_buffer, "malloc") == 0) {
                 kmalloc(1024 * 1024); // Кушаем 1 МБ
             }
-            else if (mini_strcmp(shell_buffer, "run") == 0) {
+            else if (strcmp(shell_buffer, "run") == 0) {
                 should_run_app = true; 
             }
             else if (shell_buffer[0] != '\0') {
@@ -122,7 +121,7 @@ void keyboard_callback() {
             }
 
             // 3. Очищаем буфер ввода
-            for (int i = 0; i < 64; i++) shell_buffer[i] = 0;
+            memset(shell_buffer, 0, 64);
             shell_idx = 0;
         }
         else {
