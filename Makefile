@@ -48,6 +48,9 @@ $(OBJ_DIR)/%.o: src/fs/%.c
 $(OBJ_DIR)/%.o: src/drivers/vga/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
+$(OBJ_DIR)/%.o: src/libc/%.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
 $(OBJ_DIR)/%.o: src/io/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
