@@ -3,6 +3,9 @@
 [extern keyboard_callback]
 [extern mouse_callback]
 [extern timer_callback]
+[extern schedule]
+[extern current_task]
+[extern tasks]
 
 %macro SAVE_REGS 0
     push rax
@@ -111,12 +114,12 @@ keyboard_handler:
 [global timer_handler]
 timer_handler:
     SAVE_REGS
-    call timer_callback
+    call timer_callback  ; Просто вызываем функцию
     mov al, 0x20
     out 0x20, al
     RESTORE_REGS
     iretq
-
+    
 [global mouse_handler]
 mouse_handler:
     SAVE_REGS
@@ -136,3 +139,8 @@ isr_stub_table:
     dq isr%+i
 %assign i i+1
 %endrep
+
+
+[global current_task]
+[global tasks]
+[global schedule]

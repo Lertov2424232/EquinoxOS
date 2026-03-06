@@ -17,6 +17,7 @@ int shell_idx = 0;
 char term_history[8][64] = {0};
 extern size_t used_memory; 
 static uint8_t kernel_heap_area[16 * 1024 * 1024];
+bool should_run_app = false; 
 
 static volatile struct limine_framebuffer_request framebuffer_request = {
     .id = LIMINE_FRAMEBUFFER_REQUEST_ID, .revision = 0
@@ -105,16 +106,17 @@ void handle_drag(window_t* win) {
 }
 
 char sys_get_key() {
-    // Сбрасываем старый ввод
     shell_buffer[0] = 0;
     shell_idx = 0;
     
-    // Ждем, пока юзер не нажмет Enter (или любую клавишу, если перепишешь keyboard.c)
-    // Для простоты пока ждем заполнения shell_buffer[0]
-    while(shell_buffer[0] == 0) {
-        __asm__("hlt"); // Спим, пока не прилетит прерывание клавиатуры
+    // Ждем, пока прерывание не положит туда символ
+    while(*(volatile char*)&shell_buffer[0] == 0) {
+        __asm__("hlt"); 
     }
-    return shell_buffer[0];
+    
+    char result = shell_buffer[0];
+    shell_buffer[0] = 0; // Съедаем символ
+    return result;
 }
 
 #define APP_MAX_SIZE 1048576 // 1 MB
@@ -122,6 +124,38 @@ char sys_get_key() {
 __attribute__((aligned(4096))) void app_memory_buffer(void) {
     // Резервируем 1 МБ. Это увеличит размер самого kernel.elf, но нам пофиг.
     __asm__ volatile ( ".fill 1048576, 1, 0x90" );
+}
+
+void gui_loop() {
+    handle_drag(&main_win);
+    handle_drag(&term_win);
+
+    draw_background();
+
+    // --- ОКНО 1: МОНИТОР ---
+    draw_window(&main_win);
+    vesa_draw_string_hex("Used RAM: ", main_win.x + 15, main_win.y + 45, used_memory, 0x000000);
+    draw_rect(main_win.x + 15, main_win.y + 65, 200, 12, 0x777777);
+    int bar_w = (used_memory * 200) / (16 * 1024 * 1024);
+    if (bar_w > 200) bar_w = 200;
+    draw_rect(main_win.x + 15, main_win.y + 65, bar_w, 12, 0x00FF00);
+
+    // --- ОКНО 2: ТЕРМИНАЛ ---
+    draw_window(&term_win);
+    // Черный фон для текста терминала
+    draw_rect(term_win.x + 2, term_win.y + 26, term_win.w - 4, term_win.h - 28, 0x000000); 
+       
+    // Рисуем 8 строк истории
+    for(int i = 0; i < 8; i++) {
+        vesa_draw_string(term_history[i], term_win.x + 10, term_win.y + 35 + (i * 15), 0xAAAAAA);
+    }
+    
+    // Рисуем текущую строку ввода (ниже истории)
+    vesa_draw_string("> ", term_win.x + 10, term_win.y + 35 + (8 * 15), 0xFFFFFF);
+    vesa_draw_string(shell_buffer, term_win.x + 26, term_win.y + 35 + (8 * 15), 0x00FF00);
+    vesa_draw_string("_", term_win.x + 26 + (shell_idx * 8), term_win.y + 35 + (8 * 15), 0xFFFFFF);
+    draw_cursor(mouse_x, mouse_y);
+    vesa_update();
 }
 
 void run_elf(uint8_t* elf_data) {
@@ -231,42 +265,18 @@ void kmain(void) {
     init_mouse();
     __asm__("sti");
 
-    // Приветственное сообщение в терминал!
     term_print("EquinoxOS Pre-Alpha started.");
     term_print("Type 'help' for commands.");
 
     while(1) {
-        // Логика окон
-        handle_drag(&main_win);
-        handle_drag(&term_win);
-
-        draw_background();
-
-        // --- ОКНО 1: МОНИТОР ---
-        draw_window(&main_win);
-        vesa_draw_string_hex("Used RAM: ", main_win.x + 15, main_win.y + 45, used_memory, 0x000000);
-        draw_rect(main_win.x + 15, main_win.y + 65, 200, 12, 0x777777);
-        int bar_w = (used_memory * 200) / (16 * 1024 * 1024);
-        if (bar_w > 200) bar_w = 200;
-        draw_rect(main_win.x + 15, main_win.y + 65, bar_w, 12, 0x00FF00);
-
-        // --- ОКНО 2: ТЕРМИНАЛ ---
-        draw_window(&term_win);
-        // Черный фон для текста терминала
-        draw_rect(term_win.x + 2, term_win.y + 26, term_win.w - 4, term_win.h - 28, 0x000000); 
+        gui_loop();
         
-        // Рисуем 8 строк истории
-        for(int i = 0; i < 8; i++) {
-            vesa_draw_string(term_history[i], term_win.x + 10, term_win.y + 35 + (i * 15), 0xAAAAAA);
+        // --- НОВЫЙ КОД ---
+        if (should_run_app) {
+            should_run_app = false; // Сбрасываем флаг
+            exec_module_elf();      // Запускаем программу ВНЕ прерывания!
         }
-        
-        // Рисуем текущую строку ввода (ниже истории)
-        vesa_draw_string("> ", term_win.x + 10, term_win.y + 35 + (8 * 15), 0xFFFFFF);
-        vesa_draw_string(shell_buffer, term_win.x + 26, term_win.y + 35 + (8 * 15), 0x00FF00);
-        vesa_draw_string("_", term_win.x + 26 + (shell_idx * 8), term_win.y + 35 + (8 * 15), 0xFFFFFF);
-
-        draw_cursor(mouse_x, mouse_y);
-        vesa_update();
+        // -----------------
 
         __asm__("hlt");
     }
