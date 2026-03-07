@@ -11,6 +11,7 @@
 #include "api.h"
 #include "fs/elf.h"
 #include "libc/string.h"
+#include "libc/stdio.h"
 
 bool is_app_running = false;
 char shell_buffer[64] = {0};
@@ -133,7 +134,9 @@ void gui_loop() {
 
     // --- ОКНО 1: МОНИТОР ---
     draw_window(&main_win);
-    vesa_draw_string_hex("Used RAM: ", main_win.x + 15, main_win.y + 45, used_memory, 0x000000);
+    char mem_info[64];
+    sprintf(mem_info, "RAM: %d MB / Heap: %x", used_memory / 1024 / 1024, (uint64_t)kernel_heap_area);
+    vesa_draw_string(mem_info, main_win.x + 15, main_win.y + 45, 0x000000);
     draw_rect(main_win.x + 15, main_win.y + 65, 200, 12, 0x777777);
     int bar_w = (used_memory * 200) / (16 * 1024 * 1024);
     if (bar_w > 200) bar_w = 200;
@@ -167,7 +170,8 @@ void run_elf(uint8_t* elf_data) {
         return;
     }
 
-    term_print("ELF found. Overwriting internal buffer...");
+    // В run_elf вместо кучи term_print:
+    printf("ELF Loading: Phdr at %x, Count: %d", hdr->e_phoff, hdr->e_phnum);
 
     // Получаем адрес нашего "Троянского коня"
     // (uint8_t*)app_memory_buffer — это адрес начала функции
