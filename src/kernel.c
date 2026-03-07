@@ -160,85 +160,98 @@ void gui_loop() {
     vesa_update();
 }
 
+// Функция для пересчета адресов из приложения в адреса ядра
+static void* translate_app_ptr(const void* ptr) {
+    // Если адрес меньше 16 МБ, значит это внутренний адрес приложения
+    // (наш буфер всего 1 МБ, так что 16МБ — с запасом)
+    if ((uintptr_t)ptr < 0x1000000) {
+        return (void*)((uintptr_t)&app_memory_buffer + (uintptr_t)ptr);
+    }
+    // Если адрес большой (например, возвращенный через malloc), оставляем как есть
+    return (void*)ptr;
+}
+
+// Обертки для API, которые исправляют указатели перед вызовом реальных функций
+void api_print_wrapper(const char* str) {
+    term_print((const char*)translate_app_ptr(str));
+}
+
+void api_draw_buffer_wrapper(int x, int y, int w, int h, uint32_t* buffer) {
+    vesa_draw_buffer(x, y, w, h, (uint32_t*)translate_app_ptr(buffer));
+}
+
 void run_elf(uint8_t* elf_data) {
     Elf64_Ehdr* hdr = (Elf64_Ehdr*)elf_data;
     
-    // Проверка Magic
     if(hdr->e_ident[0] != 0x7F || hdr->e_ident[1] != 'E' || 
        hdr->e_ident[2] != 'L' || hdr->e_ident[3] != 'F') {
         term_print("Error: Not a valid ELF file!");
         return;
     }
 
-    // В run_elf вместо кучи term_print:
-    printf("ELF Loading: Phdr at %x, Count: %d", hdr->e_phoff, hdr->e_phnum);
-
-    // Получаем адрес нашего "Троянского коня"
-    // (uint8_t*)app_memory_buffer — это адрес начала функции
+    term_print("ELF found. Hacking memory...");
     uint8_t* exec_mem = (uint8_t*)&app_memory_buffer;
 
-    // ==========================================
-    // ОТКЛЮЧАЕМ ЗАЩИТУ ЗАПИСИ (CR0 WP bit)
-    // ==========================================
+    // 1. ОТКЛЮЧАЕМ ЗАЩИТУ
     uint64_t cr0;
     __asm__ volatile ("mov %%cr0, %0" : "=r"(cr0));
-    cr0 &= ~0x10000ULL; // Выключаем защиту
+    cr0 &= ~0x10000ULL; 
     __asm__ volatile ("mov %0, %%cr0" : : "r"(cr0));
 
-    // Парсим сегменты
+    // --- ВОТ ЭТОТ КУСОК ТЫ ПРОПУСТИЛ (КОПИРОВАНИЕ) ---
     Elf64_Phdr* phdr = (Elf64_Phdr*)(elf_data + hdr->e_phoff);
     for(int i = 0; i < hdr->e_phnum; i++) {
-        if(phdr[i].p_type == 1) { // PT_LOAD
+        if(phdr[i].p_type == 1) { // PT_LOAD (загружаемый сегмент)
             uint8_t* src = elf_data + phdr[i].p_offset;
             uint8_t* dst = exec_mem + phdr[i].p_vaddr;
             
-            uint64_t end_addr = phdr[i].p_vaddr + phdr[i].p_memsz;
-            
-            // ДЕБАГ: Если не влезает, скажи НА СКОЛЬКО
-            if (end_addr > APP_MAX_SIZE) {
-     term_print("Error: App too big!");
-     // term_print сохраняет текст в истории, он не исчезнет!
-     
-     // Возвращаем защиту и выходим
-     cr0 |= 0x10000ULL;
-     __asm__ volatile ("mov %0, %%cr0" : : "r"(cr0));
-     return;
-}
+            // Проверка, чтобы не вылезти за 1 МБ
+            if (phdr[i].p_vaddr + phdr[i].p_memsz > APP_MAX_SIZE) {
+                term_print("Error: App segment too big!");
+                // Включаем защиту обратно
+                cr0 |= 0x10000ULL;
+                __asm__ volatile ("mov %0, %%cr0" : : "r"(cr0));
+                return;
+            }
 
-            // Копирование...
-            for(uint64_t j = 0; j < phdr[i].p_filesz; j++) dst[j] = src[j];
-            for(uint64_t j = phdr[i].p_filesz; j < phdr[i].p_memsz; j++) dst[j] = 0;
+            // Копируем данные сегмента
+            memcpy(dst, src, phdr[i].p_filesz);
+            
+            // Зануляем BSS (неинициализированные переменные), если memsz > filesz
+            if (phdr[i].p_memsz > phdr[i].p_filesz) {
+                memset(dst + phdr[i].p_filesz, 0, phdr[i].p_memsz - phdr[i].p_filesz);
+            }
         }
     }
+    // ------------------------------------------------
 
-    // ==========================================
-    // ВКЛЮЧАЕМ ЗАЩИТУ ОБРАТНО
-    // ==========================================
+    term_print("Jumping to application...");
+    
+    is_app_running = true;
+
+    EquinoxAPI api;
+    api.print = api_print_wrapper;        // <--- ИСПОЛЬЗУЕМ ОБЕРТКУ
+    api.draw_buffer = api_draw_buffer_wrapper; // <--- ИСПОЛЬЗУЕМ ОБЕРТКУ
+    
+    api.draw_rect = draw_rect; 
+    api.update_screen = vesa_update;
+    api.screen_width = 800;
+    api.screen_height = 600;
+    api.get_key = sys_get_key;
+    api.malloc = kmalloc;
+
+    typedef void (*app_entry_t)(EquinoxAPI*);
+    // Точка входа
+    app_entry_t entry = (app_entry_t)(exec_mem + hdr->e_entry);
+    
+    entry(&api);
+
+    // 2. ВКЛЮЧАЕМ ЗАЩИТУ ОБРАТНО
     __asm__ volatile ("mov %%cr0, %0" : "=r"(cr0));
     cr0 |= 0x10000ULL;
     __asm__ volatile ("mov %0, %%cr0" : : "r"(cr0));
 
-    term_print("Jumping to application...");
-    
-    // !!! ВКЛЮЧАЕМ РЕЖИМ ПРИЛОЖЕНИЯ !!!
-    is_app_running = true;
-
-    EquinoxAPI api;
-    api.print = term_print;
-    api.draw_rect = draw_rect; // Или draw_rect_direct, если хочешь
-    api.update_screen = vesa_update;
-    api.screen_width = 800; // Или возьми из переменной screen_width
-    api.screen_height = 600;
-    api.get_key = sys_get_key;
-    api.malloc = kmalloc;
-    typedef void (*app_entry_t)(EquinoxAPI*);
-    app_entry_t entry = (app_entry_t)(exec_mem + hdr->e_entry);
-
-    entry(&api);
-
-    // !!! ВЫКЛЮЧАЕМ РЕЖИМ ПРИЛОЖЕНИЯ !!!
     is_app_running = false;
-
     term_print("App finished!");
 }
 

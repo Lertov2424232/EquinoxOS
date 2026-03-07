@@ -3,6 +3,7 @@
 #include "font8x8.h"
 #include "../libc/string.h"
 #include "../../system/memory.h"
+#include "../../libc/string.h"
 
 // Используем uintptr_t для хранения адреса, чтобы не было путаницы с размером типа
 uintptr_t fb_base_addr; 
@@ -10,21 +11,35 @@ uint32_t screen_width;
 uint32_t screen_height;
 uint32_t screen_pitch;
 uint32_t* backbuffer;
+static uint64_t fb_addr = 0;
+static uint32_t vga_width = 0;
+static uint32_t vga_height = 0;
+static uint32_t vga_pitch = 0;
 
-void init_vesa(uint64_t fb_addr, uint32_t width, uint32_t height, uint32_t pitch) {
-    fb_base_addr = (uintptr_t)fb_addr;
+// Переименуем аргумент fb_addr -> addr, чтобы не путаться с глобальной переменной
+void init_vesa(uint64_t addr, uint32_t width, uint32_t height, uint32_t pitch) {
+    // 1. Сохраняем в старую переменную (для put_pixel)
+    fb_base_addr = (uintptr_t)addr;
+    
+    // 2. Сохраняем в новую переменную (для vesa_draw_buffer)
+    fb_addr = addr; 
+    
     screen_width = width;
     screen_height = height;
     screen_pitch = pitch;
+    
+    vga_width = width;
+    vga_height = height;
+    vga_pitch = pitch;
+    
     backbuffer = (uint32_t*)kmalloc(width * height * 4);
 }
 
-
 void put_pixel(int x, int y, uint32_t color) {
-    if (x < 0 || x >= (int)screen_width || y < 0 || y >= (int)screen_height) return;
+    if (x < 0 || x >= (int)vga_width || y < 0 || y >= (int)vga_height) return;
     
-    // Пишем в оперативку (это очень быстро)
-    backbuffer[y * screen_width + x] = color;
+    // Пишем НЕ в fb_addr, а в наш массив в оперативке
+    backbuffer[y * vga_width + x] = color;
 }
 
 void draw_background() {
@@ -102,12 +117,34 @@ void vesa_draw_string_hex(const char* prefix, int x, int y, uint64_t val, uint32
 }
 
 void vesa_update() {
-    uint32_t* vram = (uint32_t*)fb_base_addr;
-    for (uint32_t i = 0; i < screen_width * screen_height; i++) {
-        vram[i] = backbuffer[i];
+    // Копируем ВЕСЬ наш готовый кадр из оперативки в видеокарту
+    // Это одна из самых быстрых операций в процессоре
+    uint8_t* dst = (uint8_t*)fb_addr;
+    uint8_t* src = (uint8_t*)backbuffer;
+
+    for (uint32_t i = 0; i < vga_height; i++) {
+        memcpy(dst + (i * vga_pitch), src + (i * vga_width * 4), vga_width * 4);
     }
 }
 
+void vesa_draw_buffer(int x, int y, int w, int h, uint32_t* buffer) {
+    // Обрезаем, если выходит за границы экрана
+    for (int row = 0; row < h; row++) {
+        // Проверка границ по Y
+        if (y + row >= (int)vga_height) break;
+        if (y + row < 0) continue;
+
+        // ВАЖНО: fb_addr - это число (uint64_t). Приводим к (uint8_t*), чтобы прибавлять байты.
+        // pitch - это байты. x * 4 - это байты.
+        uint8_t* row_start = (uint8_t*)fb_addr + ((y + row) * vga_pitch) + (x * 4);
+        
+        uint32_t* screen_row_ptr = (uint32_t*)row_start;
+        uint32_t* buffer_row_ptr = buffer + (row * w);
+
+        // Копируем строку (w * 4 байт)
+        memcpy(screen_row_ptr, buffer_row_ptr, w * 4);
+    }
+}
 
 
 // -------------- DO NOT TOUCH - DIRECT, FOR PANIC! ---------
