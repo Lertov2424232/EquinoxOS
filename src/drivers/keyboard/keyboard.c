@@ -9,6 +9,7 @@ extern char term_history[8][64];
 extern void* kmalloc(size_t size);
 extern char shell_buffer[64];
 extern int shell_idx;
+extern volatile uint8_t last_scancode;
 extern void init_fs();
 extern void list_files();
 extern void create_file(char* name, char* content);
@@ -70,6 +71,7 @@ char get_ascii_char(uint8_t scancode) {
 // ОСНОВНОЙ ОБРАБОТЧИК (вызывается из прерывания)
 void keyboard_callback() {
     uint8_t scancode = inb(0x60);
+    last_scancode = scancode;
     char c = get_ascii_char(scancode);
 
     if (c > 0) {

@@ -42,6 +42,19 @@ char* strcpy(char* dest, const char* src) {
     return dest;
 }
 
+char* strstr(const char* haystack, const char* needle) {
+    if (!*needle) return (char*)haystack;
+    const char* p1 = haystack;
+    while (*p1) {
+        const char* p1_begin = p1;
+        const char* p2 = needle;
+        while (*p1 && *p2 && *p1 == *p2) { p1++; p2++; }
+        if (!*p2) return (char*)p1_begin;
+        p1 = p1_begin + 1;
+    }
+    return (char*)0; // NULL
+}
+
 // --- СИСТЕМНАЯ МАГИЯ: ПРЕВРАЩАЕМ ЧИСЛА В ТЕКСТ ---
 
 // Перевод обычного числа (base=10) в строку
