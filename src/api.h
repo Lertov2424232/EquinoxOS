@@ -8,21 +8,18 @@
 
 // Структура, хранящая ВСЕ возможности твоей ОС
 typedef struct {
-    // Вывод текста
+    // ... старые поля ...
     void (*print)(const char* msg);
-    
-    // Графика
     void (*draw_rect)(int x, int y, int w, int h, uint32_t color);
-    void (*update_screen)(void); // vesa_update
+    void (*update_screen)(void);
     int  screen_width;
     int  screen_height;
-    
-    // Ввод
-    char (*get_key)(void); // Функция, которая ждет нажатия клавиши
-    
-    // Системное
+    char (*get_key)(void);
     void* (*malloc)(uint64_t size);
-    void  (*clear_term)(void);
+    
+    // НОВОЕ ПОЛЕ:
+    void (*draw_buffer)(int x, int y, int w, int h, uint32_t* buffer);
+    
 } EquinoxAPI;
 
 #endif

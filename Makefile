@@ -74,7 +74,7 @@ copykernel:
 
 # Добавь этот таргет
 compile_app:
-	$(CC) -ffreestanding -fPIC -shared -nostdlib -z max-page-size=0x1000 -Wl,-Ttext=0 app/app.c -o iso_root/app.elf
+	$(CC) -ffreestanding -nostdlib -fno-pic -mno-red-zone -z max-page-size=0x1000 -Wl,-Ttext=0 -Wl,-e,_start app/app.c -o iso_root/app.elf
 
 iso:
 	xorriso -as mkisofs -b limine-bios-cd.bin -no-emul-boot -boot-load-size 4 -boot-info-table --efi-boot limine-bios-cd.bin -efi-boot-part --efi-boot-image -o equos.iso iso_root
