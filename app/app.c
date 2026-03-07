@@ -1,43 +1,50 @@
-#include "../src/api.h" // Подключаем структуру API
+#include "../src/api.h"
 
-// Точка входа теперь принимает структуру
+// Генератор случайных чисел, который принимает состояние (seed) как аргумент
+// и возвращает обновленное состояние.
+// Сам случайный результат мы будем вычислять внутри.
+unsigned int my_rand(unsigned int* seed) {
+    *seed = *seed * 1103515245 + 12345;
+    return (unsigned int)(*seed / 65536) % 32768;
+}
+
 void _start(EquinoxAPI* sys) {
-    sys->print("Hello! I am a GUI App.");
-    sys->print("Drawing a red box...");
+    sys->print("Stage 1: App Started");
 
-    // Рисуем красный квадрат посередине экрана
-    int x = sys->screen_width / 2 - 50;
-    int y = sys->screen_height / 2 - 50;
+    int w = 320;
+    int h = 200;
     
-    sys->draw_rect(x, y, 100, 100, 0xFF0000);
-    sys->update_screen(); // Обязательно, чтобы увидеть результат!
+    // Локальная переменная для рандома (хранится на стеке, это безопасно)
+    unsigned int seed = 12345;
 
-    sys->print("Press ENTER to change color...");
+    // Выделяем память
+    uint32_t* canvas = (uint32_t*)sys->malloc(w * h * 4);
     
-    // Ждем ввода (простая заглушка)
-    // Тут надо будет нажать любую букву + Enter, так как у нас буферизованный ввод пока
-    char c = sys->get_key(); 
-
-    sys->draw_rect(x, y, 100, 100, 0x00FF00); // Зеленый
-    sys->update_screen();
-
-    sys->print("Exiting in loop...");
-    
-    // Бесконечный цикл с анимацией
-    int offset = 0;
-    while(1) {
-        // Очищаем старое место (черным)
-        sys->draw_rect(x + offset, y, 10, 10, 0x000000);
-        offset++;
-        if (offset > 100) break; // Выход через время
-        
-        // Рисуем новое (синим)
-        sys->draw_rect(x + offset, y, 10, 10, 0x0000FF);
-        sys->update_screen();
-        
-        // Задержка
-        for(int i = 0; i < 50000000; i++) {
-            __asm__ volatile("nop"); // volatile тут тоже нужен, чтобы GCC не удалил пустой цикл
-        }
+    if (!canvas) {
+        sys->print("Error: malloc failed!");
+        return;
     }
+    sys->print("Stage 2: Memory Allocated. Starting Noise...");
+
+    // Координаты по центру
+    int start_x = (sys->screen_width - w) / 2;
+    int start_y = (sys->screen_height - h) / 2;
+
+    while(1) {
+        static int frames = 0;
+    frames++;
+    
+    if (frames > 500) break; // Выход через 500 кадров
+
+    for (int i = 0; i < w * h; i++) {
+        unsigned int r = my_rand(&seed); 
+        uint8_t color = r % 255;
+        canvas[i] = (color << 16) | (color << 8) | color;
+    }
+
+    sys->draw_buffer(start_x, start_y, w, h, canvas);
+    sys->update_screen();
+}
+
+sys->print("Test finished. Returning to OS...");
 }

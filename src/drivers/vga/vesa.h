@@ -30,5 +30,6 @@ void draw_transparent_rect(int x, int y, int w, int h, uint32_t color, uint8_t a
 void vesa_draw_string_hex(const char* prefix, int x, int y, uint64_t val, uint32_t fg);
 void hex_to_string(uint64_t val, char* buf);
 void vesa_update(); 
+void vesa_draw_buffer(int x, int y, int w, int h, uint32_t* buffer);
 
 #endif
