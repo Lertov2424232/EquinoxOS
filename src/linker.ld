@@ -12,6 +12,10 @@ PHDRS {
 SECTIONS {
     . = 0xffffffff80100000;
 
+    .doom_buffer : {
+        *(.doom_buffer)
+    }
+
     /* ---- Код ---- */
     .text : {
         *(.text._start)
@@ -34,8 +38,7 @@ SECTIONS {
     /* ---- Данные ---- */
     . = ALIGN(0x1000);
     .data : {
-        *(.data)
-        *(.data.*)
+        *(.data*)
     } :data
 
     /* ---- BSS (нулевая инициализация) ---- */

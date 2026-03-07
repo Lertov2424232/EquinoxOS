@@ -16,10 +16,14 @@
 bool is_app_running = false;
 char shell_buffer[64] = {0};
 int shell_idx = 0;
+static void* current_app_base_addr = NULL;
 char term_history[8][64] = {0};
 extern size_t used_memory; 
-static uint8_t kernel_heap_area[16 * 1024 * 1024];
+static uint8_t kernel_heap_area[64 * 1024 * 1024];
 bool should_run_app = false; 
+
+__attribute__((section(".text"), aligned(4096))) 
+static uint8_t app_exec_buffer[12582912];
 
 static volatile struct limine_framebuffer_request framebuffer_request = {
     .id = LIMINE_FRAMEBUFFER_REQUEST_ID, .revision = 0
@@ -105,6 +109,25 @@ void handle_drag(window_t* win) {
     }
 }
 
+void* sys_get_file(const char* name, uint64_t* size) {
+    if (module_request.response == NULL) return NULL;
+
+    for (uint64_t i = 0; i < module_request.response->module_count; i++) {
+        struct limine_file* module = module_request.response->modules[i];
+        
+        // Limine хранит имя файла (или путь). Сравним его.
+        // Используем твой strcmp из libc
+        if (strcmp(module->path, name) == 0 || 
+            /* иногда путь начинается с / или boot:/ */
+            (module->path[0] == '/' && strcmp(module->path + 1, name) == 0)) 
+        {
+            *size = module->size;
+            return module->address;
+        }
+    }
+    return NULL;
+}
+
 char sys_get_key() {
     shell_buffer[0] = 0;
     shell_idx = 0;
@@ -119,11 +142,20 @@ char sys_get_key() {
     return result;
 }
 
-#define APP_MAX_SIZE 1048576 // 1 MB
+extern volatile uint32_t tick; // берем из timer.c
 
-__attribute__((aligned(4096))) void app_memory_buffer(void) {
-    // Резервируем 1 МБ. Это увеличит размер самого kernel.elf, но нам пофиг.
-    __asm__ volatile ( ".fill 1048576, 1, 0x90" );
+uint32_t sys_get_time_ms() {
+    return tick * 10; // Если таймер 100Гц. Если 1000Гц, то просто return tick.
+}
+
+#define APP_MAX_SIZE 32 * 1024 * 1024
+
+volatile uint8_t last_scancode = 0;
+
+uint8_t sys_get_scancode() {
+    uint8_t code = last_scancode;
+    last_scancode = 0; // Сбрасываем после прочтения
+    return code;
 }
 
 void gui_loop() {
@@ -162,13 +194,23 @@ void gui_loop() {
 
 // Функция для пересчета адресов из приложения в адреса ядра
 static void* translate_app_ptr(const void* ptr) {
-    // Если адрес меньше 16 МБ, значит это внутренний адрес приложения
-    // (наш буфер всего 1 МБ, так что 16МБ — с запасом)
-    if ((uintptr_t)ptr < 0x1000000) {
-        return (void*)((uintptr_t)&app_memory_buffer + (uintptr_t)ptr);
+    // Если адрес меньше 32 МБ, считаем его относительным адресом программы
+    if ((uintptr_t)ptr < 0x2000000) { 
+        return (void*)((uintptr_t)current_app_base_addr + (uintptr_t)ptr);
     }
-    // Если адрес большой (например, возвращенный через malloc), оставляем как есть
     return (void*)ptr;
+}
+
+// Обертка для get_file, чтобы ядро понимало, где искать имя файла
+void* api_get_file_wrapper(const char* name, uint64_t* size) {
+    // 1. Пересчитываем указатель на имя файла ("hello.txt")
+    const char* translated_name = (const char*)translate_app_ptr(name);
+    
+    // 2. Пересчитываем указатель на переменную size (она тоже на стеке приложения!)
+    uint64_t* translated_size = (uint64_t*)translate_app_ptr(size);
+    
+    // 3. Вызываем реальную функцию
+    return sys_get_file(translated_name, translated_size);
 }
 
 // Обертки для API, которые исправляют указатели перед вызовом реальных функций
@@ -180,92 +222,91 @@ void api_draw_buffer_wrapper(int x, int y, int w, int h, uint32_t* buffer) {
     vesa_draw_buffer(x, y, w, h, (uint32_t*)translate_app_ptr(buffer));
 }
 
-void run_elf(uint8_t* elf_data) {
-    Elf64_Ehdr* hdr = (Elf64_Ehdr*)elf_data;
+// Функция запуска бинарника
+void run_bin(uint8_t* bin_data, uint64_t size) {
+    // Адрес, куда копируем (совпадает с -Ttext=0x400000)
+    uint8_t* load_addr = (uint8_t*)0x400000;
     
-    if(hdr->e_ident[0] != 0x7F || hdr->e_ident[1] != 'E' || 
-       hdr->e_ident[2] != 'L' || hdr->e_ident[3] != 'F') {
-        term_print("Error: Not a valid ELF file!");
-        return;
-    }
+    term_print("Loading binary...");
+    
+    // Копируем бинарник в память
+    memcpy(load_addr, bin_data, size);
 
-    term_print("ELF found. Hacking memory...");
-    uint8_t* exec_mem = (uint8_t*)&app_memory_buffer;
+    term_print("Jumping to binary...");
 
-    // 1. ОТКЛЮЧАЕМ ЗАЩИТУ
+    // Создаем API (как и раньше)
+    EquinoxAPI api;
+    api.print = api_print_wrapper;        // <--- ИСПОЛЬЗУЕМ ОБЕРТКУ
+    api.draw_buffer = api_draw_buffer_wrapper; // <--- ИСПОЛЬЗУЕМ ОБЕРТКУ
+    api.get_file = api_get_file_wrapper; 
+    api.draw_rect = draw_rect; 
+    api.update_screen = vesa_update;
+    api.screen_width = 800;
+    api.screen_height = 600;
+    api.get_scancode = sys_get_scancode;
+    api.get_key = sys_get_key;
+    api.get_time_ms = sys_get_time_ms;
+    api.malloc = kmalloc;
+
+    // Прыгаем! 
+    // Нам нужен ассемблерный "трамплин", чтобы передать API через RDI
+    typedef void (*app_entry_t)(EquinoxAPI*);
+    app_entry_t entry = (app_entry_t)load_addr;
+
+    // Включаем запись (хак с CR0)
     uint64_t cr0;
     __asm__ volatile ("mov %%cr0, %0" : "=r"(cr0));
     cr0 &= ~0x10000ULL; 
     __asm__ volatile ("mov %0, %%cr0" : : "r"(cr0));
 
-    // --- ВОТ ЭТОТ КУСОК ТЫ ПРОПУСТИЛ (КОПИРОВАНИЕ) ---
-    Elf64_Phdr* phdr = (Elf64_Phdr*)(elf_data + hdr->e_phoff);
-    for(int i = 0; i < hdr->e_phnum; i++) {
-        if(phdr[i].p_type == 1) { // PT_LOAD (загружаемый сегмент)
-            uint8_t* src = elf_data + phdr[i].p_offset;
-            uint8_t* dst = exec_mem + phdr[i].p_vaddr;
-            
-            // Проверка, чтобы не вылезти за 1 МБ
-            if (phdr[i].p_vaddr + phdr[i].p_memsz > APP_MAX_SIZE) {
-                term_print("Error: App segment too big!");
-                // Включаем защиту обратно
-                cr0 |= 0x10000ULL;
-                __asm__ volatile ("mov %0, %%cr0" : : "r"(cr0));
-                return;
-            }
-
-            // Копируем данные сегмента
-            memcpy(dst, src, phdr[i].p_filesz);
-            
-            // Зануляем BSS (неинициализированные переменные), если memsz > filesz
-            if (phdr[i].p_memsz > phdr[i].p_filesz) {
-                memset(dst + phdr[i].p_filesz, 0, phdr[i].p_memsz - phdr[i].p_filesz);
-            }
-        }
-    }
-    // ------------------------------------------------
-
-    term_print("Jumping to application...");
-    
-    is_app_running = true;
-
-    EquinoxAPI api;
-    api.print = api_print_wrapper;        // <--- ИСПОЛЬЗУЕМ ОБЕРТКУ
-    api.draw_buffer = api_draw_buffer_wrapper; // <--- ИСПОЛЬЗУЕМ ОБЕРТКУ
-    
-    api.draw_rect = draw_rect; 
-    api.update_screen = vesa_update;
-    api.screen_width = 800;
-    api.screen_height = 600;
-    api.get_key = sys_get_key;
-    api.malloc = kmalloc;
-
-    typedef void (*app_entry_t)(EquinoxAPI*);
-    // Точка входа
-    app_entry_t entry = (app_entry_t)(exec_mem + hdr->e_entry);
-    
+    // ПРЫЖОК!
     entry(&api);
 
-    // 2. ВКЛЮЧАЕМ ЗАЩИТУ ОБРАТНО
-    __asm__ volatile ("mov %%cr0, %0" : "=r"(cr0));
+    // Возвращаем запись (если программа вернет управление)
     cr0 |= 0x10000ULL;
     __asm__ volatile ("mov %0, %%cr0" : : "r"(cr0));
-
-    is_app_running = false;
-    term_print("App finished!");
 }
 
-void exec_module_elf() {
-    if (module_request.response == NULL) return;
+void exec_module() {
+    term_print("DEBUG: exec_module started..."); // МАЯЧОК 1
+
+    if (module_request.response == NULL) {
+        term_print("DEBUG: Module response is NULL!"); // МАЯЧОК 2
+        return;
+    }
+
+    // Печатаем сколько модулей нашли
+    char msg[32];
+    sprintf(msg, "Modules found: %d", (int)module_request.response->module_count);
+    term_print(msg); // МАЯЧОК 3
+
     for (uint64_t i = 0; i < module_request.response->module_count; i++) {
-        uint8_t* data = (uint8_t*)module_request.response->modules[i]->address;
-        // Если это ELF
-        if (data[0] == 0x7F && data[1] == 'E') {
-            run_elf(data);
+        struct limine_file* mod = module_request.response->modules[i];
+        
+        // Отладочная печать имени файла
+        term_print("Checking: ");
+        term_print(mod->path);
+
+        if (strstr(mod->path, "doom.bin")) {
+            term_print("Found doom.bin! Running..."); // МАЯЧОК 4
+            run_bin(mod->address, mod->size);
             return;
         }
     }
-    term_print("No .elf file found in modules!");
+    term_print("doom.bin not found in modules!"); // МАЯЧОК 5
+}
+
+void init_sse() {
+    uint64_t cr0;
+    __asm__ volatile ("mov %%cr0, %0" : "=r"(cr0));
+    cr0 &= ~(1 << 2); // Сбросить бит EM (Emulation)
+    cr0 |= (1 << 1);  // Установить бит MP (Monitor Coprocessor)
+    __asm__ volatile ("mov %0, %%cr0" : : "r"(cr0));
+
+    uint64_t cr4;
+    __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
+    cr4 |= (3 << 9);  // Установить биты OSFXSR (9) и OSXMMEXCPT (10)
+    __asm__ volatile ("mov %0, %%cr4" : : "r"(cr4));
 }
 
 void kmain(void) {
@@ -277,21 +318,33 @@ void kmain(void) {
 
     __asm__("cli");
     init_idt();
+    init_sse();
     pic_remap();
     init_mouse();
+    init_timer(100);
+
     __asm__("sti");
 
     term_print("EquinoxOS Pre-Alpha started.");
     term_print("Type 'help' for commands.");
 
     while(1) {
-        gui_loop();
-        
-        // --- НОВЫЙ КОД ---
         if (should_run_app) {
-            should_run_app = false; // Сбрасываем флаг
-            exec_module_elf();      // Запускаем программу ВНЕ прерывания!
-        }
+            should_run_app = false;
+            
+            // МАЯЧОК 1: Заливаем экран КРАСНЫМ перед прыжком
+            draw_rect(0, 0, 800, 600, 0xFF0000); 
+            vesa_update();
+            
+            term_print("Jumping to app...");
+            exec_module(); 
+            
+            // МАЯЧОК 2: Если мы сюда вернемся (программа завершилась), экран станет ЗЕЛЕНЫМ
+            draw_rect(0, 0, 800, 600, 0x00FF00);
+            vesa_update();
+        } // Твоя функция запуска
+
+        gui_loop();
         // -----------------
 
         __asm__("hlt");

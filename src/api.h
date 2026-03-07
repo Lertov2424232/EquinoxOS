@@ -16,7 +16,9 @@ typedef struct {
     int  screen_height;
     char (*get_key)(void);
     void* (*malloc)(uint64_t size);
-    
+    void* (*get_file)(const char* name, uint64_t* size);
+    uint32_t (*get_time_ms)(void);
+    uint8_t (*get_scancode)(void);
     // НОВОЕ ПОЛЕ:
     void (*draw_buffer)(int x, int y, int w, int h, uint32_t* buffer);
     
