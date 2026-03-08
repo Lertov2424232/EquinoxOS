@@ -127,21 +127,15 @@ void vesa_update() {
 }
 
 void vesa_draw_buffer(int x, int y, int w, int h, uint32_t* buffer) {
-    // Обрезаем, если выходит за границы экрана
     for (int row = 0; row < h; row++) {
-        // Проверка границ по Y
-        if (y + row >= (int)vga_height) break;
-        if (y + row < 0) continue;
+        if (y + row >= (int)vga_height || y + row < 0) continue;
 
-        // ВАЖНО: fb_addr - это число (uint64_t). Приводим к (uint8_t*), чтобы прибавлять байты.
-        // pitch - это байты. x * 4 - это байты.
-        uint8_t* row_start = (uint8_t*)fb_addr + ((y + row) * vga_pitch) + (x * 4);
-        
-        uint32_t* screen_row_ptr = (uint32_t*)row_start;
-        uint32_t* buffer_row_ptr = buffer + (row * w);
+        // Пишем ТОЛЬКО в backbuffer, чтобы ядро могло наложить окна сверху!
+        uint32_t* dst = &backbuffer[(y + row) * vga_width + x];
+        uint32_t* src = &buffer[row * w];
 
-        // Копируем строку (w * 4 байт)
-        memcpy(screen_row_ptr, buffer_row_ptr, w * 4);
+        // Копируем строку
+        memcpy(dst, src, w * 4);
     }
 }
 

@@ -9,67 +9,48 @@
 #include "drivers/mouse/mouse.h"
 #include "drivers/vga/bmp.h"
 #include "api.h"
-#include "fs/elf.h"
 #include "libc/string.h"
 #include "libc/stdio.h"
 
+// --- СТРУКТУРЫ ELF ---
+typedef struct {
+    uint8_t  e_ident[16];
+    uint16_t e_type;
+    uint16_t e_machine;
+    uint32_t e_version;
+    uint64_t e_entry;
+    uint64_t e_phoff;
+    uint64_t e_shoff;
+    uint32_t e_flags;
+    uint16_t e_ehsize;
+    uint16_t e_phentsize;
+    uint16_t e_phnum;
+    uint16_t e_shentsize;
+    uint16_t e_shnum;
+    uint16_t e_shstrndx;
+} Elf64_Ehdr;
+
+typedef struct {
+    uint32_t p_type;
+    uint32_t p_flags;
+    uint64_t p_offset;
+    uint64_t p_vaddr;
+    uint64_t p_paddr;
+    uint64_t p_filesz;
+    uint64_t p_memsz;
+    uint64_t p_align;
+} Elf64_Phdr;
+
+#define PT_LOAD 1
+
+// --- ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ---
 bool is_app_running = false;
 char shell_buffer[64] = {0};
 int shell_idx = 0;
-static void* current_app_base_addr = NULL;
 char term_history[8][64] = {0};
 extern size_t used_memory; 
-static uint8_t kernel_heap_area[64 * 1024 * 1024];
+static uint8_t kernel_heap_area[64 * 1024 * 1024]; // 64 МБ Куча
 bool should_run_app = false; 
-
-__attribute__((section(".text"), aligned(4096))) 
-static uint8_t app_exec_buffer[12582912];
-
-static volatile struct limine_framebuffer_request framebuffer_request = {
-    .id = LIMINE_FRAMEBUFFER_REQUEST_ID, .revision = 0
-};
-static volatile struct limine_module_request module_request = {
-    .id = LIMINE_MODULE_REQUEST_ID, .revision = 0
-};
-
-// --- ФУНКЦИЯ ВЫВОДА В ТЕРМИНАЛ ИЗ ЛЮБОГО МЕСТА ОС ---
-// Теперь fs.c и keyboard.c будут вызывать её, чтобы печатать текст
-void term_print(const char* str) {
-    // 1. Сдвигаем историю вверх (MEMCPY вместо циклов!)
-    for (int i = 0; i < 7; i++) {
-        // Копируем 64 байта из нижней строки в верхнюю
-        memcpy(term_history[i], term_history[i+1], 64);
-    }
-    
-    // 2. Очищаем последнюю строку (MEMSET вместо цикла!)
-    memset(term_history[7], 0, 64);
-
-    for(int j = 0; j < 63 && str[j] != '\0'; j++) {
-        term_history[7][j] = str[j];
-    }
-}
-
-// Простой курсор мыши
-void draw_cursor(int x, int y) {
-    // Массив 8x8 для стрелочки (1 - белый, 2 - черный, 0 - прозрачно)
-    static const int cursor_map[8][8] = {
-        {2,0,0,0,0,0,0,0},
-        {2,2,0,0,0,0,0,0},
-        {2,1,2,0,0,0,0,0},
-        {2,1,1,2,0,0,0,0},
-        {2,1,1,1,2,0,0,0},
-        {2,1,1,1,1,2,0,0},
-        {2,2,2,2,2,2,2,0},
-        {0,0,2,2,2,0,0,0}
-    };
-
-    for (int i = 0; i < 8; i++) {
-        for (int j = 0; j < 8; j++) {
-            if (cursor_map[i][j] == 1) put_pixel(x + j, y + i, 0xFFFFFF);
-            else if (cursor_map[i][j] == 2) put_pixel(x + j, y + i, 0x000000);
-        }
-    }
-}
 
 // Структура окна
 typedef struct {
@@ -77,224 +58,13 @@ typedef struct {
     char* title;
     bool dragging;
     int off_x, off_y;
+    bool active;       // Видимо ли окно
+    uint32_t* content; // Ссылка на буфер приложения (если есть)
 } window_t;
 
-// Создаем два окна
-window_t main_win = {50, 50, 320, 150, "System Monitor", false, 0, 0};
-window_t term_win = {400, 100, 450, 200, "Terminal", false, 0, 0};
-
-void draw_window(window_t* win) {
-    draw_rect(win->x + 4, win->y + 4, win->w, win->h, 0x111111); // Тень
-    draw_rect(win->x, win->y, win->w, win->h, 0xCCCCCC);         // Фон
-    uint32_t header_col = win->dragging ? 0x0055AA : 0x0078D7;   // Синий заголовок
-    draw_rect(win->x, win->y, win->w, 25, header_col);
-    vesa_draw_string(win->title, win->x + 8, win->y + 6, 0xFFFFFF);
-}
-
-void handle_drag(window_t* win) {
-    if (mouse_left_button) {
-        if (!win->dragging && mouse_x > win->x && mouse_x < win->x + win->w &&
-            mouse_y > win->y && mouse_y < win->y + 25) {
-            win->dragging = true;
-            win->off_x = mouse_x - win->x;
-            win->off_y = mouse_y - win->y;
-        }
-    } else {
-        win->dragging = false;
-    }
-
-    if (win->dragging) {
-        win->x = mouse_x - win->off_x;
-        win->y = mouse_y - win->off_y;
-    }
-}
-
-void* sys_get_file(const char* name, uint64_t* size) {
-    if (module_request.response == NULL) return NULL;
-
-    for (uint64_t i = 0; i < module_request.response->module_count; i++) {
-        struct limine_file* module = module_request.response->modules[i];
-        
-        // Limine хранит имя файла (или путь). Сравним его.
-        // Используем твой strcmp из libc
-        if (strcmp(module->path, name) == 0 || 
-            /* иногда путь начинается с / или boot:/ */
-            (module->path[0] == '/' && strcmp(module->path + 1, name) == 0)) 
-        {
-            *size = module->size;
-            return module->address;
-        }
-    }
-    return NULL;
-}
-
-char sys_get_key() {
-    shell_buffer[0] = 0;
-    shell_idx = 0;
-    
-    // Ждем, пока прерывание не положит туда символ
-    while(*(volatile char*)&shell_buffer[0] == 0) {
-        __asm__("hlt"); 
-    }
-    
-    char result = shell_buffer[0];
-    shell_buffer[0] = 0; // Съедаем символ
-    return result;
-}
-
-extern volatile uint32_t tick; // берем из timer.c
-
-uint32_t sys_get_time_ms() {
-    return tick * 10; // Если таймер 100Гц. Если 1000Гц, то просто return tick.
-}
-
-#define APP_MAX_SIZE 32 * 1024 * 1024
-
-volatile uint8_t last_scancode = 0;
-
-uint8_t sys_get_scancode() {
-    uint8_t code = last_scancode;
-    last_scancode = 0; // Сбрасываем после прочтения
-    return code;
-}
-
-void gui_loop() {
-    handle_drag(&main_win);
-    handle_drag(&term_win);
-
-    draw_background();
-
-    // --- ОКНО 1: МОНИТОР ---
-    draw_window(&main_win);
-    char mem_info[64];
-    sprintf(mem_info, "RAM: %d MB / Heap: %x", used_memory / 1024 / 1024, (uint64_t)kernel_heap_area);
-    vesa_draw_string(mem_info, main_win.x + 15, main_win.y + 45, 0x000000);
-    draw_rect(main_win.x + 15, main_win.y + 65, 200, 12, 0x777777);
-    int bar_w = (used_memory * 200) / (16 * 1024 * 1024);
-    if (bar_w > 200) bar_w = 200;
-    draw_rect(main_win.x + 15, main_win.y + 65, bar_w, 12, 0x00FF00);
-
-    // --- ОКНО 2: ТЕРМИНАЛ ---
-    draw_window(&term_win);
-    // Черный фон для текста терминала
-    draw_rect(term_win.x + 2, term_win.y + 26, term_win.w - 4, term_win.h - 28, 0x000000); 
-       
-    // Рисуем 8 строк истории
-    for(int i = 0; i < 8; i++) {
-        vesa_draw_string(term_history[i], term_win.x + 10, term_win.y + 35 + (i * 15), 0xAAAAAA);
-    }
-    
-    // Рисуем текущую строку ввода (ниже истории)
-    vesa_draw_string("> ", term_win.x + 10, term_win.y + 35 + (8 * 15), 0xFFFFFF);
-    vesa_draw_string(shell_buffer, term_win.x + 26, term_win.y + 35 + (8 * 15), 0x00FF00);
-    vesa_draw_string("_", term_win.x + 26 + (shell_idx * 8), term_win.y + 35 + (8 * 15), 0xFFFFFF);
-    draw_cursor(mouse_x, mouse_y);
-    vesa_update();
-}
-
-// Функция для пересчета адресов из приложения в адреса ядра
-static void* translate_app_ptr(const void* ptr) {
-    // Если адрес меньше 32 МБ, считаем его относительным адресом программы
-    if ((uintptr_t)ptr < 0x2000000) { 
-        return (void*)((uintptr_t)current_app_base_addr + (uintptr_t)ptr);
-    }
-    return (void*)ptr;
-}
-
-// Обертка для get_file, чтобы ядро понимало, где искать имя файла
-void* api_get_file_wrapper(const char* name, uint64_t* size) {
-    // 1. Пересчитываем указатель на имя файла ("hello.txt")
-    const char* translated_name = (const char*)translate_app_ptr(name);
-    
-    // 2. Пересчитываем указатель на переменную size (она тоже на стеке приложения!)
-    uint64_t* translated_size = (uint64_t*)translate_app_ptr(size);
-    
-    // 3. Вызываем реальную функцию
-    return sys_get_file(translated_name, translated_size);
-}
-
-// Обертки для API, которые исправляют указатели перед вызовом реальных функций
-void api_print_wrapper(const char* str) {
-    term_print((const char*)translate_app_ptr(str));
-}
-
-void api_draw_buffer_wrapper(int x, int y, int w, int h, uint32_t* buffer) {
-    vesa_draw_buffer(x, y, w, h, (uint32_t*)translate_app_ptr(buffer));
-}
-
-// Функция запуска бинарника
-void run_bin(uint8_t* bin_data, uint64_t size) {
-    // Адрес, куда копируем (совпадает с -Ttext=0x400000)
-    uint8_t* load_addr = (uint8_t*)0x400000;
-    
-    term_print("Loading binary...");
-    
-    // Копируем бинарник в память
-    memcpy(load_addr, bin_data, size);
-
-    term_print("Jumping to binary...");
-
-    // Создаем API (как и раньше)
-    EquinoxAPI api;
-    api.print = api_print_wrapper;        // <--- ИСПОЛЬЗУЕМ ОБЕРТКУ
-    api.draw_buffer = api_draw_buffer_wrapper; // <--- ИСПОЛЬЗУЕМ ОБЕРТКУ
-    api.get_file = api_get_file_wrapper; 
-    api.draw_rect = draw_rect; 
-    api.update_screen = vesa_update;
-    api.screen_width = 800;
-    api.screen_height = 600;
-    api.get_scancode = sys_get_scancode;
-    api.get_key = sys_get_key;
-    api.get_time_ms = sys_get_time_ms;
-    api.malloc = kmalloc;
-
-    // Прыгаем! 
-    // Нам нужен ассемблерный "трамплин", чтобы передать API через RDI
-    typedef void (*app_entry_t)(EquinoxAPI*);
-    app_entry_t entry = (app_entry_t)load_addr;
-
-    // Включаем запись (хак с CR0)
-    uint64_t cr0;
-    __asm__ volatile ("mov %%cr0, %0" : "=r"(cr0));
-    cr0 &= ~0x10000ULL; 
-    __asm__ volatile ("mov %0, %%cr0" : : "r"(cr0));
-
-    // ПРЫЖОК!
-    entry(&api);
-
-    // Возвращаем запись (если программа вернет управление)
-    cr0 |= 0x10000ULL;
-    __asm__ volatile ("mov %0, %%cr0" : : "r"(cr0));
-}
-
-void exec_module() {
-    term_print("DEBUG: exec_module started..."); // МАЯЧОК 1
-
-    if (module_request.response == NULL) {
-        term_print("DEBUG: Module response is NULL!"); // МАЯЧОК 2
-        return;
-    }
-
-    // Печатаем сколько модулей нашли
-    char msg[32];
-    sprintf(msg, "Modules found: %d", (int)module_request.response->module_count);
-    term_print(msg); // МАЯЧОК 3
-
-    for (uint64_t i = 0; i < module_request.response->module_count; i++) {
-        struct limine_file* mod = module_request.response->modules[i];
-        
-        // Отладочная печать имени файла
-        term_print("Checking: ");
-        term_print(mod->path);
-
-        if (strstr(mod->path, "doom.bin")) {
-            term_print("Found doom.bin! Running..."); // МАЯЧОК 4
-            run_bin(mod->address, mod->size);
-            return;
-        }
-    }
-    term_print("doom.bin not found in modules!"); // МАЯЧОК 5
-}
+window_t main_win = {50, 50, 320, 150, "System Monitor", false, 0, 0, true, NULL};
+window_t term_win = {400, 100, 450, 200, "Terminal", false, 0, 0, true, NULL};
+window_t app_win  = {100, 100, 400, 300, "Application", false, 0, 0, false, NULL};
 
 void init_sse() {
     uint64_t cr0;
@@ -309,43 +79,254 @@ void init_sse() {
     __asm__ volatile ("mov %0, %%cr4" : : "r"(cr4));
 }
 
+// --- LIMINE REQUESTS ---
+static volatile struct limine_framebuffer_request framebuffer_request = {
+    .id = LIMINE_FRAMEBUFFER_REQUEST_ID, .revision = 0
+};
+static volatile struct limine_module_request module_request = {
+    .id = LIMINE_MODULE_REQUEST_ID, .revision = 0
+};
+
+// --- СИСТЕМНЫЕ ФУНКЦИИ ---
+
+void term_print(const char* str) {
+    for (int i = 0; i < 7; i++) memcpy(term_history[i], term_history[i+1], 64);
+    memset(term_history[7], 0, 64);
+    for(int j = 0; j < 63 && str[j] != '\0'; j++) term_history[7][j] = str[j];
+}
+
+void draw_cursor(int x, int y) {
+    static const int cursor_map[8][8] = {
+        {2,0,0,0,0,0,0,0}, {2,2,0,0,0,0,0,0}, {2,1,2,0,0,0,0,0}, {2,1,1,2,0,0,0,0},
+        {2,1,1,1,2,0,0,0}, {2,1,1,1,1,2,0,0}, {2,2,2,2,2,2,2,0}, {0,0,2,2,2,0,0,0}
+    };
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
+            if (cursor_map[i][j] == 1) put_pixel(x + j, y + i, 0xFFFFFF);
+            else if (cursor_map[i][j] == 2) put_pixel(x + j, y + i, 0x000000);
+        }
+    }
+}
+
+void draw_window(window_t* win) {
+    if (!win->active) return;
+    
+    // 1. Рисуем тень и заголовок (как раньше)
+    draw_rect(win->x + 4, win->y + 4, win->w, win->h + 25, 0x111111);
+    uint32_t header_col = win->dragging ? 0x0055AA : 0x0078D7;
+    draw_rect(win->x, win->y, win->w, 25, header_col);
+    vesa_draw_string(win->title, win->x + 8, win->y + 6, 0xFFFFFF);
+    
+    // 2. Рисуем тело окна
+    draw_rect(win->x, win->y + 25, win->w, win->h, 0xCCCCCC);
+
+    // 3. МАГИЯ: Если у окна есть "контент" (Змейка) - рисуем его прямо в backbuffer
+    if (win->content) {
+        for (int row = 0; row < win->h; row++) {
+            int draw_y = win->y + 25 + row;
+            // Проверка границ, чтобы не вылететь за экран при перетаскивании
+            if (draw_y < 0 || draw_y >= 600) continue;
+            if (win->x < 0 || win->x + win->w > 800) continue;
+
+            // Копируем из буфера змейки прямо в системный backbuffer
+            // Используем vga_width (800) для расчета смещения
+            uint32_t* dst = &backbuffer[draw_y * 800 + win->x];
+            uint32_t* src = &win->content[row * win->w];
+            
+            memcpy(dst, src, win->w * 4);
+        }
+    }
+}
+
+void handle_drag(window_t* win) {
+    if (!win->active) return;
+    if (mouse_left_button) {
+        if (!win->dragging && mouse_x > win->x && mouse_x < win->x + win->w &&
+            mouse_y > win->y && mouse_y < win->y + 25) {
+            win->dragging = true;
+            win->off_x = mouse_x - win->x;
+            win->off_y = mouse_y - win->y;
+        }
+    } else {
+        win->dragging = false;
+    }
+    if (win->dragging) {
+        win->x = mouse_x - win->off_x;
+        win->y = mouse_y - win->off_y;
+    }
+}
+
+// --- API ФУНКЦИИ ---
+void* sys_get_file(const char* name, uint64_t* size) {
+    if (module_request.response == NULL) return NULL;
+    for (uint64_t i = 0; i < module_request.response->module_count; i++) {
+        struct limine_file* module = module_request.response->modules[i];
+        if (strstr(module->path, name) != NULL) {
+            *size = module->size;
+            return module->address;
+        }
+    }
+    return NULL;
+}
+
+char sys_get_key() { return 0; } // Заглушка, используем сканкоды
+
+extern volatile uint32_t tick;
+uint32_t sys_get_time_ms() { return tick * 10; }
+
+volatile uint8_t last_scancode = 0;
+uint8_t sys_get_scancode() {
+    uint8_t code = last_scancode;
+    last_scancode = 0;
+    return code;
+}
+
+// ГЛАВНАЯ ФИШКА: Приложение вызывает это, чтобы рисовать.
+// Мы перенаправляем это в буфер окна приложения!
+void sys_draw_app_buffer(int x, int y, int w, int h, uint32_t* buffer) {
+    app_win.content = buffer;
+    app_win.w = w;
+    app_win.h = h;
+    // Просто перерисовываем всё
+    gui_loop();
+}
+
+// --- GUI LOOP ---
+void gui_loop() {
+    handle_drag(&main_win);
+    handle_drag(&term_win);
+    handle_drag(&app_win); // Теперь можно таскать окно приложения!
+
+    draw_background();
+
+    // Отрисовка приложения (если запущено)
+    draw_window(&app_win);
+
+    // Монитор
+    draw_window(&main_win);
+    char mem_info[64];
+    sprintf(mem_info, "RAM: %d MB", used_memory / 1024 / 1024);
+    vesa_draw_string(mem_info, main_win.x + 15, main_win.y + 45, 0x000000);
+
+    // Терминал
+    draw_window(&term_win);
+    draw_rect(term_win.x + 2, term_win.y + 26, term_win.w - 4, term_win.h - 28, 0x000000); 
+    for(int i = 0; i < 8; i++) vesa_draw_string(term_history[i], term_win.x + 10, term_win.y + 35 + (i * 15), 0xAAAAAA);
+    vesa_draw_string("> ", term_win.x + 10, term_win.y + 35 + (8 * 15), 0xFFFFFF);
+    vesa_draw_string(shell_buffer, term_win.x + 26, term_win.y + 35 + (8 * 15), 0x00FF00);
+    
+    draw_cursor(mouse_x, mouse_y);
+    vesa_update();
+}
+
+// --- ЗАПУСК ELF (ЗМЕЙКИ) ---
+void run_elf(uint8_t* elf_data) {
+    Elf64_Ehdr* hdr = (Elf64_Ehdr*)elf_data;
+    
+    // Проверка сигнатуры
+    if (hdr->e_ident[0] != 0x7F || hdr->e_ident[1] != 'E' || 
+        hdr->e_ident[2] != 'L' || hdr->e_ident[3] != 'F') {
+        term_print("Not a valid ELF file!");
+        return;
+    }
+
+    term_print("Loading ELF segments...");
+
+    // Грузим сегменты
+    Elf64_Phdr* phdr = (Elf64_Phdr*)(elf_data + hdr->e_phoff);
+    for (int i = 0; i < hdr->e_phnum; i++) {
+        if (phdr[i].p_type == PT_LOAD) {
+            // Копируем в память (0x1000000)
+            uint8_t* dest = (uint8_t*)phdr[i].p_vaddr;
+            uint8_t* src = elf_data + phdr[i].p_offset;
+            memcpy(dest, src, phdr[i].p_filesz);
+            
+            // Обнуляем BSS
+            if (phdr[i].p_memsz > phdr[i].p_filesz) {
+                memset(dest + phdr[i].p_filesz, 0, phdr[i].p_memsz - phdr[i].p_filesz);
+            }
+        }
+    }
+
+    term_print("Starting Snake Window...");
+    
+    // Активируем окно приложения
+    app_win.active = true;
+    app_win.title = "Snake Game";
+    
+    // Подготавливаем API
+    EquinoxAPI api;
+    api.draw_buffer = sys_draw_app_buffer; // <-- Наш хук для окна!
+    api.get_scancode = sys_get_scancode;
+    api.get_time_ms = sys_get_time_ms;
+    
+    // Прыгаем
+    typedef void (*app_entry_t)(EquinoxAPI*);
+    app_entry_t entry = (app_entry_t)hdr->e_entry;
+    
+    is_app_running = true;
+    
+    // Включаем запись в память (на всякий случай)
+    uint64_t cr0;
+    __asm__ volatile ("mov %%cr0, %0" : "=r"(cr0));
+    cr0 &= ~0x10000ULL; 
+    __asm__ volatile ("mov %0, %%cr0" : : "r"(cr0));
+
+    // ЗАПУСК ИГРЫ
+    // Внимание: пока нет многозадачности, игра захватит поток.
+    // Но так как игра вызывает api.draw_buffer, мы будем видеть окно!
+    // А чтобы интерфейс обновлялся, нам нужно, чтобы игра вызывала draw_buffer часто.
+    entry(&api);
+    
+    // Когда игра выйдет (return)
+    is_app_running = false;
+    app_win.active = false;
+    term_print("App closed.");
+    
+    cr0 |= 0x10000ULL;
+    __asm__ volatile ("mov %0, %%cr0" : : "r"(cr0));
+}
+
+void exec_module() {
+    if (module_request.response == NULL) return;
+    for (uint64_t i = 0; i < module_request.response->module_count; i++) {
+        struct limine_file* mod = module_request.response->modules[i];
+        if (strstr(mod->path, "app.elf")) {
+            run_elf(mod->address);
+            return;
+        }
+    }
+    term_print("app.elf not found!");
+}
+
 void kmain(void) {
     init_heap((uintptr_t)kernel_heap_area, sizeof(kernel_heap_area));
-
     if (framebuffer_request.response == NULL) while(1) __asm__("hlt");
     struct limine_framebuffer *fb = framebuffer_request.response->framebuffers[0];
     init_vesa((uint64_t)fb->address, fb->width, fb->height, fb->pitch);
 
     __asm__("cli");
     init_idt();
-    init_sse();
     pic_remap();
     init_mouse();
+    init_sse();
     init_timer(100);
-
     __asm__("sti");
 
-    term_print("EquinoxOS Pre-Alpha started.");
-    term_print("Type 'help' for commands.");
+    term_print("EquinoxOS Snake Edition.");
+    term_print("Type 'run' to play.");
 
     while(1) {
         if (should_run_app) {
             should_run_app = false;
-            
-            // МАЯЧОК 1: Заливаем экран КРАСНЫМ перед прыжком
-            draw_rect(0, 0, 800, 600, 0xFF0000); 
-            vesa_update();
-            
-            term_print("Jumping to app...");
-            exec_module(); 
-            
-            // МАЯЧОК 2: Если мы сюда вернемся (программа завершилась), экран станет ЗЕЛЕНЫМ
-            draw_rect(0, 0, 800, 600, 0x00FF00);
-            vesa_update();
-        } // Твоя функция запуска
-
-        gui_loop();
-        // -----------------
+            exec_module();
+            // После выхода из игры, мы окажемся здесь, и GUI снова оживет
+        }
+        
+        // Этот gui_loop будет работать, только пока не запущено приложение
+        if (!is_app_running) {
+            gui_loop();
+        }
 
         __asm__("hlt");
     }
