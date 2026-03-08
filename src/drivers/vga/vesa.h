@@ -4,10 +4,13 @@
 #include <stdint.h>
 
 // Теперь эти значения будут устанавливаться динамически из Limine
+// В vesa.h
+extern uint32_t* backbuffer;
 extern uintptr_t fb_base_addr;
 extern uint32_t screen_width;
 extern uint32_t screen_height;
 extern uint32_t screen_pitch;
+
 
 // Цвета в формате 0xRRGGBB (32 бита достаточно)
 #define COLOR_BLACK       0x000000
