@@ -119,12 +119,9 @@ void keyboard_callback() {
                 should_run_app = true; 
             }
             else if (strcmp(shell_buffer, "nettest") == 0) {
-    uint8_t bcast_mac[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-    uint8_t data[] = "EQUINOX_OS_TEST"; // Просто строка
-    
-    send_ethernet_frame(bcast_mac, 0x0800, data, 15);
-    term_print("[NET] Ethernet frame sent!");
-}
+                send_arp_request(0x0A000202); 
+                term_print("[NET] ARP Request sent!");
+            }
             else if (shell_buffer[0] != '\0') {
                 // Если ввели неизвестную команду (и не пустую)
                 term_print("Unknown command.");
