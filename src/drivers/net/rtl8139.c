@@ -47,10 +47,52 @@ void send_ethernet_frame(uint8_t* dest_mac, uint16_t ethertype, uint8_t* payload
     uint8_t frame[1514];
     ethernet_header_t* header = (ethernet_header_t*)frame;
 
-    memcpy(header->dest_mac, dest_mac, 6);
-    memcpy(header->src_mac, mac_addr, 6);
+    // --- ВРУЧНУЮ ЗАПОЛНЯЕМ ЗАГОЛОВОК (БЕЗ MEMCPY) ---
+    for(int i=0; i<6; i++) header->dest_mac[i] = dest_mac[i];
+    for(int i=0; i<6; i++) header->src_mac[i] = mac_addr[i];
     header->ethertype = HTONS(ethertype);
 
-    memcpy(frame + 14, payload, payload_len);
+    // --- ВРУЧНУЮ КОПИРУЕМ ПЕЙЛОАД ---
+    for(uint32_t i=0; i<payload_len; i++) frame[14 + i] = payload[i];
+
+    // --- ОТЛАДОЧНЫЙ ВЫВОД (ЧТОБЫ УВИДЕТЬ ДАННЫЕ В ТЕРМИНАЛЕ) ---
+    // Если тут увидишь правильные цифры, значит дело было в memcpy
+    char debug[30];
+    debug[0] = (header->dest_mac[0] >> 4) + '0'; // (упрощенно)
+    term_print("Dest MAC start...");
+    // Debug: печатаем, что мы реально шлем
+    if (mac_addr[0] == 0) {
+        term_print("[ERROR] MAC is ZERO! Check rtl8139.c!");
+    }
     rtl8139_send_packet(frame, 14 + payload_len);
+}
+
+void send_arp_request(uint32_t target_ip) {
+    uint8_t arp_payload[28]; // Размер ARP пакета 28 байт
+    arp_header_t* arp = (arp_header_t*)arp_payload;
+
+    arp->htype = HTONS(1);
+    arp->ptype = HTONS(0x0800);
+    arp->hlen = 6;
+    arp->plen = 4;
+    arp->oper = HTONS(1); // REQUEST
+    
+    // Твой MAC (mac_addr)
+    memcpy(arp->sha, mac_addr, 6);
+    
+    // Твой IP (хардкодом для начала: 10.0.2.15)
+    // 10.0.2.15 в HEX = 0x0A00020F
+    arp->spa = HTONL(0x0A00020F); 
+    
+    // Target MAC (пустой в запросе)
+    memset(arp->tha, 0, 6);
+    
+    // Target IP (роутер: 10.0.2.2 = 0x0A000202)
+    arp->tpa = HTONL(target_ip);
+
+    // Шлем на Broadcast MAC
+    uint8_t bcast[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    
+    // Используем функцию из прошлого шага!
+    send_ethernet_frame(bcast, 0x0806, arp_payload, 28);
 }
