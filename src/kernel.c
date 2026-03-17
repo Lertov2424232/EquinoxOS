@@ -11,6 +11,8 @@
 #include "api.h"
 #include "libc/string.h"
 #include "libc/stdio.h"
+#include "../drivers/pci/pci.h"
+
 
 // --- СТРУКТУРЫ ELF ---
 typedef struct {
@@ -111,29 +113,48 @@ void draw_cursor(int x, int y) {
 void draw_window(window_t* win) {
     if (!win->active) return;
     
-    // 1. Рисуем тень и заголовок (как раньше)
+    // 1. Рисуем тень и заголовок
     draw_rect(win->x + 4, win->y + 4, win->w, win->h + 25, 0x111111);
     uint32_t header_col = win->dragging ? 0x0055AA : 0x0078D7;
     draw_rect(win->x, win->y, win->w, 25, header_col);
     vesa_draw_string(win->title, win->x + 8, win->y + 6, 0xFFFFFF);
     
-    // 2. Рисуем тело окна
+    // 2. Рисуем тело окна (фон)
     draw_rect(win->x, win->y + 25, win->w, win->h, 0xCCCCCC);
 
-    // 3. МАГИЯ: Если у окна есть "контент" (Змейка) - рисуем его прямо в backbuffer
+    // 3. УМНОЕ РИСОВАНИЕ КОНТЕНТА (Clipping)
     if (win->content) {
-        for (int row = 0; row < win->h; row++) {
-            int draw_y = win->y + 25 + row;
-            // Проверка границ, чтобы не вылететь за экран при перетаскивании
-            if (draw_y < 0 || draw_y >= 600) continue;
-            if (win->x < 0 || win->x + win->w > 800) continue;
-
-            // Копируем из буфера змейки прямо в системный backbuffer
-            // Используем vga_width (800) для расчета смещения
-            uint32_t* dst = &backbuffer[draw_y * 800 + win->x];
-            uint32_t* src = &win->content[row * win->w];
+        for (int i = 0; i < win->h; i++) {
+            int draw_y = win->y + 25 + i;
             
-            memcpy(dst, src, win->w * 4);
+            // Если строка окна вне экрана по вертикали — пропускаем строку
+            if (draw_y < 0 || draw_y >= 600) continue;
+
+            // Вычисляем, какую часть строки мы можем нарисовать по горизонтали
+            int start_x = win->x;
+            int end_x = win->x + win->w;
+            int offset_in_src = 0;
+
+            // Если окно слева за экраном
+            if (start_x < 0) {
+                offset_in_src = -start_x;
+                start_x = 0;
+            }
+            // Если окно справа за экраном
+            if (end_x > 800) {
+                end_x = 800;
+            }
+
+            // Если есть что рисовать в этой строке
+            if (start_x < end_x) {
+                int width_to_copy = end_x - start_x;
+                
+                // Копируем только видимую часть строки
+                uint32_t* dst = &backbuffer[draw_y * 800 + start_x];
+                uint32_t* src = &win->content[i * win->w + offset_in_src];
+                
+                memcpy(dst, src, width_to_copy * 4);
+            }
         }
     }
 }
@@ -259,6 +280,8 @@ void run_elf(uint8_t* elf_data) {
     api.draw_buffer = sys_draw_app_buffer; // <-- Наш хук для окна!
     api.get_scancode = sys_get_scancode;
     api.get_time_ms = sys_get_time_ms;
+    app_win.content = NULL;
+    term_print("Process terminated normally.");
     
     // Прыгаем
     typedef void (*app_entry_t)(EquinoxAPI*);
@@ -311,6 +334,7 @@ void kmain(void) {
     init_mouse();
     init_sse();
     init_timer(100);
+    pci_init();
     __asm__("sti");
 
     term_print("EquinoxOS Snake Edition.");

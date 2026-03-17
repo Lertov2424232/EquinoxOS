@@ -17,6 +17,7 @@ extern void read_file(char* name);
 extern void exec_module_elf();
 extern bool is_app_running;
 extern bool should_run_app;
+extern void rtl8139_send_packet(void* data, uint32_t len);
 
 // Состояние шифта
 static bool shift_pressed = false;
@@ -117,6 +118,13 @@ void keyboard_callback() {
             else if (strcmp(shell_buffer, "run") == 0) {
                 should_run_app = true; 
             }
+            else if (strcmp(shell_buffer, "nettest") == 0) {
+    uint8_t bcast_mac[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    uint8_t data[] = "EQUINOX_OS_TEST"; // Просто строка
+    
+    send_ethernet_frame(bcast_mac, 0x0800, data, 15);
+    term_print("[NET] Ethernet frame sent!");
+}
             else if (shell_buffer[0] != '\0') {
                 // Если ввели неизвестную команду (и не пустую)
                 term_print("Unknown command.");
