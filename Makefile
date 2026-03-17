@@ -21,8 +21,8 @@ ASMFLAGS = -f elf64
 APP_CFLAGS = -ffreestanding -O2 -nostdlib -fno-pic -mno-red-zone -Isrc
 
 OBJ_DIR = obj
-OBJ = $(OBJ_DIR)/kernel.o $(OBJ_DIR)/io.o $(OBJ_DIR)/keyboard.o \
-      $(OBJ_DIR)/gdt_flush.o $(OBJ_DIR)/idt.o $(OBJ_DIR)/stdio.o \
+OBJ = $(OBJ_DIR)/kernel.o $(OBJ_DIR)/io.o $(OBJ_DIR)/keyboard.o $(OBJ_DIR)/rtl8139.o \
+      $(OBJ_DIR)/gdt_flush.o $(OBJ_DIR)/idt.o $(OBJ_DIR)/stdio.o $(OBJ_DIR)/pci.o \
       $(OBJ_DIR)/pic.o $(OBJ_DIR)/interrupt.o $(OBJ_DIR)/timer.o $(OBJ_DIR)/ata.o $(OBJ_DIR)/bmp.o \
       $(OBJ_DIR)/memory.o $(OBJ_DIR)/fs.o $(OBJ_DIR)/vesa.o $(OBJ_DIR)/mouse.o $(OBJ_DIR)/string.o $(OBJ_DIR)/panic.o
 
@@ -57,10 +57,14 @@ $(OBJ_DIR)/%.o: src/io/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 $(OBJ_DIR)/%.o: src/drivers/mouse/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
+$(OBJ_DIR)/%.o: src/drivers/pci/%.c
+	$(CC) $(CFLAGS) -c $< -o $@
 $(OBJ_DIR)/gdt_flush.o: src/system/gdt_flush.asm
 	$(ASM) $(ASMFLAGS) $< -o $@
 $(OBJ_DIR)/interrupt.o: src/system/interrupt.asm
 	$(ASM) $(ASMFLAGS) $< -o $@
+$(OBJ_DIR)/%.o: src/drivers/net/%.c
+	$(CC) $(CFLAGS) -c $< -o $@
 
 # --- КОМПИЛЯЦИЯ ПРИЛОЖЕНИЯ (SNAKE) ---
 app/snake.o: app/snake.c
@@ -88,4 +92,4 @@ limine:
 	.\limine.exe bios-install equos.iso
 
 run:
-	qemu-system-x86_64 -m 128M -cdrom equos.iso -drive file=hdd.img,format=raw,index=1,media=disk -serial stdio
+	qemu-system-x86_64 -m 128M -cdrom equos.iso -drive file=hdd.img,format=raw,index=1,media=disk -serial stdio -netdev user,id=n0,hostfwd=tcp::2222-:22 -device rtl8139,netdev=n0 -object filter-dump,id=f1,netdev=n0,file=packets.pcap

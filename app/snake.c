@@ -83,6 +83,17 @@ void _start(EquinoxAPI* sys) {
                 if (snake[0].x == snake[i].x && snake[0].y == snake[i].y) 
                     game_over = true;
             }
+
+            if (game_over) {
+            // Рисуем надпись прямо в буфер змейки
+            // (Можно добавить функцию отрисовки текста в API, но пока просто ждем ESC)
+            uint8_t sc = sys->get_scancode();
+            if (sc == 0x01) return; // 0x01 - это скан-код ESC. Выходим из _start!
+        }
+
+        // Ввод (уже есть)
+        uint8_t sc = sys->get_scancode();
+        if (sc == 0x01) return;
         }
 
         // 4. Отрисовка в буфер

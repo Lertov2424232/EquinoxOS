@@ -139,7 +139,6 @@ void vesa_draw_buffer(int x, int y, int w, int h, uint32_t* buffer) {
     }
 }
 
-
 // -------------- DO NOT TOUCH - DIRECT, FOR PANIC! ---------
 void put_pixel_direct(int x, int y, uint32_t color) {
     if (x < 0 || x >= (int)screen_width || y < 0 || y >= (int)screen_height) return;
