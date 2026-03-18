@@ -21,6 +21,12 @@ uint32_t pci_read_dword(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset)
     return inl(0xCFC);
 }
 
+void pci_write_word(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint16_t val) {
+    uint32_t address = (uint32_t)((bus << 16) | (slot << 11) | (func << 8) | (offset & 0xFC) | 0x80000000);
+    outl(0xCF8, address);
+    outw(0xCFC + (offset & 2), val);
+}
+
 void pci_init() {
     term_print("[PCI] Scanning buses...");
     
@@ -35,6 +41,9 @@ void pci_init() {
 
             // Ищем нашу сетевую карту Realtek RTL8139
             if (vendor == 0x10EC && device == 0x8139) {
+                uint32_t command = pci_read_dword(bus, slot, 0, 0x04);
+                pci_write_word(bus, slot, 0, 0x04, (uint16_t)(command | 0x4)); 
+                term_print("[PCI] Bus Mastering Enabled!");
                 term_print("[PCI] FOUND REALTEK RTL8139 NETWORK CARD!");
                 
                 // Читаем BAR0 (Базовый адрес порта). Смещение 0x10.
@@ -46,3 +55,4 @@ void pci_init() {
         }
     }
 }
+
