@@ -4,6 +4,7 @@
 #include "../../api.h" // Для term_print (если нужно вытащить функцию наружу)
 #include "../net/rtl8139.h"
 
+
 // Внешняя функция из твоего ядра для печати в терминал
 extern void term_print(const char* str); 
 
@@ -45,11 +46,11 @@ void pci_init() {
                 pci_write_word(bus, slot, 0, 0x04, (uint16_t)(command | 0x4)); 
                 term_print("[PCI] Bus Mastering Enabled!");
                 term_print("[PCI] FOUND REALTEK RTL8139 NETWORK CARD!");
-                
-                // Читаем BAR0 (Базовый адрес порта). Смещение 0x10.
+                uint16_t pci_cmd = pci_read_dword(bus, slot, 0, 0x04) & 0xFFFF;
+                pci_cmd |= (1 << 0) | (1 << 2); 
+                pci_write_word(bus, slot, 0, 0x04, pci_cmd);
+                term_print("[PCI] Bus Mastering and I/O Enabled!");
                 uint32_t bar0 = pci_read_dword(bus, slot, 0, 0x10);
-                
-                // Запускаем инициализацию карты
                 rtl8139_init(bar0);
             }
         }
