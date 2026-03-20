@@ -32,6 +32,7 @@ void rtl8139_init(uint32_t bar0) {
     // 1. Пробуждение (Power ON)
     outb(rtl_io_base + REG_CONFIG1, 0x00);
 
+    outl(rtl_io_base + 0x44, 0x0000000F | (1 << 7));
     // 2. Программный сброс
     outb(rtl_io_base + REG_COMMAND, 0x10);
     while((inb(rtl_io_base + REG_COMMAND) & 0x10) != 0);
@@ -206,25 +207,32 @@ void send_ntp_request() {
     udp_header_t* udp = (udp_header_t*)(buffer + sizeof(ipv4_header_t));
     ntp_packet_t* ntp = (ntp_packet_t*)(buffer + sizeof(ipv4_header_t) + sizeof(udp_header_t));
 
-    ntp->mode = 0x23;
+    // NTP Setup
+    ntp->mode = 0x23; // Version 4, Client
 
+    // UDP Setup
     udp->src_port = HTONS(1234);
     udp->dest_port = HTONS(123);
     udp->len = HTONS(sizeof(udp_header_t) + sizeof(ntp_packet_t));
+    udp->checksum = 0; // UDP чексумма необязательна, можно оставить 0
 
+    // IP Setup
     ip->version_ihl = 0x45;
-    ip->len = HTONS(ntp_payload_len); // Тут переворачиваем для заголовка IP
+    ip->len = HTONS(ntp_payload_len);
+    ip->id = HTONS(1);
     ip->ttl = 64;
-    ip->proto = 17; 
-    ip->src_ip = HTONL(0x0A00020F);
-    ip->dest_ip = HTONL(0xA29FC801); 
+    ip->proto = 17; // UDP
+    ip->src_ip = HTONL(0x0A00020F); // 10.0.2.15
+    ip->dest_ip = HTONL(0x0A000202); // 10.0.2.2 (QEMU Gateway)
+    
+    // СЧИТАЕМ ЧЕКСУММУ IP
+    ip->checksum = 0;
+    ip->checksum = ip_checksum(ip, sizeof(ipv4_header_t));
 
     uint8_t router_mac[6] = {0x52, 0x55, 0x0A, 0x00, 0x02, 0x02};
-    
-    // ВАЖНО: передаем обычное число ntp_payload_len, НЕ HTONS!
     send_ethernet_frame(router_mac, 0x0800, buffer, ntp_payload_len);
     
-    term_print("[NET] NTP Request sent safely.");
+    term_print("[NET] NTP Request sent to Gateway...");
 }
 
 uint16_t ip_checksum(void* vdata, uint32_t length) {
@@ -245,4 +253,23 @@ uint16_t ip_checksum(void* vdata, uint32_t length) {
     }
 
     return (uint16_t)(~sum);
+}
+
+void send_arp_reply(uint8_t* dest_mac, uint32_t dest_ip) {
+    uint8_t arp_payload[28];
+    arp_header_t* arp = (arp_header_t*)arp_payload;
+
+    arp->htype = HTONS(1);
+    arp->ptype = HTONS(0x0800);
+    arp->hlen = 6;
+    arp->plen = 4;
+    arp->oper = HTONS(2); // REPLY (Ответ)
+
+    memcpy(arp->sha, mac_addr, 6); // Наш MAC
+    arp->spa = HTONL(0x0A00020F);  // Наш IP (10.0.2.15)
+
+    memcpy(arp->tha, dest_mac, 6); // MAC того, кто спрашивал
+    arp->tpa = HTONL(dest_ip);     // IP того, кто спрашивал
+
+    send_ethernet_frame(dest_mac, 0x0806, arp_payload, 28);
 }

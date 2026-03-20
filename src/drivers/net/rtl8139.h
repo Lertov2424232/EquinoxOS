@@ -10,5 +10,6 @@ void send_arp_request(uint32_t target_ip);
 void send_ntp_request();
 uint16_t ip_checksum(void* vdata, uint32_t length);
 void rtl8139_receive();
+void send_arp_reply(uint8_t* dest_mac, uint32_t dest_ip);
 
 #endif
