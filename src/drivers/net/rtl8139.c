@@ -226,3 +226,23 @@ void send_ntp_request() {
     
     term_print("[NET] NTP Request sent safely.");
 }
+
+uint16_t ip_checksum(void* vdata, uint32_t length) {
+    uint32_t sum = 0;
+    uint16_t* ptr = (uint16_t*)vdata;
+
+    while (length > 1) {
+        sum += *ptr++;
+        length -= 2;
+    }
+
+    if (length > 0) {
+        sum += *(uint8_t*)ptr;
+    }
+
+    while (sum >> 16) {
+        sum = (sum & 0xFFFF) + (sum >> 16);
+    }
+
+    return (uint16_t)(~sum);
+}
