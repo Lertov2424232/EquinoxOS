@@ -1,55 +1,58 @@
-/* linker.ld */
 OUTPUT_FORMAT("elf64-x86-64")
 OUTPUT_ARCH(i386:x86-64)
 ENTRY(kmain)
 
 PHDRS {
-    text    PT_LOAD FLAGS(5);   /* R+X */
-    rodata  PT_LOAD FLAGS(4);   /* R   */
-    data    PT_LOAD FLAGS(6);   /* R+W */
+    /* PT_LOAD - сегмент, который нужно загрузить в память */
+    text    PT_LOAD FLAGS(5);   /* Read + Execute */
+    rodata  PT_LOAD FLAGS(4);   /* Read Only */
+    data    PT_LOAD FLAGS(6);   /* Read + Write */
 }
 
 SECTIONS {
+    /* Базовый адрес ядра */
     . = 0xffffffff80100000;
 
-    .doom_buffer : {
-        *(.doom_buffer)
-    }
-
-    /* ---- Код ---- */
+    /* ---- СЕГМЕНТ КОДА ---- */
     .text : {
-        *(.text._start)
-        *(.text)
-        *(.text.*)          /* <-- критично с -mcmodel=large */
+        *(.text .text.*)
+        
+        . = ALIGN(8);
+        __init_array_start = .;
+        KEEP(*(SORT(.init_array.*)))
+        KEEP(*(.init_array))
+        __init_array_end = .;
     } :text
 
-    /* ---- Только чтение ---- */
+    /* Переходим на следующую страницу (4KB), чтобы не смешивать права доступа */
     . = ALIGN(0x1000);
-    .rodata : {
-        *(.rodata)
-        *(.rodata.*)
 
-        /* Limine ОБЯЗАТЕЛЬНО должен найти эти маркеры в rodata */
+    /* ---- СЕГМЕНТ КОНСТАНТ ---- */
+    .rodata : {
+        *(.rodata .rodata.*)
+
+        /* Маркеры запросов Limine должны быть здесь */
         KEEP(*(.limine_requests_start_marker))
         KEEP(*(.limine_requests))
         KEEP(*(.limine_requests_end_marker))
     } :rodata
 
-    /* ---- Данные ---- */
     . = ALIGN(0x1000);
+
+    /* ---- СЕГМЕНТ ДАННЫХ ---- */
     .data : {
-        *(.data*)
+        *(.data .data.*)
+        /* Твой огромный буфер тоже попадет сюда, если он инициализирован */
+        *(.doom_buffer)
     } :data
 
-    /* ---- BSS (нулевая инициализация) ---- */
-    . = ALIGN(0x1000);
+    /* BSS обычно живет в том же сегменте данных (R+W) */
     .bss : {
+        *(.bss .bss.*)
         *(COMMON)
-        *(.bss)
-        *(.bss.*)
     } :data
 
-    /* Выбрасываем мусор явно */
+    /* Убираем ненужные секции */
     /DISCARD/ : {
         *(.eh_frame)
         *(.note .note.*)
