@@ -8,6 +8,7 @@ void rtl8139_send_packet(void* data, uint32_t len);
 void send_ethernet_frame(uint8_t* dest_mac, uint16_t ethertype, uint8_t* payload, uint32_t payload_len);
 void send_arp_request(uint32_t target_ip);
 void send_ntp_request();
+uint16_t ip_checksum(void* vdata, uint32_t length);
 void rtl8139_receive();
 
 #endif
