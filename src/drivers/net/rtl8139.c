@@ -23,6 +23,8 @@ uint8_t mac_addr[6];
 // который в 99.9% случаев свободен и доступен для DMA (Identity mapped)
 uint8_t* tx_buffer = (uint8_t*)0x80000; // 512 KB mark
 uint8_t* rx_buffer = (uint8_t*)0x90000; // 576 KB mark
+uint16_t rx_offset = 0;
+
 
 void rtl8139_init(uint32_t bar0) {
     rtl_io_base = bar0 & ~3;
@@ -80,7 +82,76 @@ void rtl8139_send_packet(void* data, uint32_t len) {
     else if (!(inl(rtl_io_base + REG_TSD0) & (1 << 15))) term_print("[NET] TX Error!");
 }
 
+void rtl8139_receive() {
+    // Проверяем регистр ISR (Interrupt Status Register), пришел ли пакет (ROK - Bit 0)
+    uint16_t isr_status = inw(rtl_io_base + 0x3E);
+    if (!(isr_status & 0x01)) return; // Ничего не пришло - уходим сразу
+
+    // Сбрасываем флаг прерывания, чтобы карта знала, что мы обрабатываем
+    outw(rtl_io_base + 0x3E, 0x01);
+
+    while (!(inb(rtl_io_base + 0x37) & 0x01)) { // Пока буфер не пуст
+        uint16_t* header = (uint16_t*)(rx_buffer + rx_offset);
+        uint16_t status = header[0];
+        uint16_t length = header[1];
+
+        // Если статус 0 - мусор в буфере
+        if (length == 0 || length > 1600) break; 
+
+        uint8_t* packet = rx_buffer + rx_offset + 4;
+        ethernet_header_t* eth = (ethernet_header_t*)packet;
+
+        // ЛОГИКА ОБРАБОТКИ
+        if (HTONS(eth->ethertype) == 0x0806) {
+             term_print("[NET] Got ARP!");
+        } else if (HTONS(eth->ethertype) == 0x0800) {
+             // Это IP пакет! Тут может быть наше время
+             ipv4_header_t* ip = (ipv4_header_t*)(packet + 14);
+             if (ip->proto == 17) { // UDP
+                 udp_header_t* udp = (udp_header_t*)(packet + 14 + 20); // Eth + IP headers
+                 
+                 // Проверяем, что это ответ на наш запрос (порт 1234)
+                 if (HTONS(udp->dest_port) == 1234) {
+                     term_print("[NET] NTP Response Received!");
+
+                     // NTP заголовок идет сразу после UDP (8 байт)
+                     ntp_packet_t* ntp = (ntp_packet_t*)(packet + 14 + 20 + 8);
+
+                     // Время лежит в trans_ts (последние 8 байт NTP пакета)
+                     // Нам нужны первые 4 байта этого поля (целые секунды)
+                     // Внимание: байты нужно перевернуть!
+                     uint32_t ntp_seconds = ntp->trans_ts & 0xFFFFFFFF;
+                     
+                     // Меняем порядок байтов (Endianness swap)
+                     uint32_t seconds = ((ntp_seconds & 0xFF) << 24) |
+                                        ((ntp_seconds & 0xFF00) << 8) |
+                                        ((ntp_seconds & 0xFF0000) >> 8) |
+                                        ((ntp_seconds & 0xFF000000) >> 24);
+
+                     // Разница между 1900 и 1970 годом: 2,208,988,800 секунд
+                     uint32_t unix_timestamp = seconds - 2208988800;
+
+                     // Выводим сырой результат
+                     char time_msg[64];
+                     sprintf(time_msg, "UNIX Timestamp: %d", unix_timestamp);
+                     term_print(time_msg);
+                     term_print("Time synced via Cloudflare!");
+                 }
+             }
+        }
+
+        rx_offset = (rx_offset + length + 4 + 3) & ~3;
+        outw(rtl_io_base + 0x38, rx_offset - 16);
+
+        if (rx_offset >= 8192) rx_offset = 0;
+    }
+}
+
 void send_ethernet_frame(uint8_t* dest_mac, uint16_t ethertype, uint8_t* payload, uint32_t payload_len) {
+    if (payload_len > 1500) {
+        term_print("[NET] ERROR: Frame too large!");
+        return;
+    }
     uint8_t frame[1514];
     ethernet_header_t* header = (ethernet_header_t*)frame;
 
@@ -123,4 +194,35 @@ void send_arp_request(uint32_t target_ip) {
     
     // Используем функцию из прошлого шага!
     send_ethernet_frame(bcast, 0x0806, arp_payload, 28);
+}
+
+void send_ntp_request() {
+    uint8_t buffer[128];
+    memset(buffer, 0, 128);
+
+    uint16_t ntp_payload_len = sizeof(ipv4_header_t) + sizeof(udp_header_t) + sizeof(ntp_packet_t);
+
+    ipv4_header_t* ip = (ipv4_header_t*)buffer;
+    udp_header_t* udp = (udp_header_t*)(buffer + sizeof(ipv4_header_t));
+    ntp_packet_t* ntp = (ntp_packet_t*)(buffer + sizeof(ipv4_header_t) + sizeof(udp_header_t));
+
+    ntp->mode = 0x23;
+
+    udp->src_port = HTONS(1234);
+    udp->dest_port = HTONS(123);
+    udp->len = HTONS(sizeof(udp_header_t) + sizeof(ntp_packet_t));
+
+    ip->version_ihl = 0x45;
+    ip->len = HTONS(ntp_payload_len); // Тут переворачиваем для заголовка IP
+    ip->ttl = 64;
+    ip->proto = 17; 
+    ip->src_ip = HTONL(0x0A00020F);
+    ip->dest_ip = HTONL(0xA29FC801); 
+
+    uint8_t router_mac[6] = {0x52, 0x55, 0x0A, 0x00, 0x02, 0x02};
+    
+    // ВАЖНО: передаем обычное число ntp_payload_len, НЕ HTONS!
+    send_ethernet_frame(router_mac, 0x0800, buffer, ntp_payload_len);
+    
+    term_print("[NET] NTP Request sent safely.");
 }

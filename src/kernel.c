@@ -214,6 +214,7 @@ void sys_draw_app_buffer(int x, int y, int w, int h, uint32_t* buffer) {
 
 // --- GUI LOOP ---
 void gui_loop() {
+    rtl8139_receive();
     handle_drag(&main_win);
     handle_drag(&term_win);
     handle_drag(&app_win); // Теперь можно таскать окно приложения!
