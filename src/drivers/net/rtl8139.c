@@ -83,60 +83,83 @@ void rtl8139_send_packet(void* data, uint32_t len) {
 }
 
 void rtl8139_receive() {
-    // 1. Читаем статус прерываний (ISR)
     uint16_t isr_status = inw(rtl_io_base + 0x3E);
-    
-    // Если ISR равен 0, значит карта вообще не видит входящих данных
-    if (isr_status == 0) return;
+    if (!(isr_status & 0x01)) return; 
+    outw(rtl_io_base + 0x3E, 0x01);
 
-    // 2. Если пришел пакет (бит 0 - ROK)
-    if (isr_status & 0x01) {
-        // term_print("[NET] ISR: Packet Received!"); // Раскомментируй для жесткого дебага
-        
-        // Сбрасываем флаг в ISR (пишем 1, чтобы очистить)
-        outw(rtl_io_base + 0x3E, 0x01);
-
-        // 3. Читаем регистр команд (0x37). Бит 0 (BUFE) должен быть 0, если буфер НЕ пуст.
-        if (inb(rtl_io_base + 0x37) & 0x01) {
-            // term_print("[NET] Buffer empty according to CR...");
-            return;
-        }
-
-        // 4. Пакет точно там! Читаем заголовок
+    while (!(inb(rtl_io_base + 0x37) & 0x01)) {
         uint16_t* header = (uint16_t*)(rx_buffer + rx_offset);
         uint16_t length = header[1];
 
-        if (length == 0 || length > 1536) {
-             rx_offset = 0; // Сброс при ошибке
-             return;
+        // Защита от мусора и зацикливания
+        if (length < 20 || length > 1536) {
+            rx_offset = 0;
+            return;
         }
 
         uint8_t* packet = rx_buffer + rx_offset + 4;
         ethernet_header_t* eth = (ethernet_header_t*)packet;
-
-        // --- ВЫВОДИМ ВСЁ, ЧТО ВИДИМ ---
         uint16_t type = HTONS(eth->ethertype);
-        
-        if (type == 0x0806) {
+
+        if (type == 0x0806) { // ARP
             arp_header_t* arp = (arp_header_t*)(packet + 14);
-            if (arp->oper == HTONS(1)) {
-                term_print("[NET] Received ARP Request!");
+            if (arp->oper == HTONS(1) && arp->tpa == HTONL(0x0A00020F)) {
                 send_arp_reply(arp->sha, arp->spa);
             }
         } 
-        else if (type == 0x0800) {
-            term_print("[NET] Received IP Packet!");
+        else if (type == 0x0800) { // IP
             ipv4_header_t* ip = (ipv4_header_t*)(packet + 14);
-            if (ip->proto == 17) {
-                term_print("[NET] Received UDP (NTP?)");
-                // Твое извлечение времени (unix_time)...
-                // ... (код из прошлого шага) ...
+            
+            if (ip->proto == 17) { // UDP
+                // Считаем реальный размер IP заголовка (обычно 20 байт, но может быть больше)
+                uint32_t ip_hdr_len = (ip->version_ihl & 0x0F) * 4;
+                udp_header_t* udp = (udp_header_t*)(packet + 14 + ip_hdr_len);
+                
+                uint16_t dest_port = HTONS(udp->dest_port);
+
+                if (dest_port == 1234) {
+                    term_print("[NET] NTP ANSWER FOUND!");
+
+                    // NTP данные начинаются после Eth(14) + IP(ip_hdr_len) + UDP(8)
+                    uint8_t* ntp_data = packet + 14 + ip_hdr_len + 8;
+                    
+                    // Читаем Transmit Timestamp (смещение 40 байт внутри NTP)
+                    // Используем побайтовый доступ, чтобы не было ошибок выравнивания
+                    uint32_t ntp_sec = 
+                        ((uint32_t)ntp_data[40] << 24) |
+                        ((uint32_t)ntp_data[41] << 16) |
+                        ((uint32_t)ntp_data[42] << 8)  |
+                        ((uint32_t)ntp_data[43]);
+
+                    if (ntp_sec == 0) {
+                        term_print("[ERR] NTP data is empty");
+                    } else {
+                        // NTP -> UNIX (разница 2208988800)
+                        uint32_t unix_timestamp = ntp_sec - 2208988800U;
+
+                        term_print("---------------------------");
+                        term_print("TIME SYNCED SUCCESSFULLY!");
+                        
+                        char timestamp_str[32];
+                        itoa(unix_timestamp, 10, timestamp_str);
+                        term_print("UNIX:");
+                        term_print(timestamp_str);
+                        term_print("---------------------------");
+                    }
+                } else {
+                    // Раскомментируй, если хочешь видеть весь мусор в сети:
+                    term_print("UDP packet for other port.");
+                }
             }
         }
 
-        // 5. Двигаем смещение
+        // Обновляем смещение (длина пакета + 4 байта заголовка RTL + 4 байта CRC)
+        // И выравниваем на 4 байта, как того требует карта
         rx_offset = (rx_offset + length + 4 + 3) & ~3;
+        
+        // Магическое число -16 для регистра CAPR (фикс бага RTL8139)
         outw(rtl_io_base + 0x38, rx_offset - 16);
+
         if (rx_offset >= 8192) rx_offset = 0;
     }
 }
