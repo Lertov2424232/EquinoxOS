@@ -31,3 +31,38 @@ typedef struct {
                   ((x >> 24) & 0x000000FF))
 
 #endif
+
+typedef struct {
+    uint8_t  version_ihl;
+    uint8_t  tos;
+    uint16_t len;
+    uint16_t id;
+    uint16_t flags_offset;
+    uint8_t  ttl;
+    uint8_t  proto; // 17 = UDP
+    uint16_t checksum;
+    uint32_t src_ip;
+    uint32_t dest_ip;
+} __attribute__((packed)) ipv4_header_t;
+
+typedef struct {
+    uint16_t src_port;
+    uint16_t dest_port;
+    uint16_t len;
+    uint16_t checksum;
+} __attribute__((packed)) udp_header_t;
+
+// Структура NTP (48 байт)
+typedef struct {
+    uint8_t  mode; // 0x23 для клиента
+    uint8_t  stratum;
+    uint8_t  poll;
+    uint8_t  precision;
+    uint32_t root_delay;
+    uint32_t root_dispersion;
+    uint32_t ref_id;
+    uint64_t ref_ts;
+    uint64_t orig_ts;
+    uint64_t recv_ts;
+    uint64_t trans_ts; // Отсюда мы возьмем время
+} __attribute__((packed)) ntp_packet_t;

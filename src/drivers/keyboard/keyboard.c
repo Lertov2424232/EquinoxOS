@@ -122,6 +122,9 @@ void keyboard_callback() {
                 send_arp_request(0x0A000202); 
                 term_print("[NET] ARP Request sent!");
             }
+            else if (strcmp(shell_buffer, "gettime") == 0) {
+                send_ntp_request();
+            }
             else if (shell_buffer[0] != '\0') {
                 // Если ввели неизвестную команду (и не пустую)
                 term_print("Unknown command.");

@@ -1,31 +1,65 @@
-# EquinoxOS
-### hobby OS proj
+<div align="center">
+  
+# EquinoxOS: x86-based Hobby Operating System
 
-## Current Features:
-- Limine Bootloader
-- VESA Screen Driver with Hardware Cursor
-- Keyboard Driver (ASCII, Shift support)
-- Windows
-- Command Shell
-- External ELF runner
+[![License](https://img.shields.io/github/license/ewasion137/EquinoxOS?style=for-the-badge&color=orange)](LICENSE)
+[![Status](https://img.shields.io/badge/Status-Active%20Development-green?style=for-the-badge)]()
+[![Arch](https://img.shields.io/badge/Architecture-x86__64%20%2F%20i686-blue?style=for-the-badge)]()
+[![Toolchain](https://img.shields.io/badge/Toolchain-GCC%20%2F%20NASM-lightgrey?style=for-the-badge)]()
 
-## Stack:
-- **Language:** C, x86 Assembly
-- **Compiler:** GCC (MinGW-w64), i686, x86_64-elf
-- **Assembler:** NASM
-- **Emulator:** QEMU
+*EquinoxOS is a monolithic-oriented hobby operating system targeting the x86 architecture. This repository contains the kernel source, drivers, and basic userspace environment.*
 
-to build:
+English • [Русский](README_RU.md)
 
-xorriso -as mkisofs -b limine-bios-cd.bin -no-emul-boot -boot-load-size 4 -boot-info-table -o equos.iso iso_root
-.\limine.exe bios-install equos.iso
-qemu-system-x86_64 -cdrom equos.iso
+</div>
 
-Debug:
+## Technical Specifications
+
+### Core Architecture
+* **Target:** x86_64 / i686
+* **Bootloader:** Limine
+* **Executable Format:** ELF (External runner implemented as command 'run'. Currently runs broken snake.)
+* **Toolchain:** GCC (MinGW-w64 / x86_64-elf-gcc), NASM
+
+### Implemented Subsystems
+* **Video:** VESA Framebuffer driver with hardware cursor support.
+* **Input:** PS/2 Keyboard driver (supporting ASCII mapping and Shift modifiers).
+* **Environment:** Basic Command Shell with windowing support.
+* **Networking:** Initial internet stack testing (WIP).
+
+## Build and Deployment
+
+### Development Environment
+The project requires a cross-compiler toolchain and the NASM assembler. Emulation is performed via QEMU.
+
+### Build Instructions
+Clean and full rebuild + run:
+```bash
+make cleanrun
+```
+Standard build:
+```bash
+make build
+make iso
+```
+
+### Execution
+Fast launch in QEMU:
+```bash
+make run
+```
+
+## Debugging and Diagnostics
+For kernel-level debugging, use the following QEMU diagnostic flags:
+```bash
 qemu-system-x86_64.exe -cdrom equos.iso -d int,cpu_reset -no-reboot -no-shutdown 2> qemu_log.txt
-OR
-x86_64-elf-addr2line -e kernel.elf FFFFFFFF?????????
+```
+To resolve symbols from the instruction pointer:
+```bash
+x86_64-elf-addr2line -e kernel.elf <address>
+```
 
-Made with help of AI. IDGAF what you say about AI. I do it like i want it to be.
+## Project Status
+The OS is under active development. Development involves the use of LLM-assisted coding as part of the author's workflow. 
 
-Trying to finish it.
+![EquinoxOS Screenshot](https://github.com/user-attachments/assets/174f378b-0b7b-4c7c-9fc7-81c8c918355c)
