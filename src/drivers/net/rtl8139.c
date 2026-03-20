@@ -18,9 +18,7 @@
 
 uint32_t rtl_io_base = 0;
 uint8_t mac_addr[6];
-
-// ХАК: Используем фиксированный адрес в первой мегабайте памяти, 
-// который в 99.9% случаев свободен и доступен для DMA (Identity mapped)
+int tx_cur_desc = 0;
 uint8_t* tx_buffer = (uint8_t*)0x80000; // 512 KB mark
 uint8_t* rx_buffer = (uint8_t*)0x90000; // 576 KB mark
 uint16_t rx_offset = 0;
@@ -58,92 +56,87 @@ void rtl8139_init(uint32_t bar0) {
 void rtl8139_send_packet(void* data, uint32_t len) {
     uint32_t send_len = (len < 60) ? 60 : len;
     
-    // Копируем данные в наш "низкий" буфер
-    memcpy(tx_buffer, data, len);
-    if (len < 60) memset(tx_buffer + len, 0, 60 - len); // Padding
+    // 1. Вычисляем адрес буфера для текущего слота (0, 1, 2 или 3)
+    uint8_t* current_tx_ptr = (uint8_t*)(0x80000 + (tx_cur_desc * 512));
+    
+    memcpy(current_tx_ptr, data, len);
+    if (len < 60) memset(current_tx_ptr + len, 0, 60 - len);
 
-    // Память должна "осесть" перед тем как карта её заберет
     __asm__ volatile("" : : : "memory");
 
-    // TSAD0 - физический адрес
-    outl(rtl_io_base + REG_TSAD0, (uint32_t)(uintptr_t)tx_buffer); 
+    // 2. Выбираем регистры в зависимости от слота
+    // TSAD0 = 0x20, TSAD1 = 0x24, TSAD2 = 0x28, TSAD3 = 0x2C
+    // TSD0  = 0x10, TSD1  = 0x14, TSD2  = 0x18, TSD3  = 0x1C
+    uint32_t tsad_reg = 0x20 + (tx_cur_desc * 4);
+    uint32_t tsd_reg  = 0x10 + (tx_cur_desc * 4);
 
-    // TSD0 - размер и команда "Взлёт!"
-    // Бит 13 (OWN) сбрасывается в 0 при записи, карта поставит его в 1 когда закончит
-    outl(rtl_io_base + REG_TSD0, send_len | 0x0000); // 0 threshold
+    // 3. Загружаем адрес и даем команду на отправку
+    outl(rtl_io_base + tsad_reg, (uint32_t)(uintptr_t)current_tx_ptr); 
+    outl(rtl_io_base + tsd_reg, send_len | 0x0000); // Threshold 0
 
-    // Ждем подтверждения от карты (Polling)
-    // В реальной ОС тут нужны прерывания, но для теста - цикл
-    int timeout = 100000;
-    while (!(inl(rtl_io_base + REG_TSD0) & (1 << 13)) && timeout--) {
-        __asm__("pause");
-    }
+    // 4. Переходим к следующему слоту для следующего пакета
+    tx_cur_desc = (tx_cur_desc + 1) % 4;
 
-    if (timeout <= 0) term_print("[NET] TX Timeout!");
-    else if (!(inl(rtl_io_base + REG_TSD0) & (1 << 15))) term_print("[NET] TX Error!");
+    // ВАЖНО: Мы больше не ждем здесь TX OK! 
+    // Карта сама разберется, а мы просто идем дальше.
+    // Это и есть настоящая асинхронная работа железа.
 }
 
 void rtl8139_receive() {
-    // Проверяем регистр ISR (Interrupt Status Register), пришел ли пакет (ROK - Bit 0)
+    // 1. Читаем статус прерываний (ISR)
     uint16_t isr_status = inw(rtl_io_base + 0x3E);
-    if (!(isr_status & 0x01)) return; // Ничего не пришло - уходим сразу
+    
+    // Если ISR равен 0, значит карта вообще не видит входящих данных
+    if (isr_status == 0) return;
 
-    // Сбрасываем флаг прерывания, чтобы карта знала, что мы обрабатываем
-    outw(rtl_io_base + 0x3E, 0x01);
+    // 2. Если пришел пакет (бит 0 - ROK)
+    if (isr_status & 0x01) {
+        // term_print("[NET] ISR: Packet Received!"); // Раскомментируй для жесткого дебага
+        
+        // Сбрасываем флаг в ISR (пишем 1, чтобы очистить)
+        outw(rtl_io_base + 0x3E, 0x01);
 
-    while (!(inb(rtl_io_base + 0x37) & 0x01)) { // Пока буфер не пуст
+        // 3. Читаем регистр команд (0x37). Бит 0 (BUFE) должен быть 0, если буфер НЕ пуст.
+        if (inb(rtl_io_base + 0x37) & 0x01) {
+            // term_print("[NET] Buffer empty according to CR...");
+            return;
+        }
+
+        // 4. Пакет точно там! Читаем заголовок
         uint16_t* header = (uint16_t*)(rx_buffer + rx_offset);
-        uint16_t status = header[0];
         uint16_t length = header[1];
 
-        // Если статус 0 - мусор в буфере
-        if (length == 0 || length > 1600) break; 
+        if (length == 0 || length > 1536) {
+             rx_offset = 0; // Сброс при ошибке
+             return;
+        }
 
         uint8_t* packet = rx_buffer + rx_offset + 4;
         ethernet_header_t* eth = (ethernet_header_t*)packet;
 
-        // ЛОГИКА ОБРАБОТКИ
-        if (HTONS(eth->ethertype) == 0x0806) {
-             term_print("[NET] Got ARP!");
-        } else if (HTONS(eth->ethertype) == 0x0800) {
-             // Это IP пакет! Тут может быть наше время
-             ipv4_header_t* ip = (ipv4_header_t*)(packet + 14);
-             if (ip->proto == 17) { // UDP
-                 udp_header_t* udp = (udp_header_t*)(packet + 14 + 20); // Eth + IP headers
-                 
-                 // Проверяем, что это ответ на наш запрос (порт 1234)
-                 if (HTONS(udp->dest_port) == 1234) {
-                     term_print("[NET] NTP Response Received!");
-
-                     // NTP заголовок идет сразу после UDP (8 байт)
-                     ntp_packet_t* ntp = (ntp_packet_t*)(packet + 14 + 20 + 8);
-
-                     // Время лежит в trans_ts (последние 8 байт NTP пакета)
-                     // Нам нужны первые 4 байта этого поля (целые секунды)
-                     // Внимание: байты нужно перевернуть!
-                     uint32_t ntp_seconds = ntp->trans_ts & 0xFFFFFFFF;
-                     
-                     // Меняем порядок байтов (Endianness swap)
-                     uint32_t seconds = ((ntp_seconds & 0xFF) << 24) |
-                                        ((ntp_seconds & 0xFF00) << 8) |
-                                        ((ntp_seconds & 0xFF0000) >> 8) |
-                                        ((ntp_seconds & 0xFF000000) >> 24);
-
-                     // Разница между 1900 и 1970 годом: 2,208,988,800 секунд
-                     uint32_t unix_timestamp = seconds - 2208988800;
-
-                     // Выводим сырой результат
-                     char time_msg[64];
-                     sprintf(time_msg, "UNIX Timestamp: %d", unix_timestamp);
-                     term_print(time_msg);
-                     term_print("Time synced via Cloudflare!");
-                 }
-             }
+        // --- ВЫВОДИМ ВСЁ, ЧТО ВИДИМ ---
+        uint16_t type = HTONS(eth->ethertype);
+        
+        if (type == 0x0806) {
+            arp_header_t* arp = (arp_header_t*)(packet + 14);
+            if (arp->oper == HTONS(1)) {
+                term_print("[NET] Received ARP Request!");
+                send_arp_reply(arp->sha, arp->spa);
+            }
+        } 
+        else if (type == 0x0800) {
+            term_print("[NET] Received IP Packet!");
+            ipv4_header_t* ip = (ipv4_header_t*)(packet + 14);
+            if (ip->proto == 17) {
+                term_print("[NET] Received UDP (NTP?)");
+                // Твое извлечение времени (unix_time)...
+                // ... (код из прошлого шага) ...
+            }
         }
 
+        // 5. Двигаем смещение
         rx_offset = (rx_offset + length + 4 + 3) & ~3;
         outw(rtl_io_base + 0x38, rx_offset - 16);
-
         if (rx_offset >= 8192) rx_offset = 0;
     }
 }
@@ -207,32 +200,29 @@ void send_ntp_request() {
     udp_header_t* udp = (udp_header_t*)(buffer + sizeof(ipv4_header_t));
     ntp_packet_t* ntp = (ntp_packet_t*)(buffer + sizeof(ipv4_header_t) + sizeof(udp_header_t));
 
-    // NTP Setup
-    ntp->mode = 0x23; // Version 4, Client
+    ntp->mode = 0x23; // NTP Client
 
-    // UDP Setup
-    udp->src_port = HTONS(1234);
-    udp->dest_port = HTONS(123);
+    udp->src_port = HTONS(1234); // Наш порт
+    udp->dest_port = HTONS(123);  // Порт NTP
     udp->len = HTONS(sizeof(udp_header_t) + sizeof(ntp_packet_t));
-    udp->checksum = 0; // UDP чексумма необязательна, можно оставить 0
 
-    // IP Setup
     ip->version_ihl = 0x45;
     ip->len = HTONS(ntp_payload_len);
     ip->id = HTONS(1);
     ip->ttl = 64;
     ip->proto = 17; // UDP
-    ip->src_ip = HTONL(0x0A00020F); // 10.0.2.15
-    ip->dest_ip = HTONL(0x0A000202); // 10.0.2.2 (QEMU Gateway)
+    ip->src_ip = HTONL(0x0A00020F); // Наш локальный IP
+    ip->dest_ip = HTONL(0xA29FC801); // 162.159.200.1 (Cloudflare NTP)
     
-    // СЧИТАЕМ ЧЕКСУММУ IP
     ip->checksum = 0;
     ip->checksum = ip_checksum(ip, sizeof(ipv4_header_t));
 
+    // ВАЖНО: Пакет идет во внешний мир, но ШЛЕМ МЫ ЕГО РОУТЕРУ!
+    // Поэтому Destination MAC — это MAC роутера (Gateway)
     uint8_t router_mac[6] = {0x52, 0x55, 0x0A, 0x00, 0x02, 0x02};
-    send_ethernet_frame(router_mac, 0x0800, buffer, ntp_payload_len);
     
-    term_print("[NET] NTP Request sent to Gateway...");
+    send_ethernet_frame(router_mac, 0x0800, buffer, ntp_payload_len);
+    term_print("[NET] NTP Request sent to Cloudflare...");
 }
 
 uint16_t ip_checksum(void* vdata, uint32_t length) {

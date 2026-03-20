@@ -214,7 +214,6 @@ void sys_draw_app_buffer(int x, int y, int w, int h, uint32_t* buffer) {
 
 // --- GUI LOOP ---
 void gui_loop() {
-    rtl8139_receive();
     handle_drag(&main_win);
     handle_drag(&term_win);
     handle_drag(&app_win); // Теперь можно таскать окно приложения!
@@ -342,6 +341,7 @@ void kmain(void) {
     term_print("Type 'run' to play.");
 
     while(1) {
+        rtl8139_receive();
         if (should_run_app) {
             should_run_app = false;
             exec_module();
@@ -353,6 +353,6 @@ void kmain(void) {
             gui_loop();
         }
 
-        __asm__("hlt");
+        // __asm__("hlt");
     }
 }
