@@ -5,6 +5,7 @@
 #include <stddef.h>
 
 struct vfs_node;
+typedef struct vfs_node vfs_node_t;
 
 typedef uint32_t (*vfs_read_t)(struct vfs_node* node, uint32_t offset, uint32_t size, uint8_t* buffer);
 typedef uint32_t (*vfs_write_t)(struct vfs_node* node, uint32_t offset, uint32_t size, uint8_t* buffer);
@@ -13,8 +14,8 @@ typedef struct vfs_node {
     char name[32];
     uint32_t flags;
     vfs_read_t read;
-    vfs_write_t write;
-    struct vfs_node* next; // Для списка файлов в папке
+    vfs_write_t write; // Проверь, что тут vfs_write_t
+    struct vfs_node* next;
 } vfs_node_t;
 
 // Глобальный корень системы

@@ -1,8 +1,8 @@
 #include "rtl8139.h"
 #include "../../io/io.h"
+#include "../fs/vfs.h"
 #include "../../libc/string.h"
 #include "net.h"
-#include "../fs/vfs.h"
 
 // Регистры по мануалу
 #define REG_MAC         0x00
@@ -23,6 +23,19 @@ int tx_cur_desc = 0;
 uint8_t* tx_buffer = (uint8_t*)0x80000; // 512 KB mark
 uint8_t* rx_buffer = (uint8_t*)0x90000; // 576 KB mark
 uint16_t rx_offset = 0;
+
+uint32_t rtl8139_vfs_write(struct vfs_node* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
+    rtl8139_send_packet(buffer, size);
+    return size;
+}
+
+void rtl8139_install_vfs() {
+    vfs_node_t* node = (vfs_node_t*)kmalloc(sizeof(vfs_node_t));
+    memset(node, 0, sizeof(vfs_node_t));
+    strcpy(node->name, "net");
+    node->write = rtl8139_vfs_write;
+    vfs_register_device(node);
+}
 
 
 void rtl8139_init(uint32_t bar0) {
@@ -288,15 +301,3 @@ void send_arp_reply(uint8_t* dest_mac, uint32_t dest_ip) {
     send_ethernet_frame(dest_mac, 0x0806, arp_payload, 28);
 }
 // Функция-обертка для VFS
-uint32_t rtl8139_vfs_write(struct vfs_node* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
-    rtl8139_send_packet(buffer, size);
-    return size;
-}
-
-void rtl8139_install_vfs() {
-    vfs_node_t* node = (vfs_node_t*)kmalloc(sizeof(vfs_node_t));
-    memset(node, 0, sizeof(vfs_node_t));
-    strcpy(node->name, "net");
-    node->write = rtl8139_vfs_write;
-    vfs_register_device(node);
-}

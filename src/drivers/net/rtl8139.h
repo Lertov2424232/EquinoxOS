@@ -3,6 +3,9 @@
 
 #include <stdint.h>
 
+// 1. Опережающее объявление, чтобы компилятор знал, что такая структура существует
+struct vfs_node; 
+
 void rtl8139_init(uint32_t bar0);
 void rtl8139_send_packet(void* data, uint32_t len);
 void send_ethernet_frame(uint8_t* dest_mac, uint16_t ethertype, uint8_t* payload, uint32_t payload_len);
@@ -11,6 +14,8 @@ void send_ntp_request();
 uint16_t ip_checksum(void* vdata, uint32_t length);
 void rtl8139_receive();
 void send_arp_reply(uint8_t* dest_mac, uint32_t dest_ip);
+
+// Теперь компилятор поймет, что это та же самая структура, что и в vfs.h
 uint32_t rtl8139_vfs_write(struct vfs_node* node, uint32_t offset, uint32_t size, uint8_t* buffer);
 void rtl8139_install_vfs();
 
