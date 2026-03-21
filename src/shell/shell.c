@@ -1,0 +1,90 @@
+#include "shell.h"
+#include "../libc/string.h"
+#include "../libc/stdio.h"
+#include "../api.h" // Если нужно
+#include <stdbool.h>
+#include <stdint.h>
+
+// Экстерны из ядра и других модулей
+extern void term_print(const char* str);
+extern char term_history[8][64];
+extern void init_fs();
+extern void list_files();
+extern void create_file(char* name, char* content);
+extern void read_file(char* name);
+extern void exec_module_elf();
+extern void* kmalloc(size_t size);
+extern bool should_run_app;
+extern void send_arp_request(uint32_t target_ip);
+extern void send_ntp_request();
+
+// Буфер ввода теперь живет здесь, а не в kernel.c!
+char shell_buffer[64] = {0};
+int shell_idx = 0;
+
+void shell_init() {
+    memset(shell_buffer, 0, 64);
+    shell_idx = 0;
+}
+
+// Эту функцию будет вызывать клавиатура при нажатии
+void shell_handle_char(char c) {
+    if (c == '\b') {
+        if (shell_idx > 0) {
+            shell_idx--;
+            shell_buffer[shell_idx] = '\0';
+        }
+    } 
+    else if (c == '\n') { // ENTER
+        term_print(shell_buffer);
+
+        // Обрабатываем команды
+        if (strcmp(shell_buffer, "panic") == 0) {
+            __asm__ volatile("ud2");
+        }
+        else if (strcmp(shell_buffer, "format") == 0) {
+            init_fs();
+        }
+        else if (strcmp(shell_buffer, "ls") == 0) {
+            list_files();
+        }
+        else if (strcmp(shell_buffer, "touch") == 0) {
+            create_file("test.txt", "Hello from EquinoxFS!");
+        }
+        else if (strcmp(shell_buffer, "cat") == 0) {
+            read_file("test.txt");
+        }
+        else if (strcmp(shell_buffer, "clear") == 0) {
+            for(int i=0; i<8; i++) 
+                for(int j=0; j<64; j++) 
+                    term_history[i][j] = 0;
+        }
+        else if (strcmp(shell_buffer, "malloc") == 0) {
+            kmalloc(1024 * 1024);
+        }
+        else if (strcmp(shell_buffer, "run") == 0) {
+            should_run_app = true; 
+        }
+        else if (strcmp(shell_buffer, "nettest") == 0) {
+            send_arp_request(0x0A000202); 
+            term_print("[NET] ARP Request sent!");
+        }
+        else if (strcmp(shell_buffer, "gettime") == 0) {
+            send_ntp_request();
+        }
+        else if (shell_buffer[0] != '\0') {
+            term_print("Unknown command.");
+        }
+
+        // Сброс буфера
+        memset(shell_buffer, 0, 64);
+        shell_idx = 0;
+    }
+    else {
+        if (shell_idx < 62) {
+            shell_buffer[shell_idx] = c;
+            shell_idx++;
+            shell_buffer[shell_idx] = '\0';
+        }
+    }
+}

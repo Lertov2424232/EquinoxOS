@@ -13,8 +13,10 @@
 #include "libc/stdio.h"
 #include "../drivers/pci/pci.h"
 #include "system/pmm.h"
+#include "shell/shell.h"
 
 void* pmm_alloc_continuous(uint64_t count);
+extern char shell_buffer[64];
 
 // --- СТРУКТУРЫ ELF ---
 typedef struct {
@@ -49,8 +51,8 @@ typedef struct {
 
 // --- ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ---
 bool is_app_running = false;
-char shell_buffer[64] = {0};
-int shell_idx = 0;
+// char shell_buffer[64] = {0};
+// int shell_idx = 0;
 char term_history[8][64] = {0};
 extern size_t used_memory; 
 bool should_run_app = false; 
