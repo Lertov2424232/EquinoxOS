@@ -330,8 +330,17 @@ void exec_module() {
 
 void kmain(void) {
     pmm_init(); 
-    uintptr_t heap_start = (uintptr_t)pmm_alloc_continuous(16384); // 64МБ (16384 страниц по 4КБ)
-    init_heap(heap_start, 64 * 1024 * 1024);
+
+    // Получаем физический адрес
+    uintptr_t phys_heap = (uintptr_t)pmm_alloc_continuous(16384); 
+    
+    // Получаем смещение HHDM от Limine
+    uint64_t hhdm_offset = hhdm_request.response->offset;
+
+    // Складываем! Теперь куча будет работать через кэшируемую виртуальную память
+    uintptr_t virt_heap = phys_heap + hhdm_offset;
+
+    init_heap(virt_heap, 64 * 1024 * 1024);
 
     // 3. Видео и прерывания (как было)
     if (framebuffer_request.response == NULL) while(1) __asm__("hlt");
