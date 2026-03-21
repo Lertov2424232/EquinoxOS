@@ -34,5 +34,6 @@ void vesa_draw_string_hex(const char* prefix, int x, int y, uint64_t val, uint32
 void hex_to_string(uint64_t val, char* buf);
 void vesa_update(); 
 void vesa_draw_buffer(int x, int y, int w, int h, uint32_t* buffer);
+void fb_install_vfs(void);
 
 #endif

@@ -3,6 +3,7 @@
 #include "font8x8.h"
 #include "../libc/string.h"
 #include "../../system/memory.h"
+#include "../../fs/vfs.h"
 
 // Используем uintptr_t для хранения адреса, чтобы не было путаницы с размером типа
 uintptr_t fb_base_addr; 
@@ -190,4 +191,26 @@ void vesa_draw_string_hex_direct(const char* prefix, int x, int y, uint64_t val,
     while(prefix[offset]) offset++; // Считаем длину строки вручную, чтобы не зависеть от strlen
     
     vesa_draw_string_direct(buf, x + (offset * 8), y, fg);
+}
+
+uint32_t fb_vfs_write(struct vfs_node* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
+    // Пишем данные напрямую в наш задний буфер (backbuffer)
+    // offset - это смещение в байтах (например, y * pitch + x * 4)
+    memcpy((uint8_t*)backbuffer + offset, buffer, size);
+    return size;
+}
+
+void fb_install_vfs() {
+    // Создаем "файл" устройства
+    vfs_node_t* node = (vfs_node_t*)kmalloc(sizeof(vfs_node_t));
+    memset(node, 0, sizeof(vfs_node_t));
+    
+    // Называем его fb0 (Framebuffer 0)
+    strcpy(node->name, "fb0");
+    
+    // Привязываем функцию записи
+    node->write = fb_vfs_write;
+    
+    // Регистрируем в корне VFS
+    vfs_register_device(node);
 }
