@@ -325,7 +325,6 @@ void exec_module() {
 
 void kmain(void) {
     init_heap((uintptr_t)kernel_heap_area, sizeof(kernel_heap_area));
-    call_global_constructors();
     if (framebuffer_request.response == NULL) while(1) __asm__("hlt");
     struct limine_framebuffer *fb = framebuffer_request.response->framebuffers[0];
     init_vesa((uint64_t)fb->address, fb->width, fb->height, fb->pitch);
