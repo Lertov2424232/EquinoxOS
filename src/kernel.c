@@ -51,7 +51,6 @@ char shell_buffer[64] = {0};
 int shell_idx = 0;
 char term_history[8][64] = {0};
 extern size_t used_memory; 
-static uint8_t kernel_heap_area[64 * 1024 * 1024]; // 64 МБ Куча
 bool should_run_app = false; 
 void call_global_constructors();
 
@@ -324,10 +323,14 @@ void exec_module() {
 }
 
 void kmain(void) {
-    init_heap((uintptr_t)kernel_heap_area, sizeof(kernel_heap_area));
+    pmm_init(); 
+    uintptr_t heap_start = (uintptr_t)pmm_alloc_continuous(16384); // 64МБ (16384 страниц по 4КБ)
+    init_heap(heap_start, 64 * 1024 * 1024);
+
+    // 3. Видео и прерывания (как было)
     if (framebuffer_request.response == NULL) while(1) __asm__("hlt");
     struct limine_framebuffer *fb = framebuffer_request.response->framebuffers[0];
-    init_vesa((uint64_t)fb->address, fb->width, fb->height, fb->pitch);
+    init_vesa((uintptr_t)fb->address, fb->width, fb->height, fb->pitch);
 
     __asm__("cli");
     init_idt();
@@ -335,10 +338,10 @@ void kmain(void) {
     init_mouse();
     init_sse();
     init_timer(100);
-    pci_init();
     __asm__("sti");
-
-    term_print("EquinoxOS Snake Edition.");
+    pci_init();
+    vfs_init();
+    term_print("EquinoxOS VFS Edition.");
     term_print("Type 'run' to play.");
 
     while(1) {
