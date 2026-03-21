@@ -13,6 +13,7 @@
 #include "libc/stdio.h"
 #include "../drivers/pci/pci.h"
 
+void* pmm_alloc_continuous(uint64_t count);
 
 // --- СТРУКТУРЫ ELF ---
 typedef struct {

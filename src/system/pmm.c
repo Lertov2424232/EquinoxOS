@@ -59,3 +59,31 @@ void* pmm_alloc() {
     }
     return NULL; // Out of memory
 }
+
+void* pmm_alloc_continuous(uint64_t count) {
+    uint64_t found_pages = 0;
+    uint64_t start_page = 0;
+
+    // Сканируем всю память по страницам
+    for (uint64_t i = 0; i < total_pages; i++) {
+        // Проверяем, свободен ли бит (0 = свободно)
+        if (!(bitmap[i / 8] & (1 << (i % 8)))) {
+            if (found_pages == 0) start_page = i;
+            found_pages++;
+
+            if (found_pages == count) {
+                // Мы нашли достаточное количество страниц!
+                // Помечаем их все как занятые (1)
+                for (uint64_t j = start_page; j < start_page + count; j++) {
+                    bitmap[j / 8] |= (1 << (j % 8));
+                }
+                return (void*)(start_page * 4096);
+            }
+        } else {
+            // Если встретили занятую страницу, сбрасываем счетчик
+            found_pages = 0;
+        }
+    }
+
+    return NULL; // Не нашли подходящего куска
+}
