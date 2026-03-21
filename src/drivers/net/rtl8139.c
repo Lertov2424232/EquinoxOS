@@ -2,6 +2,7 @@
 #include "../../io/io.h"
 #include "../../libc/string.h"
 #include "net.h"
+#include "../fs/vfs.h"
 
 // Регистры по мануалу
 #define REG_MAC         0x00
@@ -285,4 +286,17 @@ void send_arp_reply(uint8_t* dest_mac, uint32_t dest_ip) {
     arp->tpa = HTONL(dest_ip);     // IP того, кто спрашивал
 
     send_ethernet_frame(dest_mac, 0x0806, arp_payload, 28);
+}
+// Функция-обертка для VFS
+uint32_t rtl8139_vfs_write(struct vfs_node* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
+    rtl8139_send_packet(buffer, size);
+    return size;
+}
+
+void rtl8139_install_vfs() {
+    vfs_node_t* node = (vfs_node_t*)kmalloc(sizeof(vfs_node_t));
+    memset(node, 0, sizeof(vfs_node_t));
+    strcpy(node->name, "net");
+    node->write = rtl8139_vfs_write;
+    vfs_register_device(node);
 }
