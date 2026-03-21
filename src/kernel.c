@@ -12,6 +12,7 @@
 #include "libc/string.h"
 #include "libc/stdio.h"
 #include "../drivers/pci/pci.h"
+#include "system/pmm.h"
 
 void* pmm_alloc_continuous(uint64_t count);
 
@@ -329,49 +330,37 @@ void exec_module() {
 }
 
 void kmain(void) {
+    // 1. Базовая память
     pmm_init(); 
-
-    // Получаем физический адрес
-    uintptr_t phys_heap = (uintptr_t)pmm_alloc_continuous(16384); 
-    
-    // Получаем смещение HHDM от Limine
     uint64_t hhdm_offset = hhdm_request.response->offset;
+    init_heap(pmm_alloc_continuous(16384) + hhdm_offset, 64 * 1024 * 1024);
 
-    // Складываем! Теперь куча будет работать через кэшируемую виртуальную память
-    uintptr_t virt_heap = phys_heap + hhdm_offset;
-
-    init_heap(virt_heap, 64 * 1024 * 1024);
-
-    // 3. Видео и прерывания (как было)
-    if (framebuffer_request.response == NULL) while(1) __asm__("hlt");
+    // 2. Графика и VFS (Фундамент)
+    vfs_init();
+    
     struct limine_framebuffer *fb = framebuffer_request.response->framebuffers[0];
     init_vesa((uintptr_t)fb->address, fb->width, fb->height, fb->pitch);
+    fb_install_vfs(); // Теперь экран — это /dev/fb0
 
+    // 3. Прерывания
     __asm__("cli");
     init_idt();
+    init_sse();
     pic_remap();
     init_mouse();
-    init_sse();
     init_timer(100);
     __asm__("sti");
+
+    // 4. Периферия
     pci_init();
-    vfs_init();
-    term_print("EquinoxOS VFS Edition.");
-    term_print("Type 'run' to play.");
+    rtl8139_install_vfs(); // Теперь сеть — это /dev/net
+
+    printf("EquinoxOS Booted. Memory: %d MB free\n", free_memory / 1024 / 1024);
+    printf("Devices registered: /dev/fb0, /dev/net\n");
 
     while(1) {
-        rtl8139_receive();
-        if (should_run_app) {
-            should_run_app = false;
-            exec_module();
-            // После выхода из игры, мы окажемся здесь, и GUI снова оживет
-        }
-        
-        // Этот gui_loop будет работать, только пока не запущено приложение
-        if (!is_app_running) {
-            gui_loop();
-        }
-
-        // __asm__("hlt");
+        rtl8139_receive(); 
+        gui_loop();
+        __asm__("hlt");
     }
 }

@@ -71,13 +71,16 @@ int sprintf(char* buffer, const char* format, ...) {
 
 // ГЛАВНЫЙ БОСС
 void printf(const char* format, ...) {
-    char buffer[1024]; // Надеюсь, 1 КБ хватит для одной строки
-    
+    char buffer[1024];
     va_list args;
     va_start(args, format);
     vsprintf(buffer, format, args);
     va_end(args);
 
-    // Отправляем готовую строку в терминал ОС
-    term_print(buffer);
+    // Вместо term_print(buffer) мы могли бы делать:
+    // vfs_node_t* tty = vfs_find("tty0");
+    // vfs_write(tty, 0, strlen(buffer), (uint8_t*)buffer);
+    
+    // Но пока для простоты оставим мост, но назовем его правильно:
+    term_print(buffer); 
 }
