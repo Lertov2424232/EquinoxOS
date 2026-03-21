@@ -90,6 +90,11 @@ static volatile struct limine_module_request module_request = {
     .id = LIMINE_MODULE_REQUEST_ID, .revision = 0
 };
 
+static volatile struct limine_hhdm_request hhdm_request = {
+    .id = LIMINE_HHDM_REQUEST_ID,
+    .revision = 0
+};
+
 // --- СИСТЕМНЫЕ ФУНКЦИИ ---
 
 void term_print(const char* str) {
