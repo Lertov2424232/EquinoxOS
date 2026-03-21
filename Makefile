@@ -79,6 +79,7 @@ clean:
 	@if exist $(OBJ_DIR) rmdir /s /q $(OBJ_DIR)
 	@if exist kernel.elf del kernel.elf
 	@if exist app\snake.o del app\snake.o
+	@if exist packets.pcap del packets.pcap
 
 cleanrun: clean all compile_app copykernel iso run
 
