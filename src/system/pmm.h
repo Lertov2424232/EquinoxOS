@@ -11,5 +11,6 @@ extern uint64_t total_pages;
 void pmm_init(void);
 void* pmm_alloc(void);
 void* pmm_alloc_continuous(uint64_t count);
+void pmm_free(void* ptr);
 
 #endif
