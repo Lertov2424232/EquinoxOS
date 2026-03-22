@@ -6,6 +6,10 @@
 #include "libc/stdio.h"
 #include "api.h"
 
+uint32_t tcp_seq = 1000;
+uint32_t tcp_ack = 0;
+
+
 extern void term_print(const char* str); // Из ядра
 
 // --- РЕГИСТРЫ RTL8139 ---
@@ -96,10 +100,74 @@ static void handle_udp_ntp(uint8_t* packet, uint32_t ip_hdr_len) {
 
 static void handle_ipv4(uint8_t* packet) {
     ipv4_header_t* ip = (ipv4_header_t*)(packet + sizeof(ethernet_header_t));
+    uint32_t ip_hdr_len = (ip->version_ihl & 0x0F) * 4;
     
-    if (ip->proto == 17) { // 17 = UDP
-        uint32_t ip_hdr_len = (ip->version_ihl & 0x0F) * 4;
+    if (ip->proto == 17) { // UDP
         handle_udp_ntp(packet, ip_hdr_len);
+    } 
+   else if (ip->proto == 6) { // TCP
+        tcp_header_t* tcp = (tcp_header_t*)(packet + sizeof(ethernet_header_t) + ip_hdr_len);
+        
+        if (HTONS(tcp->dest_port) == 49152) {
+            // 1. ЕСЛИ ПРИШЕЛ RST - НЕМЕДЛЕННО ВЫХОДИМ!
+            if (tcp->flags & TCP_RST) {
+                term_print("[TCP] Connection reset by host.");
+                return;
+            }
+
+            uint32_t tcp_hdr_len = (tcp->data_offset >> 4) * 4;
+            uint32_t payload_len = HTONS(ip->len) - ip_hdr_len - tcp_hdr_len;
+
+            // Переводим Seq и Ack из сетевого порядка в наш (Host Order) ОДИН РАЗ
+            uint32_t incoming_seq = HTONL(tcp->seq);
+            uint32_t incoming_ack = HTONL(tcp->ack);
+
+            // 2. ОБРАБОТКА SYN-ACK (Установление связи)
+            if ((tcp->flags & TCP_SYN) && (tcp->flags & TCP_ACK)) {
+                term_print("[TCP] Handshake complete. Sending GET...");
+                
+                tcp_ack = incoming_seq + 1;
+                tcp_seq = incoming_ack;
+                
+                // Шлем ACK (подтверждаем SYN-ACK)
+                send_tcp(TCP_ACK, NULL, 0); 
+                
+                // Шлем HTTP запрос
+                char* http_req = "GET /https://raw.githubusercontent.com/ewasion137/EquinoxOS/refs/heads/main/Makefile HTTP/1.1\r\n"
+                                 "Host: 10.0.2.2\r\n"
+                                 "User-Agent: EquinoxOS\r\n"
+                                 "Connection: close\r\n\r\n";
+                send_tcp(TCP_PSH | TCP_ACK, (uint8_t*)http_req, strlen(http_req));
+            }
+            // 3. ОБРАБОТКА ДАННЫХ (HTTP ответ)
+            else if (payload_len > 0) {
+                // Если номер последовательности совпадает с тем, что мы ждем
+                if (incoming_seq >= tcp_ack) {
+                    tcp_ack = incoming_seq + payload_len;
+                    tcp_seq = incoming_ack;
+
+                    uint8_t* data = (uint8_t*)tcp + tcp_hdr_len;
+                    // Вывод данных в терминал (как в прошлый раз)
+                    char buf[64];
+                    uint32_t pos = 0;
+                    while (pos < payload_len) {
+                        uint32_t chunk = (payload_len - pos > 60) ? 60 : (payload_len - pos);
+                        memcpy(buf, data + pos, chunk);
+                        buf[chunk] = '\0';
+                        term_print(buf);
+                        pos += chunk;
+                    }
+                    
+                    // Подтверждаем получение, чтобы сервер не слал заново
+                    send_tcp(TCP_ACK, NULL, 0);
+                }
+            }
+            // 4. ОБРАБОТКА ЗАКРЫТИЯ (FIN)
+            else if (tcp->flags & TCP_FIN) {
+                tcp_ack = incoming_seq + 1;
+                send_tcp(TCP_ACK | TCP_FIN, NULL, 0);
+            }
+        }
     }
 }
 
@@ -312,4 +380,91 @@ void rtl8139_install_vfs() {
     node->flags = 2; // Как у устройства
     
     vfs_register_device(node);
+}
+
+
+uint16_t tcp_checksum(void* ip_p, void* tcp_p, void* payload_p, uint32_t payload_len) {
+    ipv4_header_t* ip = (ipv4_header_t*)ip_p;
+    tcp_header_t* tcp = (tcp_header_t*)tcp_p;
+    uint8_t* payload = (uint8_t*)payload_p;
+    uint32_t sum = 0;
+
+    // 1. Псевдозаголовок для TCP
+    // Source IP
+    sum += (ip->src_ip >> 16) & 0xFFFF;
+    sum += ip->src_ip & 0xFFFF;
+    // Dest IP
+    sum += (ip->dest_ip >> 16) & 0xFFFF;
+    sum += ip->dest_ip & 0xFFFF;
+    // Protocol (6)
+    sum += HTONS(6);
+    // TCP Length (Header + Payload)
+    sum += HTONS(sizeof(tcp_header_t) + payload_len);
+
+    // 2. Сам заголовок TCP
+    uint16_t* tcp_ptr = (uint16_t*)tcp;
+    for (uint32_t i = 0; i < sizeof(tcp_header_t) / 2; i++) {
+        sum += tcp_ptr[i];
+    }
+
+    // 3. Данные (Payload)
+    uint16_t* payload_ptr = (uint16_t*)payload;
+    for (uint32_t i = 0; i < payload_len / 2; i++) {
+        sum += payload_ptr[i];
+    }
+
+    // Если данных нечетное количество байт
+    if (payload_len % 2) {
+        sum += HTONS((uint16_t)payload[payload_len - 1] << 8);
+    }
+
+    // Сворачиваем 32-битную сумму в 16-битную
+    while (sum >> 16) {
+        sum = (sum & 0xFFFF) + (sum >> 16);
+    }
+
+    return (uint16_t)(~sum);
+}
+
+void send_tcp(uint8_t flags, uint8_t* payload, uint32_t payload_len) {
+    uint8_t buffer[1500];
+    memset(buffer, 0, 1500);
+
+    ipv4_header_t* ip = (ipv4_header_t*)buffer;
+    tcp_header_t* tcp = (tcp_header_t*)(buffer + sizeof(ipv4_header_t));
+    uint8_t* data = buffer + sizeof(ipv4_header_t) + sizeof(tcp_header_t);
+
+    if (payload_len > 0) memcpy(data, payload, payload_len);
+
+    tcp->src_port = HTONS(49152); // Наш порт
+    tcp->dest_port = HTONS(8080); // Порт прокси-сервера (Python)
+    tcp->seq = HTONL(tcp_seq);
+    tcp->ack = HTONL(tcp_ack);
+    tcp->data_offset = 0x50; // Размер заголовка TCP (20 байт)
+    tcp->flags = flags;
+    tcp->window_size = HTONS(8192);
+
+    ip->version_ihl = 0x45;
+    ip->len = HTONS(sizeof(ipv4_header_t) + sizeof(tcp_header_t) + payload_len);
+    ip->id = HTONS(1);
+    ip->ttl = 64;
+    ip->proto = 6; // ПРОТОКОЛ TCP!
+    ip->src_ip = HTONL(0x0A00020F); // Наш IP (10.0.2.15)
+    ip->dest_ip = HTONL(0x0A000202); // IP Хоста (10.0.2.2)
+
+    ip->checksum = ip_checksum(ip, sizeof(ipv4_header_t));
+    tcp->checksum = 0;
+    tcp->checksum = tcp_checksum(ip, tcp, payload, payload_len);
+    
+
+    uint8_t router_mac[6] = {0x52, 0x55, 0x0A, 0x00, 0x02, 0x02};
+    send_ethernet_frame(router_mac, 0x0800, buffer, sizeof(ipv4_header_t) + sizeof(tcp_header_t) + payload_len);
+}
+
+// Вызываем это из shell.c !
+void net_wget() {
+    term_print("[TCP] Initiating Connection (SYN)...");
+    tcp_seq = 1000;
+    tcp_ack = 0;
+    send_tcp(TCP_SYN, NULL, 0); // Шаг 1: Привет!
 }

@@ -2,9 +2,12 @@
 #define RTL8139_H
 
 #include <stdint.h>
+#include "net.h"
 
 // 1. Опережающее объявление, чтобы компилятор знал, что такая структура существует
 struct vfs_node; 
+struct ipv4_header;
+struct tcp_header;
 
 void rtl8139_init(uint32_t bar0);
 void rtl8139_send_packet(void* data, uint32_t len);
@@ -18,5 +21,8 @@ void send_arp_reply(uint8_t* dest_mac, uint32_t dest_ip);
 // Теперь компилятор поймет, что это та же самая структура, что и в vfs.h
 uint32_t rtl8139_vfs_write(struct vfs_node* node, uint32_t offset, uint32_t size, uint8_t* buffer);
 void rtl8139_install_vfs();
+uint16_t tcp_checksum(void* ip_p, void* tcp_p, void* payload_p, uint32_t payload_len);
+void send_tcp(uint8_t flags, uint8_t* payload, uint32_t payload_len);
+void net_wget();
 
 #endif

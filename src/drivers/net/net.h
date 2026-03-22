@@ -4,6 +4,10 @@
 #include <stdint.h>
 
 #define HTONS(x) ((x << 8) | (x >> 8))
+#define HTONL(x) (((x << 24) & 0xFF000000) | \
+                  ((x << 8)  & 0x00FF0000) | \
+                  ((x >> 8)  & 0x0000FF00) | \
+                  ((x >> 24) & 0x000000FF))
 
 typedef struct {
     uint8_t  dest_mac[6];
@@ -11,26 +15,17 @@ typedef struct {
     uint16_t ethertype; 
 } __attribute__((packed)) ethernet_header_t;
 
-// Добавь это в net.h
 typedef struct {
-    uint16_t htype;    // Hardware type (1 = Ethernet)
-    uint16_t ptype;    // Protocol type (0x0800 = IPv4)
-    uint8_t  hlen;     // Hardware size (6)
-    uint8_t  plen;     // Protocol size (4)
-    uint16_t oper;     // Opcode (1 = Request, 2 = Reply)
-    uint8_t  sha[6];   // Sender MAC
-    uint32_t spa;      // Sender IP
-    uint8_t  tha[6];   // Target MAC
-    uint32_t tpa;      // Target IP
+    uint16_t htype;
+    uint16_t ptype;
+    uint8_t  hlen;
+    uint8_t  plen;
+    uint16_t oper;
+    uint8_t  sha[6];
+    uint32_t spa;
+    uint8_t  tha[6];
+    uint32_t tpa;
 } __attribute__((packed)) arp_header_t;
-
-// И добавь функцию для IP (Host to Network Long - для 32 бит)
-#define HTONL(x) (((x << 24) & 0xFF000000) | \
-                  ((x << 8)  & 0x00FF0000) | \
-                  ((x >> 8)  & 0x0000FF00) | \
-                  ((x >> 24) & 0x000000FF))
-
-#endif
 
 typedef struct {
     uint8_t  version_ihl;
@@ -39,7 +34,7 @@ typedef struct {
     uint16_t id;
     uint16_t flags_offset;
     uint8_t  ttl;
-    uint8_t  proto; // 17 = UDP
+    uint8_t  proto;
     uint16_t checksum;
     uint32_t src_ip;
     uint32_t dest_ip;
@@ -52,9 +47,8 @@ typedef struct {
     uint16_t checksum;
 } __attribute__((packed)) udp_header_t;
 
-// Структура NTP (48 байт)
 typedef struct {
-    uint8_t  mode; // 0x23 для клиента
+    uint8_t  mode;
     uint8_t  stratum;
     uint8_t  poll;
     uint8_t  precision;
@@ -64,5 +58,25 @@ typedef struct {
     uint64_t ref_ts;
     uint64_t orig_ts;
     uint64_t recv_ts;
-    uint64_t trans_ts; // Отсюда мы возьмем время
+    uint64_t trans_ts;
 } __attribute__((packed)) ntp_packet_t;
+
+typedef struct {
+    uint16_t src_port;
+    uint16_t dest_port;
+    uint32_t seq;
+    uint32_t ack;
+    uint8_t  data_offset;
+    uint8_t  flags;
+    uint16_t window_size;
+    uint16_t checksum;
+    uint16_t urgent_ptr;
+} __attribute__((packed)) tcp_header_t;
+
+#define TCP_FIN  0x01
+#define TCP_SYN  0x02
+#define TCP_RST  0x04
+#define TCP_PSH  0x08
+#define TCP_ACK  0x10
+
+#endif // <--- ТЕПЕРЬ ОН ТУТ!
