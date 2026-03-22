@@ -140,9 +140,26 @@ void handle_drag(window_t* win) {
 // =========================================================================
 
 void term_print(const char* str) {
-    for (int i = 0; i < 7; i++) memcpy(term_history[i], term_history[i+1], 64);
-    memset(term_history[7], 0, 64);
-    for(int j = 0; j < 63 && str[j] != '\0'; j++) term_history[7][j] = str[j];
+    while (*str) {
+        if (*str == '\n') {
+            // Сдвигаем историю вверх
+            for (int i = 0; i < 7; i++) memcpy(term_history[i], term_history[i+1], 64);
+            memset(term_history[7], 0, 64);
+        } else {
+            // Добавляем символ в текущую последнюю строку
+            int len = strlen(term_history[7]);
+            if (len < 63) {
+                term_history[7][len] = *str;
+                term_history[7][len+1] = '\0';
+            } else {
+                // Если строка переполнена, делаем автоперенос
+                for (int i = 0; i < 7; i++) memcpy(term_history[i], term_history[i+1], 64);
+                memset(term_history[7], 0, 64);
+                term_history[7][0] = *str;
+            }
+        }
+        str++;
+    }
 }
 
 void* sys_get_file(const char* name, uint64_t* size) {

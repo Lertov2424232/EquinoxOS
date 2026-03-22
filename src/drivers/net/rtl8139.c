@@ -143,17 +143,21 @@ static void handle_ipv4(uint8_t* packet) {
                     tcp_ack = incoming_seq + payload_len;
                     tcp_seq = incoming_ack;
 
-                    term_print("[HTTP] Received data packet!");
-                    
-                    // Выведем только первую строчку для теста
                     uint8_t* data = (uint8_t*)tcp + tcp_hdr_len;
-                    char preview[40];
-                    uint32_t len = (payload_len > 30) ? 30 : payload_len;
-                    memcpy(preview, data, len);
-                    preview[len] = '\0';
-                    term_print(preview);
+                    
+                    // Ищем конец HTTP заголовков (\r\n\r\n)
+                    char* body = strstr((char*)data, "\r\n\r\n");
+                    if (body) {
+                        body += 4; // Пропускаем сами \r\n\r\n
+                        term_print("\n--- DOWNLOADED FILE ---\n");
+                        term_print(body);
+                        term_print("\n-----------------------\n");
+                    } else {
+                        // Если заголовки длинные и тела в этом пакете еще нет
+                        term_print((char*)data);
+                    }
 
-                    send_tcp(TCP_ACK, NULL, 0); // Подтверждаем
+                    send_tcp(TCP_ACK, NULL, 0); 
                 }
             }
             // 6. Закрытие соединения
