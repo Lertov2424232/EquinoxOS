@@ -1,15 +1,24 @@
-#include "fs.h"
-#include "../drivers/disk/ata.h"
-#include "../system/memory.h"
+#include "fs/fs.h"
+#include "drivers/disk/ata.h"
+#include "system/memory.h"
+#include "libc/string.h"
 
-// Объявляем внешнюю функцию для вывода
 extern void term_print(const char* str);
 
-// Функция для форматирования диска (забиваем директорию нулями)
+// --- НАСТРОЙКИ ФАЙЛОВОЙ СИСТЕМЫ ---
+#define FS_ROOT_DIR_LBA 1     // Сектор, где хранится таблица файлов
+#define FS_DATA_START_LBA 10  // Сектор, с которого начинаются сами данные файлов
+
+// =========================================================================
+
 void init_fs() {
     uint8_t* zero_sector = (uint8_t*)kmalloc(512);
-    for(int i=0; i<512; i++) zero_sector[i] = 0;
-    write_sectors_ata_pio(1, 1, (uint16_t*)zero_sector);
+    if (!zero_sector) return; // Защита от нехватки памяти
+
+    memset(zero_sector, 0, 512); // Быстрая очистка нулями
+    write_sectors_ata_pio(FS_ROOT_DIR_LBA, 1, (uint16_t*)zero_sector);
+    
+    kfree(zero_sector); // ИСПРАВЛЕНИЕ: Возвращаем память ОС!
     term_print("FS Initialized (Formatted).");
 }
 
@@ -17,13 +26,14 @@ void list_files() {
     file_entry_t* dir = (file_entry_t*)kmalloc(512);
     if (!dir) return;
 
-    read_sectors_ata_pio((uint64_t)dir, 1, 1); 
+    read_sectors_ata_pio((uint64_t)dir, FS_ROOT_DIR_LBA, 1); 
 
     int found = 0;
     term_print("--- Files on disk ---");
 
     for (int i = 0; i < MAX_FILES; i++) {
-        if (dir[i].name[0] != 0 && dir[i].name[0] != 0xFF) { // 0xFF бывает на пустых дисках
+        // Проверяем, что первый символ не 0 и не 0xFF (пустой сектор ATA)
+        if (dir[i].name[0] != '\0' && (uint8_t)dir[i].name[0] != 0xFF) { 
             term_print(dir[i].name);
             found = 1;
         }
@@ -32,67 +42,83 @@ void list_files() {
     if (!found) {
         term_print("Disk is empty.");
     }
+    
+    kfree(dir); // ИСПРАВЛЕНИЕ: Не забываем освобождать
 }
 
 void create_file(char* name, char* content) {
     file_entry_t* dir = (file_entry_t*)kmalloc(512);
     if (!dir) return;
     
-    // Читаем директорию (Сектор 1)
-    read_sectors_ata_pio((uint64_t)dir, 1, 1);
+    read_sectors_ata_pio((uint64_t)dir, FS_ROOT_DIR_LBA, 1);
 
     for (int i = 0; i < MAX_FILES; i++) {
-        if (dir[i].name[0] == 0 || dir[i].name[0] == 0xFF) {
-            // Копируем имя
-            for(int j=0; j<19 && name[j] != '\0'; j++) {
+        if (dir[i].name[0] == '\0' || (uint8_t)dir[i].name[0] == 0xFF) {
+            
+            // 1. Готовим структуру файла
+            memset(dir[i].name, 0, 16);
+            for(int j = 0; j < 15 && name[j] != '\0'; j++) {
                 dir[i].name[j] = name[j];
             }
-            dir[i].name[19] = '\0'; // Гарантированный конец строки
             dir[i].size = 512;
-            dir[i].start_lba = 10 + i; // Файлы храним начиная с 10 сектора
+            dir[i].start_lba = FS_DATA_START_LBA + i; 
 
-            // Готовим данные
+            // 2. Готовим данные для записи
             uint8_t* data = (uint8_t*)kmalloc(512);
-            for(int j=0; j<512; j++) data[j] = 0;
+            if (!data) { kfree(dir); return; }
             
-            for(int j=0; j < 511 && content[j] != '\0'; j++) {
+            memset(data, 0, 512);
+            for(int j = 0; j < 511 && content[j] != '\0'; j++) {
                 data[j] = content[j];
             }
             
-            // Пишем данные файла
+            // 3. Пишем на диск
             write_sectors_ata_pio(dir[i].start_lba, 1, (uint16_t*)data);
-            // Обновляем директорию
-            write_sectors_ata_pio(1, 1, (uint16_t*)dir);
+            write_sectors_ata_pio(FS_ROOT_DIR_LBA, 1, (uint16_t*)dir);
+            
+            // 4. Очищаем за собой память
+            kfree(data);
+            kfree(dir);
             
             term_print("File created.");
             return;
         }
     }
+    
+    kfree(dir);
     term_print("Error: Disk full!");
 }
 
 void read_file(char* name) {
     file_entry_t* dir = (file_entry_t*)kmalloc(512);
-    read_sectors_ata_pio((uint64_t)dir, 1, 1);
+    if (!dir) return;
+    
+    read_sectors_ata_pio((uint64_t)dir, FS_ROOT_DIR_LBA, 1);
 
     for (int i = 0; i < MAX_FILES; i++) {
-        // Простая проверка имени (до первого несовпадения или нуль-терминатора)
+        // Проверка совпадения имени
         int match = 1;
-        for(int j=0; j<20; j++) {
+        for(int j = 0; j < 16; j++) {
             if (dir[i].name[j] != name[j]) { match = 0; break; }
             if (name[j] == '\0') break;
         }
 
-        if (match && dir[i].name[0] != 0) {
+        if (match && dir[i].name[0] != '\0') {
             char* data = (char*)kmalloc(512);
+            if (!data) { kfree(dir); return; }
+            
             read_sectors_ata_pio((uint64_t)data, dir[i].start_lba, 1);
             
-            // Выводим содержимое в терминал
-            data[63] = '\0'; // Ограничим длину, чтобы влезло в терминал
+            data[63] = '\0'; // Ограничим длину вывода (чтобы влезло в экран терминала)
             term_print("--- File content ---");
             term_print(data);
+            
+            kfree(data);
+            kfree(dir);
             return;
         }
     }
+    
+    kfree(dir);
     term_print("File not found.");
 }
