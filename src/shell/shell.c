@@ -5,7 +5,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-// Экстерны из ядра и других модулей
+extern void net_wget();
 extern void term_print(const char* str);
 extern char term_history[8][64];
 extern void init_fs();
@@ -58,6 +58,9 @@ void shell_handle_char(char c) {
             for(int i=0; i<8; i++) 
                 for(int j=0; j<64; j++) 
                     term_history[i][j] = 0;
+        }
+        else if (strcmp(shell_buffer, "wget") == 0) {
+            net_wget();
         }
         else if (strcmp(shell_buffer, "malloc") == 0) {
             kmalloc(1024 * 1024);
