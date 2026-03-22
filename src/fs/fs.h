@@ -3,14 +3,13 @@
 
 #include <stdint.h>
 
-#define MAX_FILES 16 // Пока хватит 16 файлов на диск
+#define MAX_FILES 16 
 
 typedef struct {
-    char name[20];
-    uint64_t size;
-    uint64_t start_lba;
-    uint64_t unused;
-} __attribute__((packed)) file_entry_t;
+    char name[16];       // 16 байт
+    uint64_t size;       // 8 байт
+    uint64_t start_lba;  // 8 байт
+} __attribute__((packed)) file_entry_t; // Итого 32 байта. 32 * 16 = 512 байт.
 
 void init_fs();
 void list_files();
