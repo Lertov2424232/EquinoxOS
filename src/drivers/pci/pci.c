@@ -1,59 +1,88 @@
-#include "pci.h"
-#include "../../io/io.h"
-#include "../../libc/stdio.h"
-#include "../../api.h" // Для term_print (если нужно вытащить функцию наружу)
-#include "../net/rtl8139.h"
+#include "drivers/pci/pci.h"
+#include "io/io.h"
+#include "libc/stdio.h"
+#include "drivers/net/rtl8139.h"
 
-
-// Внешняя функция из твоего ядра для печати в терминал
 extern void term_print(const char* str); 
 
+// --- ПОРТЫ PCI ---
+#define PCI_CONFIG_ADDRESS 0xCF8
+#define PCI_CONFIG_DATA    0xCFC
+
+// --- СМЕЩЕНИЯ РЕГИСТРОВ PCI ---
+#define PCI_REG_VENDOR_DEVICE 0x00
+#define PCI_REG_COMMAND       0x04
+#define PCI_REG_BAR0          0x10
+
+// --- ФЛАГИ COMMAND REGISTER ---
+#define PCI_CMD_IO_SPACE      (1 << 0) // Разрешить доступ через IN/OUT (порты)
+#define PCI_CMD_BUS_MASTER    (1 << 2) // Разрешить устройству DMA (прямой доступ к памяти)
+
+
+// =========================================================================
+//                   БАЗОВЫЕ ФУНКЦИИ ЧТЕНИЯ/ЗАПИСИ
+// =========================================================================
+
 uint32_t pci_read_dword(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset) {
-    uint32_t address;
-    uint32_t lbus  = (uint32_t)bus;
-    uint32_t lslot = (uint32_t)slot;
-    uint32_t lfunc = (uint32_t)func;
-    
-    // Формируем адрес для порта 0xCF8
-    address = (uint32_t)((lbus << 16) | (lslot << 11) |
-              (lfunc << 8) | (offset & 0xFC) | ((uint32_t)0x80000000));
+    uint32_t address = (uint32_t)((bus << 16) | (slot << 11) |
+                                  (func << 8) | (offset & 0xFC) | 0x80000000);
               
-    outl(0xCF8, address);
-    return inl(0xCFC);
+    outl(PCI_CONFIG_ADDRESS, address);
+    return inl(PCI_CONFIG_DATA);
 }
 
 void pci_write_word(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint16_t val) {
-    uint32_t address = (uint32_t)((bus << 16) | (slot << 11) | (func << 8) | (offset & 0xFC) | 0x80000000);
-    outl(0xCF8, address);
-    outw(0xCFC + (offset & 2), val);
+    uint32_t address = (uint32_t)((bus << 16) | (slot << 11) | 
+                                  (func << 8) | (offset & 0xFC) | 0x80000000);
+                                  
+    outl(PCI_CONFIG_ADDRESS, address);
+    outw(PCI_CONFIG_DATA + (offset & 2), val);
+}
+
+// =========================================================================
+//                   ПОИСК И ИНИЦИАЛИЗАЦИЯ УСТРОЙСТВ
+// =========================================================================
+
+// Вспомогательная функция для проверки одного слота
+static void pci_check_device(uint8_t bus, uint8_t slot) {
+    uint32_t vendor_device = pci_read_dword(bus, slot, 0, PCI_REG_VENDOR_DEVICE);
+    uint16_t vendor = vendor_device & 0xFFFF;
+    uint16_t device = (vendor_device >> 16) & 0xFFFF;
+
+    // Если Vendor ID = 0xFFFF, значит устройство в слоте отсутствует
+    if (vendor == 0xFFFF) return; 
+
+    // --- 1. Realtek RTL8139 (Сетевая карта) ---
+    if (vendor == 0x10EC && device == 0x8139) {
+        term_print("[PCI] Found Realtek RTL8139 Network Card!");
+        
+        // Читаем Command Register
+        uint16_t command = pci_read_dword(bus, slot, 0, PCI_REG_COMMAND) & 0xFFFF;
+        
+        // Включаем Bus Mastering (для DMA) и I/O Space (для портов) разом
+        command |= (PCI_CMD_IO_SPACE | PCI_CMD_BUS_MASTER); 
+        pci_write_word(bus, slot, 0, PCI_REG_COMMAND, command);
+        term_print("[PCI] RTL8139 Bus Mastering and I/O Enabled.");
+
+        // Читаем базовый адрес (BAR0) и передаем в драйвер
+        uint32_t bar0 = pci_read_dword(bus, slot, 0, PCI_REG_BAR0);
+        rtl8139_init(bar0);
+        return;
+    }
+    
+    // --- В БУДУЩЕМ ДОБАВЛЯТЬ ДРУГИЕ УСТРОЙСТВА СЮДА ---
+    // if (vendor == 0x8086 && device == 0x100E) { init_e1000_nic(); } // Пример (Intel NIC)
 }
 
 void pci_init() {
     term_print("[PCI] Scanning buses...");
     
+    // Перебираем все шины (0-255) и все слоты (0-31)
     for (uint16_t bus = 0; bus < 256; bus++) {
         for (uint8_t slot = 0; slot < 32; slot++) {
-            // Читаем Vendor ID (кто произвел) и Device ID (что за устройство)
-            uint32_t vendor_device = pci_read_dword(bus, slot, 0, 0);
-            uint16_t vendor = vendor_device & 0xFFFF;
-            uint16_t device = (vendor_device >> 16) & 0xFFFF;
-
-            if (vendor == 0xFFFF) continue; // Пустой слот
-
-            // Ищем нашу сетевую карту Realtek RTL8139
-            if (vendor == 0x10EC && device == 0x8139) {
-                uint32_t command = pci_read_dword(bus, slot, 0, 0x04);
-                pci_write_word(bus, slot, 0, 0x04, (uint16_t)(command | 0x4)); 
-                term_print("[PCI] Bus Mastering Enabled!");
-                term_print("[PCI] FOUND REALTEK RTL8139 NETWORK CARD!");
-                uint16_t pci_cmd = pci_read_dword(bus, slot, 0, 0x04) & 0xFFFF;
-                pci_cmd |= (1 << 0) | (1 << 2); 
-                pci_write_word(bus, slot, 0, 0x04, pci_cmd);
-                term_print("[PCI] Bus Mastering and I/O Enabled!");
-                uint32_t bar0 = pci_read_dword(bus, slot, 0, 0x10);
-                rtl8139_init(bar0);
-            }
+            pci_check_device(bus, slot);
         }
     }
+    
+    term_print("[PCI] Scan complete.");
 }
-
