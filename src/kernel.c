@@ -329,6 +329,6 @@ void kmain(void) {
             exec_module();
         }
 
-        __asm__("hlt");
+        // __asm__("hlt");
     }
 }
