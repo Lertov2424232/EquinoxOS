@@ -105,65 +105,60 @@ static void handle_ipv4(uint8_t* packet) {
     if (ip->proto == 17) { // UDP
         handle_udp_ntp(packet, ip_hdr_len);
     } 
-   else if (ip->proto == 6) { // TCP
+    else if (ip->proto == 6) { // TCP (ПРОТОКОЛ 6)
+        // 1. Сначала определяем, где в пакете лежит TCP заголовок
         tcp_header_t* tcp = (tcp_header_t*)(packet + sizeof(ethernet_header_t) + ip_hdr_len);
         
+        // 2. Проверяем, что пакет пришел на наш порт (wget)
         if (HTONS(tcp->dest_port) == 49152) {
-            // 1. ЕСЛИ ПРИШЕЛ RST - НЕМЕДЛЕННО ВЫХОДИМ!
+            
+            // Если сервер сбросил соединение
             if (tcp->flags & TCP_RST) {
-                term_print("[TCP] Connection reset by host.");
+                term_print("[TCP] Connection reset.");
                 return;
             }
 
+            // 3. Считаем длины и достаем Seq/Ack (объявляем те самые переменные!)
             uint32_t tcp_hdr_len = (tcp->data_offset >> 4) * 4;
             uint32_t payload_len = HTONS(ip->len) - ip_hdr_len - tcp_hdr_len;
-
-            // Переводим Seq и Ack из сетевого порядка в наш (Host Order) ОДИН РАЗ
             uint32_t incoming_seq = HTONL(tcp->seq);
             uint32_t incoming_ack = HTONL(tcp->ack);
 
-            // 2. ОБРАБОТКА SYN-ACK (Установление связи)
+            // 4. Логика рукопожатия (SYN-ACK)
             if ((tcp->flags & TCP_SYN) && (tcp->flags & TCP_ACK)) {
-                term_print("[TCP] Handshake complete. Sending GET...");
-                
+                term_print("[TCP] Handshake OK. Sending GET...");
                 tcp_ack = incoming_seq + 1;
                 tcp_seq = incoming_ack;
                 
-                // Шлем ACK (подтверждаем SYN-ACK)
                 send_tcp(TCP_ACK, NULL, 0); 
                 
-                // Шлем HTTP запрос
-                char* http_req = "GET /https://raw.githubusercontent.com/ewasion137/EquinoxOS/refs/heads/main/Makefile HTTP/1.1\r\n"
-                                 "Host: 10.0.2.2\r\n"
-                                 "User-Agent: EquinoxOS\r\n"
-                                 "Connection: close\r\n\r\n";
+                char* http_req = "GET / HTTP/1.1\r\n"
+                 "Host: 10.0.2.2\r\n"
+                 "Connection: close\r\n\r\n";
                 send_tcp(TCP_PSH | TCP_ACK, (uint8_t*)http_req, strlen(http_req));
             }
-            // 3. ОБРАБОТКА ДАННЫХ (HTTP ответ)
+            // 5. ЛОГИКА ПРИЕМА ДАННЫХ (ТО, ЧТО ТЫ ВСТАВЛЯЛ)
             else if (payload_len > 0) {
-                // Если номер последовательности совпадает с тем, что мы ждем
                 if (incoming_seq >= tcp_ack) {
                     tcp_ack = incoming_seq + payload_len;
                     tcp_seq = incoming_ack;
 
-                    uint8_t* data = (uint8_t*)tcp + tcp_hdr_len;
-                    // Вывод данных в терминал (как в прошлый раз)
-                    char buf[64];
-                    uint32_t pos = 0;
-                    while (pos < payload_len) {
-                        uint32_t chunk = (payload_len - pos > 60) ? 60 : (payload_len - pos);
-                        memcpy(buf, data + pos, chunk);
-                        buf[chunk] = '\0';
-                        term_print(buf);
-                        pos += chunk;
-                    }
+                    term_print("[HTTP] Received data packet!");
                     
-                    // Подтверждаем получение, чтобы сервер не слал заново
-                    send_tcp(TCP_ACK, NULL, 0);
+                    // Выведем только первую строчку для теста
+                    uint8_t* data = (uint8_t*)tcp + tcp_hdr_len;
+                    char preview[40];
+                    uint32_t len = (payload_len > 30) ? 30 : payload_len;
+                    memcpy(preview, data, len);
+                    preview[len] = '\0';
+                    term_print(preview);
+
+                    send_tcp(TCP_ACK, NULL, 0); // Подтверждаем
                 }
             }
-            // 4. ОБРАБОТКА ЗАКРЫТИЯ (FIN)
+            // 6. Закрытие соединения
             else if (tcp->flags & TCP_FIN) {
+                term_print("[TCP] Closing connection.");
                 tcp_ack = incoming_seq + 1;
                 send_tcp(TCP_ACK | TCP_FIN, NULL, 0);
             }
@@ -383,47 +378,43 @@ void rtl8139_install_vfs() {
 }
 
 
-uint16_t tcp_checksum(void* ip_p, void* tcp_p, void* payload_p, uint32_t payload_len) {
-    ipv4_header_t* ip = (ipv4_header_t*)ip_p;
-    tcp_header_t* tcp = (tcp_header_t*)tcp_p;
-    uint8_t* payload = (uint8_t*)payload_p;
+// В rtl8139.c
+uint16_t tcp_checksum(ipv4_header_t* ip, tcp_header_t* tcp, uint8_t* payload, uint32_t payload_len) {
     uint32_t sum = 0;
+    uint16_t tcp_len = sizeof(tcp_header_t) + payload_len;
 
-    // 1. Псевдозаголовок для TCP
-    // Source IP
-    sum += (ip->src_ip >> 16) & 0xFFFF;
-    sum += ip->src_ip & 0xFFFF;
-    // Dest IP
-    sum += (ip->dest_ip >> 16) & 0xFFFF;
-    sum += ip->dest_ip & 0xFFFF;
-    // Protocol (6)
-    sum += HTONS(6);
-    // TCP Length (Header + Payload)
-    sum += HTONS(sizeof(tcp_header_t) + payload_len);
+    // 1. Псевдозаголовок
+    uint32_t src_ip = HTONL(ip->src_ip);
+    uint32_t dest_ip = HTONL(ip->dest_ip);
 
-    // 2. Сам заголовок TCP
-    uint16_t* tcp_ptr = (uint16_t*)tcp;
-    for (uint32_t i = 0; i < sizeof(tcp_header_t) / 2; i++) {
-        sum += tcp_ptr[i];
+    sum += (src_ip >> 16) & 0xFFFF;
+    sum += src_ip & 0xFFFF;
+    sum += (dest_ip >> 16) & 0xFFFF;
+    sum += dest_ip & 0xFFFF;
+    sum += 6; 
+    sum += tcp_len;
+
+    // 2. Заголовок TCP
+    uint16_t* ptr = (uint16_t*)tcp;
+    for (int i = 0; i < (int)sizeof(tcp_header_t) / 2; i++) {
+        sum += HTONS(ptr[i]);
     }
 
-    // 3. Данные (Payload)
-    uint16_t* payload_ptr = (uint16_t*)payload;
-    for (uint32_t i = 0; i < payload_len / 2; i++) {
-        sum += payload_ptr[i];
+    // 3. Данные
+    uint16_t* p_ptr = (uint16_t*)payload;
+    for (int i = 0; i < (int)payload_len / 2; i++) {
+        sum += HTONS(p_ptr[i]);
     }
 
-    // Если данных нечетное количество байт
     if (payload_len % 2) {
-        sum += HTONS((uint16_t)payload[payload_len - 1] << 8);
+        sum += (uint16_t)payload[payload_len - 1] << 8;
     }
 
-    // Сворачиваем 32-битную сумму в 16-битную
     while (sum >> 16) {
         sum = (sum & 0xFFFF) + (sum >> 16);
     }
 
-    return (uint16_t)(~sum);
+    return HTONS((uint16_t)~sum);
 }
 
 void send_tcp(uint8_t flags, uint8_t* payload, uint32_t payload_len) {

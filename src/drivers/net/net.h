@@ -3,11 +3,11 @@
 
 #include <stdint.h>
 
-#define HTONS(x) ((x << 8) | (x >> 8))
-#define HTONL(x) (((x << 24) & 0xFF000000) | \
-                  ((x << 8)  & 0x00FF0000) | \
-                  ((x >> 8)  & 0x0000FF00) | \
-                  ((x >> 24) & 0x000000FF))
+#define HTONS(n) ((((uint16_t)(n) & 0xFF00) >> 8) | (((uint16_t)(n) & 0x00FF) << 8))
+#define HTONL(n) ((((uint32_t)(n) & 0xFF000000) >> 24) | \
+                  (((uint32_t)(n) & 0x00FF0000) >> 8)  | \
+                  (((uint32_t)(n) & 0x0000FF00) << 8)  | \
+                  (((uint32_t)(n) & 0x000000FF) << 24))
 
 typedef struct {
     uint8_t  dest_mac[6];
