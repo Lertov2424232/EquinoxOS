@@ -289,9 +289,9 @@ void kmain(void) {
     init_timer(100);
     task_init();
     task_create(network_thread);
-    fat32_init();
     __asm__("sti");
 
+    fat32_init();
     // 4. Периферия
     pci_init();
     rtl8139_install_vfs(); 
