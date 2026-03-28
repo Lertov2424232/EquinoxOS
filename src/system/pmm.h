@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-// Экспортируем переменные, чтобы kernel.c их видел
+// Экспортируем переменные, чтобы kernel.c их видел s
 extern uint64_t free_memory;
 extern uint64_t total_pages;
 

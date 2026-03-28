@@ -1,42 +1,60 @@
 #include "task.h"
+#include "pmm.h"
 #include "memory.h"
+#include "../libc/string.h"
 
-task_t tasks[8]; // Максимум 8 задач
-int current_task = 0;
-int task_count = 0;
+static task_t* current_task = NULL;
+static task_t* task_list = NULL;
+static uint64_t next_pid = 1;
 
-void init_tasks() {
-    current_task = 0;
-    tasks[0].active = true;
-    task_count = 1;
+void task_init() {
+    // Создаем "задачу" для самого ядра
+    current_task = (task_t*)kmalloc(sizeof(task_t));
+    current_task->id = next_pid++;
+    current_task->running = true;
+    current_task->next = current_task;
+    task_list = current_task;
 }
 
-void create_task(void (*entry)(void)) {
-    // Выделяем 8КБ под стек новой задачи
-    uint64_t* stack = (uint64_t*)kmalloc(8192) + 1024;
+void task_create(void (*entry)()) {
+    task_t* new_task = (task_t*)kmalloc(sizeof(task_t));
     
-    // Эмулируем состояние стека, как будто прерывание уже произошло
-    // (Порядок такой же, как в SAVE_REGS из interrupt.asm)
-    // Чтобы задача начала выполняться с `entry`
-    *(--stack) = 0x08;      // CS
-    *(--stack) = 0x202;     // RFLAGS (прерывания включены)
-    *(--stack) = (uint64_t)entry; // RIP
+    // Выделяем 16 КБ под стек новой задачи через твой PMM
+    uint64_t stack_phys = (uint64_t)pmm_alloc_continuous(4); 
+    uint64_t stack_virt = stack_phys + 0xffff800000000000; // HHDM смещение
     
-    // Сохраняем регистры (все нули для начала)
-    for(int i=0; i<15; i++) *(--stack) = 0;
+    // Очищаем стек
+    memset((void*)stack_virt, 0, 16384);
+
+    // Подготавливаем стек так, будто по нему только что ударило прерывание
+    // Мы "рисуем" stack_frame_t в конце выделенного стека
+    stack_frame_t* frame = (stack_frame_t*)(stack_virt + 16384 - sizeof(stack_frame_t));
     
-    tasks[task_count].rsp = (uint64_t)stack;
-    tasks[task_count].active = true;
-    task_count++;
+    frame->rip = (uint64_t)entry;
+    frame->cs = 0x08;         // Сегмент кода ядра
+    frame->ss = 0x10;         // Сегмент данных ядра
+    frame->rflags = 0x202;    // Прерывания разрешены (IF=1)
+    frame->rsp = stack_virt + 16384; 
+
+    new_task->rsp = (uint64_t)frame;
+    new_task->id = next_pid++;
+    new_task->running = true;
+
+    // Вставляем в круговой список
+    new_task->next = task_list->next;
+    task_list->next = new_task;
 }
 
-void schedule(void* frame) {
-    // 1. Сохраняем RSP текущей задачи
-    tasks[current_task].rsp = (uint64_t)frame;
-    
-    // 2. Переключаемся на следующую активную
-    current_task = (current_task + 1) % task_count;
-    
-    // 3. Загружаем RSP новой задачи (этот код ниже)
-    // Магия происходит в interrupt.asm
+// Эту функцию вызывает таймер 100 раз в секунду
+uint64_t schedule(uint64_t current_rsp) {
+    if (!current_task) return current_rsp;
+
+    // Сохраняем указатель на стек текущей задачи
+    current_task->rsp = current_rsp;
+
+    // Берем следующую задачу
+    current_task = current_task->next;
+
+    // Возвращаем ассемблеру указатель на новый стек
+    return current_task->rsp;
 }

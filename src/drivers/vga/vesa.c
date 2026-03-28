@@ -151,6 +151,34 @@ void fb_install_vfs() {
     vfs_register_device(node);
 }
 
+// Добавь это в vesa.c
+void put_pixel_alpha(int x, int y, uint32_t argb) {
+    if (x < 0 || x >= (int)screen_width || y < 0 || y >= (int)screen_height) return;
+
+    uint8_t a = (argb >> 24) & 0xFF;
+    if (a == 0) return; // Полностью прозрачный
+    if (a == 255) {
+        backbuffer[y * screen_width + x] = argb & 0xFFFFFF; // Полностью непрозрачный
+        return;
+    }
+
+    uint32_t bg = backbuffer[y * screen_width + x];
+    
+    uint8_t r_bg = (bg >> 16) & 0xFF;
+    uint8_t g_bg = (bg >> 8) & 0xFF;
+    uint8_t b_bg = bg & 0xFF;
+
+    uint8_t r_fg = (argb >> 16) & 0xFF;
+    uint8_t g_fg = (argb >> 8) & 0xFF;
+    uint8_t b_fg = argb & 0xFF;
+
+    uint8_t r_out = (r_fg * a + r_bg * (255 - a)) / 255;
+    uint8_t g_out = (g_fg * a + g_bg * (255 - a)) / 255;
+    uint8_t b_out = (b_fg * a + b_bg * (255 - a)) / 255;
+
+    backbuffer[y * screen_width + x] = (r_out << 16) | (g_out << 8) | b_out;
+}
+
 // =========================================================================
 //                   DIRECT RENDER (ДЛЯ PANIC.C / BSOD)
 //            Эти функции пишут напрямую в видеопамять (fb_base_addr)
@@ -197,3 +225,4 @@ void vesa_draw_string_hex_direct(const char* prefix, int x, int y, uint64_t val,
     
     vesa_draw_string_direct(buf, x + (strlen(prefix) * 8), y, fg);
 }
+

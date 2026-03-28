@@ -70,7 +70,7 @@ static void handle_udp_ntp(uint8_t* packet, uint32_t ip_hdr_len) {
     uint16_t dest_port = HTONS(udp->dest_port);
 
     if (dest_port == 1234) {
-        term_print("[NET] NTP ANSWER FOUND!");
+        term_print("[NET] NTP ANSWER FOUND!\n");
 
         // NTP данные лежат после Eth + IP + UDP
         uint8_t* ntp_data = packet + sizeof(ethernet_header_t) + ip_hdr_len + sizeof(udp_header_t);
@@ -81,19 +81,19 @@ static void handle_udp_ntp(uint8_t* packet, uint32_t ip_hdr_len) {
                            ((uint32_t)ntp_data[42] << 8)  | ((uint32_t)ntp_data[43]);
 
         if (ntp_sec == 0) {
-            term_print("[ERR] NTP data is empty");
+            term_print("[ERR] NTP data is empty\n");
         } else {
             // NTP -> UNIX время (сдвиг 2208988800 секунд с 1900 до 1970 года)
             uint32_t unix_timestamp = ntp_sec - 2208988800U;
 
-            term_print("---------------------------");
-            term_print("TIME SYNCED SUCCESSFULLY!");
+            term_print("---------------------------\n");
+            term_print("TIME SYNCED SUCCESSFULLY!\n");
             
             char timestamp_str[32];
             itoa(unix_timestamp, 10, timestamp_str);
-            term_print("UNIX:");
+            term_print("UNIX:\n");
             term_print(timestamp_str);
-            term_print("---------------------------");
+            term_print("---------------------------\n");
         }
     }
 }
@@ -114,7 +114,7 @@ static void handle_ipv4(uint8_t* packet) {
             
             // Если сервер сбросил соединение
             if (tcp->flags & TCP_RST) {
-                term_print("[TCP] Connection reset.");
+                term_print("[TCP] Connection reset.\n");
                 return;
             }
 
@@ -126,7 +126,7 @@ static void handle_ipv4(uint8_t* packet) {
 
             // 4. Логика рукопожатия (SYN-ACK)
             if ((tcp->flags & TCP_SYN) && (tcp->flags & TCP_ACK)) {
-                term_print("[TCP] Handshake OK. Sending GET...");
+                term_print("[TCP] Handshake OK. Sending GET...\n");
                 tcp_ack = incoming_seq + 1;
                 tcp_seq = incoming_ack;
                 
@@ -162,7 +162,7 @@ static void handle_ipv4(uint8_t* packet) {
             }
             // 6. Закрытие соединения
             else if (tcp->flags & TCP_FIN) {
-                term_print("[TCP] Closing connection.");
+                term_print("[TCP] Closing connection.\n");
                 tcp_ack = incoming_seq + 1;
                 send_tcp(TCP_ACK | TCP_FIN, NULL, 0);
             }
@@ -191,7 +191,7 @@ static void net_handle_packet(uint8_t* packet, uint16_t length) {
 
 void send_ethernet_frame(uint8_t* dest_mac, uint16_t ethertype, uint8_t* payload, uint32_t payload_len) {
     if (payload_len > 1500) {
-        term_print("[NET] ERROR: Frame too large!");
+        term_print("[NET] ERROR: Frame too large!\n");
         return;
     }
     
@@ -277,7 +277,7 @@ void send_ntp_request() {
     uint8_t router_mac[6] = {0x52, 0x55, 0x0A, 0x00, 0x02, 0x02};
     
     send_ethernet_frame(router_mac, 0x0800, buffer, ntp_payload_len);
-    term_print("[NET] NTP Request sent to Cloudflare...");
+    term_print("[NET] NTP Request sent to Cloudflare...\n");
 }
 
 
@@ -305,7 +305,7 @@ void rtl8139_init(uint32_t bar0) {
         mac_addr[i] = inb(rtl_io_base + REG_MAC + i);
     }
 
-    term_print("[NET] RTL8139 Hardware Ready.");
+    term_print("[NET] RTL8139 Hardware Ready.\n");
 }
 
 void rtl8139_send_packet(void* data, uint32_t len) {
@@ -458,7 +458,7 @@ void send_tcp(uint8_t flags, uint8_t* payload, uint32_t payload_len) {
 
 // Вызываем это из shell.c !
 void net_wget() {
-    term_print("[TCP] Initiating Connection (SYN)...");
+    term_print("[TCP] Initiating Connection (SYN)...\n");
     tcp_seq = 1000;
     tcp_ack = 0;
     send_tcp(TCP_SYN, NULL, 0); // Шаг 1: Привет!

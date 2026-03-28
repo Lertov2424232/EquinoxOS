@@ -70,13 +70,13 @@ void shell_handle_char(char c) {
         }
         else if (strcmp(shell_buffer, "nettest") == 0) {
             send_arp_request(0x0A000202); 
-            term_print("[NET] ARP Request sent!");
+            term_print("[NET] ARP Request sent!\n");
         }
         else if (strcmp(shell_buffer, "gettime") == 0) {
             send_ntp_request();
         }
         else if (shell_buffer[0] != '\0') {
-            term_print("Unknown command.");
+            term_print("Unknown command.\n");
         }
 
         // Сброс буфера

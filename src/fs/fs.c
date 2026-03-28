@@ -19,7 +19,7 @@ void init_fs() {
     write_sectors_ata_pio(FS_ROOT_DIR_LBA, 1, (uint16_t*)zero_sector);
     
     kfree(zero_sector); // ИСПРАВЛЕНИЕ: Возвращаем память ОС!
-    term_print("FS Initialized (Formatted).");
+    term_print("FS Initialized (Formatted).\n");
 }
 
 void list_files() {
@@ -29,7 +29,7 @@ void list_files() {
     read_sectors_ata_pio((uint64_t)dir, FS_ROOT_DIR_LBA, 1); 
 
     int found = 0;
-    term_print("--- Files on disk ---");
+    term_print("--- Files on disk ---\n");
 
     for (int i = 0; i < MAX_FILES; i++) {
         // Проверяем, что первый символ не 0 и не 0xFF (пустой сектор ATA)
@@ -40,7 +40,7 @@ void list_files() {
     }
 
     if (!found) {
-        term_print("Disk is empty.");
+        term_print("Disk is empty.\n");
     }
     
     kfree(dir); // ИСПРАВЛЕНИЕ: Не забываем освобождать
@@ -80,13 +80,13 @@ void create_file(char* name, char* content) {
             kfree(data);
             kfree(dir);
             
-            term_print("File created.");
+            term_print("File created.\n");
             return;
         }
     }
     
     kfree(dir);
-    term_print("Error: Disk full!");
+    term_print("Error: Disk full!\n");
 }
 
 void read_file(char* name) {
@@ -110,7 +110,7 @@ void read_file(char* name) {
             read_sectors_ata_pio((uint64_t)data, dir[i].start_lba, 1);
             
             data[63] = '\0'; // Ограничим длину вывода (чтобы влезло в экран терминала)
-            term_print("--- File content ---");
+            term_print("--- File content ---\n");
             term_print(data);
             
             kfree(data);
@@ -120,5 +120,5 @@ void read_file(char* name) {
     }
     
     kfree(dir);
-    term_print("File not found.");
+    term_print("File not found.\n");
 }
