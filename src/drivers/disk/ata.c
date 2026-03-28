@@ -9,17 +9,22 @@ static void ata_io_wait() {
     for(int i = 0; i < 4; i++) inb(0x1F7);
 }
 
-static void ata_wait_bsy() {
-    while (inb(0x1F7) & 0x80);
+// Добавь это в ata.c
+static int ata_wait_bsy() {
+    uint32_t timeout = 1000000;
+    while ((inb(0x1F7) & 0x80) && --timeout);
+    return timeout > 0; // Вернет 0, если таймаут вышел
 }
 
-static void ata_wait_drq() {
-    while (!(inb(0x1F7) & 0x08));
+static int ata_wait_drq() {
+    uint32_t timeout = 1000000;
+    while (!(inb(0x1F7) & 0x08) && --timeout);
+    return timeout > 0;
 }
 
 void read_sectors_ata_pio(uint64_t target_address, uint64_t LBA, uint8_t sector_count) {
-    ata_wait_bsy();
-    // slave
+    if (!ata_wait_bsy()) return; // Выход, если диск завис
+
     outb(0x1F6, ATA_MASTER | ((LBA >> 24) & 0x0F));
     outb(0x1F2, sector_count);
     outb(0x1F3, (uint8_t)LBA);
@@ -30,8 +35,7 @@ void read_sectors_ata_pio(uint64_t target_address, uint64_t LBA, uint8_t sector_
     uint16_t* target = (uint16_t*)target_address;
 
     for (int j = 0; j < sector_count; j++) {
-        ata_wait_bsy();
-        ata_wait_drq();
+        if (!ata_wait_bsy() || !ata_wait_drq()) return;
         for (int i = 0; i < 256; i++) {
             target[i] = inw(0x1F0);
         }
