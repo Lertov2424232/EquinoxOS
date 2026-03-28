@@ -72,27 +72,35 @@ void draw_cursor(int x, int y) {
 }
 
 void update_gui() {
-    // 1. Композитор рисует фон, окна и красивые тени
-    gui_compositor_render(); 
+    // 1. Очищаем содержимое терминала (рисуем черный фон ВНУТРИ буфера окна)
+    if (term_win && term_win->active) {
+        gui_window_draw_rect(term_win, 0, 0, term_win->w, term_win->h, 0x000000);
+        
+        // Рисуем строки истории
+        for(int i = 0; i < 8; i++) {
+            gui_window_draw_string(term_win, term_history[i], 10, 10 + (i * 15), 0xAAAAAA);
+        }
+        // Рисуем ввод
+        gui_window_draw_string(term_win, "> ", 10, 10 + (8 * 15), 0xFFFFFF);
+        gui_window_draw_string(term_win, shell_buffer, 26, 10 + (8 * 15), 0x00FF00);
+    }
 
-    // 2. Рисуем текст монитора (обращаемся через стрелочку ->, так как теперь это указатели)
+    // 2. Очищаем и рисуем системный монитор
     if (main_win && main_win->active) {
+        gui_window_draw_rect(main_win, 0, 0, main_win->w, main_win->h, 0xFFFFFF); // Белый фон
         char mem_info[64];
         sprintf(mem_info, "RAM: %d MB", used_memory / 1024 / 1024);
-        vesa_draw_string(mem_info, main_win->x + 15, main_win->y + 15, 0x000000);
+        gui_window_draw_string(main_win, mem_info, 15, 15, 0x000000);
     }
 
-    // 3. Рисуем терминал
-    if (term_win && term_win->active) {
-        draw_rect(term_win->x + 2, term_win->y + 2, term_win->w - 4, term_win->h - 4, 0x000000); 
-        for(int i = 0; i < 8; i++) {
-            vesa_draw_string(term_history[i], term_win->x + 10, term_win->y + 10 + (i * 15), 0xAAAAAA);
-        }
-        vesa_draw_string("> ", term_win->x + 10, term_win->y + 10 + (8 * 15), 0xFFFFFF);
-        vesa_draw_string(shell_buffer, term_win->x + 26, term_win->y + 10 + (8 * 15), 0x00FF00);
-    }
-    
+    // 3. А вот теперь зовем Композитор! 
+    // Он просто возьмет эти готовые буферы и сложит их по слоям.
+    gui_compositor_render(); 
+
+    // 4. Курсор рисуем САМЫМ ПОСЛЕДНИМ в backbuffer, чтобы он был поверх всего
     draw_cursor(mouse_x, mouse_y);
+    
+    vesa_update();
 }
 
 // =========================================================================
