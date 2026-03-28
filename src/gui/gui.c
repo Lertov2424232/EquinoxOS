@@ -60,14 +60,19 @@ static void draw_shadow(int wx, int wy, int ww, int wh) {
 static void handle_mouse_drag(window_t* win) {
     if (!win->active) return;
     
-    // Верхняя панель управления окном (25 пикселей)
     if (mouse_left_button) {
-        if (!win->dragging && mouse_x >= win->x && mouse_x <= win->x + win->w &&
-            mouse_y >= win->y && mouse_y <= win->y + 25) {
+        // Если мы еще не тащим, проверяем: попала ли мышь ВНУТРЬ заголовка?
+        // Заголовок находится от win->y - 25 до win->y
+        if (!win->dragging && 
+            mouse_x >= win->x && mouse_x <= win->x + win->w &&
+            mouse_y >= win->y - 25 && mouse_y <= win->y) {
+            
             win->dragging = true;
             win->drag_off_x = mouse_x - win->x;
             win->drag_off_y = mouse_y - win->y;
-            // TODO: window_bring_to_front(win);
+            
+            // Опционально: выносим окно на передний план (если захочешь)
+            // window_bring_to_front(win); 
         }
     } else {
         win->dragging = false;
@@ -76,6 +81,40 @@ static void handle_mouse_drag(window_t* win) {
     if (win->dragging) {
         win->x = mouse_x - win->drag_off_x;
         win->y = mouse_y - win->drag_off_y;
+    }
+}
+
+// Рисует пиксель внутри буфера окна
+void gui_window_put_pixel(window_t* win, int x, int y, uint32_t color) {
+    if (x < 0 || x >= win->w || y < 0 || y >= win->h) return;
+    win->buffer[y * win->w + x] = color;
+}
+
+// Рисует закрашенный прямоугольник внутри окна
+void gui_window_draw_rect(window_t* win, int x, int y, int w, int h, uint32_t color) {
+    for (int i = y; i < y + h; i++) {
+        for (int j = x; j < x + w; j++) {
+            gui_window_put_pixel(win, j, i, color);
+        }
+    }
+}
+
+// Рисует текст внутри окна
+void gui_window_draw_string(window_t* win, const char* s, int x, int y, uint32_t color) {
+    while (*s) {
+        char c = *s;
+        if (c < 0 || c > 127) { s++; continue; }
+        // Используем твой шрифт 8x8
+        extern uint8_t font8x8_basic[128][8];
+        for (int i = 0; i < 8; i++) {
+            for (int j = 0; j < 8; j++) {
+                if (font8x8_basic[(int)c][i] & (1 << j)) {
+                    gui_window_put_pixel(win, x + j, y + i, color);
+                }
+            }
+        }
+        x += 8;
+        s++;
     }
 }
 
@@ -123,5 +162,5 @@ void gui_compositor_render() {
     // (Пока оставь свою функцию draw_cursor(mouse_x, mouse_y) здесь)
     draw_cursor(mouse_x, mouse_y);
     
-    vesa_update();
+    // vesa_update();
 }
