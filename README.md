@@ -59,6 +59,7 @@ To resolve symbols from the instruction pointer:
 x86_64-elf-addr2line -e kernel.elf <address>
 ```
 
+
 ## Project Status
 The OS is under active development. Development involves the use of LLM-assisted coding as part of the author's workflow. 
 

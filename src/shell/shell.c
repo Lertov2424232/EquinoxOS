@@ -5,6 +5,7 @@
 #include "../fs/fat32.h"
 #include <stdbool.h>
 #include <stdint.h>
+#include "../gui/gui.h"
 
 extern void net_wget();
 extern void term_print(const char* str);
@@ -18,6 +19,7 @@ extern void* kmalloc(size_t size);
 extern bool should_run_app;
 extern void send_arp_request(uint32_t target_ip);
 extern void send_ntp_request();
+extern void show();
 
 // Буфер ввода теперь живет здесь, а не в kernel.c!
 char shell_buffer[64] = {0};
@@ -47,7 +49,7 @@ void shell_handle_char(char c) {
             init_fs();
         }
         else if (strcmp(shell_buffer, "ls") == 0) {
-            list_files();
+            fat32_list_files();
         }
         else if (strcmp(shell_buffer, "touch") == 0) {
             create_file("test.txt", "Hello from EquinoxFS!");
@@ -84,6 +86,19 @@ void shell_handle_char(char c) {
         else if (strcmp(shell_buffer, "gettime") == 0) {
             send_ntp_request();
         }
+        if (memcmp(shell_buffer, "show ", 5) == 0) {
+    if (strlen(shell_buffer) <= 5) {
+        term_print("Usage: show [filename]\n");
+    } else {
+        char* filename = shell_buffer + 5;
+        uint32_t size = 0;
+        uint8_t* data = fat32_read_file(filename, &size);
+        if (data) {
+            bmp_draw_to_window(term_win, data, 10, 50); 
+            kfree(data);
+        }
+    }
+}
         else if (shell_buffer[0] != '\0') {
             term_print("Unknown command.\n");
         }
