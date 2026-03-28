@@ -15,6 +15,7 @@
 #include "system/pmm.h"
 #include "system/memory.h"
 #include "system/timer.h"
+#include "system/task.h"
 
 // --- ДРАЙВЕРЫ ---
 #include "drivers/vga/vesa.h"
@@ -141,27 +142,39 @@ void handle_drag(window_t* win) {
 
 void term_print(const char* str) {
     while (*str) {
+        // Если встретили символ переноса строки
         if (*str == '\n') {
-            // Сдвигаем историю вверх
-            for (int i = 0; i < 7; i++) memcpy(term_history[i], term_history[i+1], 64);
+            // Сдвигаем все строки вверх (освобождаем место снизу)
+            for (int i = 0; i < 7; i++) {
+                memcpy(term_history[i], term_history[i+1], 64);
+            }
+            // Очищаем самую нижнюю строку
             memset(term_history[7], 0, 64);
-        } else {
-            // Добавляем символ в текущую последнюю строку
-            int len = strlen(term_history[7]);
+        } 
+        else {
+            // Ищем конец текущей (последней) строки
+            int len = 0;
+            while (term_history[7][len] != '\0' && len < 63) {
+                len++;
+            }
+
+            // Если в строке еще есть место
             if (len < 63) {
                 term_history[7][len] = *str;
-                term_history[7][len+1] = '\0';
+                term_history[7][len + 1] = '\0';
             } else {
-                // Если строка переполнена, делаем автоперенос
-                for (int i = 0; i < 7; i++) memcpy(term_history[i], term_history[i+1], 64);
+                // Если строка переполнена — принудительный перенос (автоперенос)
+                for (int i = 0; i < 7; i++) {
+                    memcpy(term_history[i], term_history[i+1], 64);
+                }
                 memset(term_history[7], 0, 64);
                 term_history[7][0] = *str;
+                term_history[7][1] = '\0';
             }
         }
         str++;
     }
 }
-
 void* sys_get_file(const char* name, uint64_t* size) {
     if (module_request.response == NULL) return NULL;
     for (uint64_t i = 0; i < module_request.response->module_count; i++) {
@@ -225,6 +238,15 @@ void gui_loop() {
     vesa_update();
 }
 
+void network_thread() {
+    while(1) {
+        rtl8139_receive();
+        // Мы больше не тормозим GUI!
+        // Если пакетов нет, можно чуть-чуть подождать
+        __asm__("pause"); 
+    }
+}
+
 void init_sse() {
     uint64_t cr0;
     __asm__ volatile ("mov %%cr0, %0" : "=r"(cr0));
@@ -243,11 +265,11 @@ void run_elf(uint8_t* elf_data) {
     
     if (hdr->e_ident[0] != 0x7F || hdr->e_ident[1] != 'E' || 
         hdr->e_ident[2] != 'L' || hdr->e_ident[3] != 'F') {
-        term_print("Not a valid ELF file!");
+        term_print("Not a valid ELF file!\n");
         return;
     }
 
-    term_print("Loading ELF segments...");
+    term_print("Loading ELF segments...\n");
 
     Elf64_Phdr* phdr = (Elf64_Phdr*)(elf_data + hdr->e_phoff);
     for (int i = 0; i < hdr->e_phnum; i++) {
@@ -262,7 +284,7 @@ void run_elf(uint8_t* elf_data) {
         }
     }
 
-    term_print("Starting App Window...");
+    term_print("Starting App Window...\n");
     
     app_win.active = true;
     app_win.title = "Snake Game";
@@ -289,7 +311,7 @@ void run_elf(uint8_t* elf_data) {
     
     is_app_running = false;
     app_win.active = false;
-    term_print("App closed.");
+    term_print("App closed.\n");
     
     cr0 |= 0x10000ULL;
     __asm__ volatile ("mov %0, %%cr0" : : "r"(cr0));
@@ -299,12 +321,12 @@ void exec_module() {
     if (module_request.response == NULL) return;
     for (uint64_t i = 0; i < module_request.response->module_count; i++) {
         struct limine_file* mod = module_request.response->modules[i];
-        if (strstr(mod->path, "app.elf")) {
+        if (strstr(mod->path, "app.elf\n")) {
             run_elf(mod->address);
             return;
         }
     }
-    term_print("app.elf not found!");
+    term_print("app.elf not found!\n");
 }
 
 void kmain(void) {
@@ -326,6 +348,8 @@ void kmain(void) {
     pic_remap();
     init_mouse();
     init_timer(100);
+    task_init();
+    task_create(network_thread);
     __asm__("sti");
 
     // 4. Периферия
@@ -338,7 +362,6 @@ void kmain(void) {
     shell_init();
 
     while(1) {
-        rtl8139_receive(); 
         gui_loop();
         
         if (should_run_app) {
@@ -346,6 +369,6 @@ void kmain(void) {
             exec_module();
         }
 
-        // __asm__("hlt");
+        __asm__("hlt");
     }
 }
