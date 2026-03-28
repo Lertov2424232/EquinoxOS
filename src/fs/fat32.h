@@ -1,13 +1,9 @@
-// src/fs/fat32.h
 #ifndef FAT32_H
 #define FAT32_H
 
 #include <stdint.h>
-#include <stddef.h>
 
 #pragma pack(push, 1)
-
-// Структура Boot Sector (BPB)
 typedef struct {
     uint8_t  jump[3];
     char     oem[8];
@@ -23,41 +19,40 @@ typedef struct {
     uint16_t heads;
     uint32_t hidden_sectors;
     uint32_t total_sectors_32;
-    // Специфично для FAT32
+    // FAT32 Extended fields
     uint32_t sectors_per_fat_32;
     uint16_t flags;
     uint16_t fat_version;
     uint32_t root_cluster;
-    uint16_t fs_info_cluster;
+    uint16_t fs_info_sector;
     uint16_t backup_boot_sector;
     uint8_t  reserved[12];
-    uint8_t  drive_number;
+    uint8_t  drive_num;
     uint8_t  reserved1;
-    uint8_t  boot_signature;
+    uint8_t  boot_sig;
     uint32_t volume_id;
     char     volume_label[11];
     char     fs_type[8];
 } fat32_bpb_t;
 
-// Структура записи о файле (Directory Entry)
 typedef struct {
-    char     name[11];         // Имя 8 байт + Расширение 3 байта
-    uint8_t  attributes;
-    uint8_t  reserved;
-    uint8_t  creation_time_tenths;
-    uint16_t creation_time;
-    uint16_t creation_date;
-    uint16_t access_date;
-    uint16_t cluster_high;     // Старшие 16 бит номера кластера
-    uint16_t modify_time;
-    uint16_t modify_date;
-    uint16_t cluster_low;      // Младшие 16 бит номера кластера
-    uint32_t size;             // Размер файла в байтах
-} fat32_dir_entry_t;
-
+    char     name[11];
+    uint8_t  attr;
+    uint8_t  nt_res;
+    uint8_t  crt_time_tenth;
+    uint16_t crt_time;
+    uint16_t crt_date;
+    uint16_t lst_acc_date;
+    uint16_t cluster_high;
+    uint16_t wrt_time;
+    uint16_t wrt_date;
+    uint16_t cluster_low;
+    uint32_t file_size;
+} fat32_entry_t;
 #pragma pack(pop)
 
 void fat32_init(void);
-uint8_t* fat32_read_file(const char* filename, uint32_t* out_size);
+uint8_t* fat32_read_file(const char* name, uint32_t* out_size);
+void fat32_list_files();
 
 #endif
