@@ -20,7 +20,7 @@ static void ata_wait_drq() {
 void read_sectors_ata_pio(uint64_t target_address, uint64_t LBA, uint8_t sector_count) {
     ata_wait_bsy();
     // slave
-    outb(0x1F6, ATA_SLAVE | ((LBA >> 24) & 0x0F));
+    outb(0x1F6, ATA_MASTER | ((LBA >> 24) & 0x0F));
     outb(0x1F2, sector_count);
     outb(0x1F3, (uint8_t)LBA);
     outb(0x1F4, (uint8_t)(LBA >> 8));
