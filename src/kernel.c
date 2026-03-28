@@ -8,6 +8,7 @@
 #include "libc/stdio.h"
 #include "api.h"
 #include "fs/elf.h"
+#include "gui/gui.h"
 
 // --- СИСТЕМНЫЕ ПОДСИСТЕМЫ ---
 #include "system/pic.h"
@@ -28,6 +29,7 @@
 #include "fs/vfs.h"
 #include "fs/fs.h"
 #include "shell/shell.h"
+#include "fs/fat32.h"
 
 // --- ВНЕШНИЕ ПЕРЕМЕННЫЕ И ФУНКЦИИ ---
 extern size_t used_memory; 
@@ -56,19 +58,6 @@ static volatile struct limine_hhdm_request hhdm_request = {
 // (TODO: В будущем вынести в отдельный gui.c / gui.h)
 // =========================================================================
 
-typedef struct {
-    int x, y, w, h;
-    char* title;
-    bool dragging;
-    int off_x, off_y;
-    bool active;       // Видимо ли окно
-    uint32_t* content; // Ссылка на буфер приложения (если есть)
-} window_t;
-
-window_t main_win = {50,  50,  320, 150, "System Monitor", false, 0, 0, true,  NULL};
-window_t term_win = {400, 100, 450, 200, "Terminal",       false, 0, 0, true,  NULL};
-window_t app_win  = {100, 100, 400, 300, "Application",    false, 0, 0, false, NULL};
-
 void draw_cursor(int x, int y) {
     static const int cursor_map[8][8] = {
         {2,0,0,0,0,0,0,0}, {2,2,0,0,0,0,0,0}, {2,1,2,0,0,0,0,0}, {2,1,1,2,0,0,0,0},
@@ -82,58 +71,28 @@ void draw_cursor(int x, int y) {
     }
 }
 
-void draw_window(window_t* win) {
-    if (!win->active) return;
-    
-    // 1. Рисуем тень и заголовок
-    draw_rect(win->x + 4, win->y + 4, win->w, win->h + 25, 0x111111);
-    uint32_t header_col = win->dragging ? 0x0055AA : 0x0078D7;
-    draw_rect(win->x, win->y, win->w, 25, header_col);
-    vesa_draw_string(win->title, win->x + 8, win->y + 6, 0xFFFFFF);
-    
-    // 2. Рисуем тело окна (фон)
-    draw_rect(win->x, win->y + 25, win->w, win->h, 0xCCCCCC);
+void update_gui() {
+    // 1. Композитор рисует фон, окна и красивые тени
+    gui_compositor_render(); 
 
-    // 3. УМНОЕ РИСОВАНИЕ КОНТЕНТА (Clipping)
-    if (win->content) {
-        for (int i = 0; i < win->h; i++) {
-            int draw_y = win->y + 25 + i;
-            if (draw_y < 0 || draw_y >= 600) continue; // Хардкод 600, лучше использовать screen_height!
+    // 2. Рисуем текст монитора (обращаемся через стрелочку ->, так как теперь это указатели)
+    if (main_win && main_win->active) {
+        char mem_info[64];
+        sprintf(mem_info, "RAM: %d MB", used_memory / 1024 / 1024);
+        vesa_draw_string(mem_info, main_win->x + 15, main_win->y + 15, 0x000000);
+    }
 
-            int start_x = win->x;
-            int end_x = win->x + win->w;
-            int offset_in_src = 0;
-
-            if (start_x < 0) { offset_in_src = -start_x; start_x = 0; }
-            if (end_x > 800) { end_x = 800; } // Хардкод 800, лучше использовать screen_width!
-
-            if (start_x < end_x) {
-                int width_to_copy = end_x - start_x;
-                uint32_t* dst = &backbuffer[draw_y * 800 + start_x]; // И тут тоже 800
-                uint32_t* src = &win->content[i * win->w + offset_in_src];
-                memcpy(dst, src, width_to_copy * 4);
-            }
+    // 3. Рисуем терминал
+    if (term_win && term_win->active) {
+        draw_rect(term_win->x + 2, term_win->y + 2, term_win->w - 4, term_win->h - 4, 0x000000); 
+        for(int i = 0; i < 8; i++) {
+            vesa_draw_string(term_history[i], term_win->x + 10, term_win->y + 10 + (i * 15), 0xAAAAAA);
         }
-    }
-}
-
-void handle_drag(window_t* win) {
-    if (!win->active) return;
-    if (mouse_left_button) {
-        if (!win->dragging && mouse_x > win->x && mouse_x < win->x + win->w &&
-            mouse_y > win->y && mouse_y < win->y + 25) {
-            win->dragging = true;
-            win->off_x = mouse_x - win->x;
-            win->off_y = mouse_y - win->y;
-        }
-    } else {
-        win->dragging = false;
+        vesa_draw_string("> ", term_win->x + 10, term_win->y + 10 + (8 * 15), 0xFFFFFF);
+        vesa_draw_string(shell_buffer, term_win->x + 26, term_win->y + 10 + (8 * 15), 0x00FF00);
     }
     
-    if (win->dragging) {
-        win->x = mouse_x - win->off_x;
-        win->y = mouse_y - win->off_y;
-    }
+    draw_cursor(mouse_x, mouse_y);
 }
 
 // =========================================================================
@@ -198,45 +157,18 @@ uint8_t sys_get_scancode() {
 
 // Вызывается приложением для отрисовки
 void sys_draw_app_buffer(int x, int y, int w, int h, uint32_t* buffer) {
-    app_win.content = buffer;
-    app_win.w = w;
-    app_win.h = h;
-    gui_loop(); // Перерисовываем интерфейс
+    if (app_win && app_win->active) {
+        // Копируем пиксели программы в личный буфер окна!
+        for(int i = 0; i < h; i++) {
+            memcpy(&app_win->buffer[i * w], &buffer[i * w], w * 4);
+        }
+    }
+    update_gui(); // Перерисовываем
 }
 
 // =========================================================================
 //                              MAIN LOOPS & INIT
 // =========================================================================
-
-void gui_loop() {
-    handle_drag(&main_win);
-    handle_drag(&term_win);
-    handle_drag(&app_win);
-
-    draw_background();
-
-    // Отрисовка приложения
-    draw_window(&app_win);
-
-    // Монитор системы
-    draw_window(&main_win);
-    char mem_info[64];
-    sprintf(mem_info, "RAM: %d MB", used_memory / 1024 / 1024);
-    vesa_draw_string(mem_info, main_win.x + 15, main_win.y + 45, 0x000000);
-
-    // Терминал
-    draw_window(&term_win);
-    draw_rect(term_win.x + 2, term_win.y + 26, term_win.w - 4, term_win.h - 28, 0x000000); 
-    
-    for(int i = 0; i < 8; i++) {
-        vesa_draw_string(term_history[i], term_win.x + 10, term_win.y + 35 + (i * 15), 0xAAAAAA);
-    }
-    vesa_draw_string("> ", term_win.x + 10, term_win.y + 35 + (8 * 15), 0xFFFFFF);
-    vesa_draw_string(shell_buffer, term_win.x + 26, term_win.y + 35 + (8 * 15), 0x00FF00);
-    
-    draw_cursor(mouse_x, mouse_y);
-    vesa_update();
-}
 
 void network_thread() {
     while(1) {
@@ -286,9 +218,8 @@ void run_elf(uint8_t* elf_data) {
 
     term_print("Starting App Window...\n");
     
-    app_win.active = true;
-    app_win.title = "Snake Game";
-    app_win.content = NULL;
+    app_win->active = true;
+    strcpy(app_win->title, "Snake Game");
     
     EquinoxAPI api;
     api.draw_buffer = sys_draw_app_buffer;
@@ -310,7 +241,7 @@ void run_elf(uint8_t* elf_data) {
     entry(&api);
     
     is_app_running = false;
-    app_win.active = false;
+    app_win->active = false;
     term_print("App closed.\n");
     
     cr0 |= 0x10000ULL;
@@ -350,11 +281,14 @@ void kmain(void) {
     init_timer(100);
     task_init();
     task_create(network_thread);
+    fat32_init();
     __asm__("sti");
 
     // 4. Периферия
     pci_init();
     rtl8139_install_vfs(); 
+
+    gui_init(); 
 
     printf("EquinoxOS Booted. Memory: %d MB free\n", free_memory / 1024 / 1024);
     printf("Devices registered: /dev/fb0, /dev/net\n");
@@ -362,7 +296,7 @@ void kmain(void) {
     shell_init();
 
     while(1) {
-        gui_loop();
+        update_gui();
         
         if (should_run_app) {
             should_run_app = false;

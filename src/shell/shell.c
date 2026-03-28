@@ -2,6 +2,7 @@
 #include "../libc/string.h"
 #include "../libc/stdio.h"
 #include "../api.h" // Если нужно
+#include "../fs/fat32.h"
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -52,7 +53,15 @@ void shell_handle_char(char c) {
             create_file("test.txt", "Hello from EquinoxFS!");
         }
         else if (strcmp(shell_buffer, "cat") == 0) {
-            read_file("test.txt");
+            uint32_t size;
+            uint8_t* file_data = fat32_read_file("test.txt", &size);
+            if (file_data) {
+                file_data[size] = '\0'; // Гарантируем конец строки
+                term_print((char*)file_data);
+                kfree(file_data);
+            } else {
+            term_print("File not found!\n");
+            }
         }
         else if (strcmp(shell_buffer, "clear") == 0) {
             for(int i=0; i<8; i++) 
