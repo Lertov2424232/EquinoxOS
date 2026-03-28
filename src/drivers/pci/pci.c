@@ -54,7 +54,7 @@ static void pci_check_device(uint8_t bus, uint8_t slot) {
 
     // --- 1. Realtek RTL8139 (Сетевая карта) ---
     if (vendor == 0x10EC && device == 0x8139) {
-        term_print("[PCI] Found Realtek RTL8139 Network Card!");
+        term_print("[PCI] Found Realtek RTL8139 Network Card!\n");
         
         // Читаем Command Register
         uint16_t command = pci_read_dword(bus, slot, 0, PCI_REG_COMMAND) & 0xFFFF;
@@ -62,7 +62,7 @@ static void pci_check_device(uint8_t bus, uint8_t slot) {
         // Включаем Bus Mastering (для DMA) и I/O Space (для портов) разом
         command |= (PCI_CMD_IO_SPACE | PCI_CMD_BUS_MASTER); 
         pci_write_word(bus, slot, 0, PCI_REG_COMMAND, command);
-        term_print("[PCI] RTL8139 Bus Mastering and I/O Enabled.");
+        term_print("[PCI] RTL8139 Bus Mastering and I/O Enabled.\n");
 
         // Читаем базовый адрес (BAR0) и передаем в драйвер
         uint32_t bar0 = pci_read_dword(bus, slot, 0, PCI_REG_BAR0);
@@ -75,7 +75,7 @@ static void pci_check_device(uint8_t bus, uint8_t slot) {
 }
 
 void pci_init() {
-    term_print("[PCI] Scanning buses...");
+    term_print("[PCI] Scanning buses...\n");
     
     // Перебираем все шины (0-255) и все слоты (0-31)
     for (uint16_t bus = 0; bus < 256; bus++) {
@@ -84,5 +84,5 @@ void pci_init() {
         }
     }
     
-    term_print("[PCI] Scan complete.");
+    term_print("[PCI] Scan complete.\n");
 }

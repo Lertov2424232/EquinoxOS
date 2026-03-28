@@ -174,5 +174,5 @@ void init_mouse() {
     mouse_write(MOUSE_CMD_ENABLE_DATA);
     mouse_read();
 
-    term_print("[SYS] PS/2 Mouse Initialized");
+    term_print("[SYS] PS/2 Mouse Initialized\n");
 }

@@ -6,6 +6,7 @@
 [extern schedule]
 [extern current_task]
 [extern tasks]
+[extern schedule]
 
 %macro SAVE_REGS 0
     push rax
@@ -144,3 +145,52 @@ isr_stub_table:
 [global current_task]
 [global tasks]
 [global schedule]
+[global irq0_handler_asm]
+irq0_handler_asm:
+    ; 1. Сохраняем все регистры общего назначения
+    push rax
+    push rbx
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    push rbp
+    push r8
+    push r9
+    push r10
+    push r11
+    push r12
+    push r13
+    push r14
+    push r15
+
+    ; 2. Передаем текущий RSP (указатель на этот кадр) в функцию schedule
+    mov rdi, rsp
+    call schedule
+    
+    ; 3. Функция schedule вернула нам RSP новой задачи в RAX
+    mov rsp, rax
+
+    ; 4. Сигнализируем PIC о конце прерывания (EOI)
+    mov al, 0x20
+    out 0x20, al
+
+    ; 5. Восстанавливаем регистры новой задачи
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rbp
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    pop rbx
+    pop rax
+
+    ; 6. Возвращаемся из прерывания (процессор сам загрузит RIP, CS, RFLAGS, RSP)
+    iretq

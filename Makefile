@@ -21,9 +21,9 @@ ASMFLAGS = -f elf64
 APP_CFLAGS = -ffreestanding -O2 -nostdlib -fno-pic -mno-red-zone -Isrc
 
 OBJ_DIR = obj
-OBJ = $(OBJ_DIR)/kernel.o $(OBJ_DIR)/io.o $(OBJ_DIR)/keyboard.o $(OBJ_DIR)/rtl8139.o $(OBJ_DIR)/vfs.o \
+OBJ = $(OBJ_DIR)/kernel.o $(OBJ_DIR)/io.o $(OBJ_DIR)/keyboard.o $(OBJ_DIR)/rtl8139.o $(OBJ_DIR)/vfs.o $(OBJ_DIR)/gui.o \
       $(OBJ_DIR)/gdt_flush.o $(OBJ_DIR)/idt.o $(OBJ_DIR)/stdio.o $(OBJ_DIR)/pci.o $(OBJ_DIR)/pmm.o $(OBJ_DIR)/shell.o \
-      $(OBJ_DIR)/pic.o $(OBJ_DIR)/interrupt.o $(OBJ_DIR)/timer.o $(OBJ_DIR)/ata.o $(OBJ_DIR)/bmp.o \
+      $(OBJ_DIR)/pic.o $(OBJ_DIR)/interrupt.o $(OBJ_DIR)/timer.o $(OBJ_DIR)/ata.o $(OBJ_DIR)/bmp.o $(OBJ_DIR)/task.o \
       $(OBJ_DIR)/memory.o $(OBJ_DIR)/fs.o $(OBJ_DIR)/vesa.o $(OBJ_DIR)/mouse.o $(OBJ_DIR)/string.o $(OBJ_DIR)/panic.o
 
 all: setup kernel.elf
@@ -54,6 +54,8 @@ $(OBJ_DIR)/%.o: src/drivers/vga/%.c
 $(OBJ_DIR)/%.o: src/libc/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 $(OBJ_DIR)/%.o: src/io/%.c
+	$(CC) $(CFLAGS) -c $< -o $@
+$(OBJ_DIR)/gui.o: src/gui/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 $(OBJ_DIR)/%.o: src/drivers/mouse/%.c
 	$(CC) $(CFLAGS) -c $< -o $@

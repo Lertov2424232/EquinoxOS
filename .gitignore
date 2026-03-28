@@ -6,4 +6,4 @@ obj/
 .vscode/
 *.swp
 *~
-push.bat
+test.bin
