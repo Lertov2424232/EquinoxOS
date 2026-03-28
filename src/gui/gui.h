@@ -23,5 +23,6 @@ void gui_compositor_render(void);
 // Глобальные указатели на системные окна (пока оставим их)
 extern window_t* term_win;
 extern window_t* main_win;
+extern window_t* app_win;
 
 #endif

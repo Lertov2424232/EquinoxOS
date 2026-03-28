@@ -8,11 +8,14 @@ window_t* window_list_head = NULL;
 
 window_t* term_win = NULL;
 window_t* main_win = NULL;
+window_t* app_win = NULL;
 
 void gui_init() {
-    // Создаем окна динамически!
     main_win = window_create(50, 50, 320, 150, "System Monitor");
     term_win = window_create(400, 100, 450, 200, "Terminal");
+    
+    app_win = window_create(100, 100, 400, 300, "Application");
+    app_win->active = false; // Прячем до запуска приложения
 }
 
 window_t* window_create(int x, int y, int w, int h, const char* title) {
@@ -118,7 +121,7 @@ void gui_compositor_render() {
 
     // Рисуем курсор поверх всего
     // (Пока оставь свою функцию draw_cursor(mouse_x, mouse_y) здесь)
-    // draw_cursor(mouse_x, mouse_y);
+    draw_cursor(mouse_x, mouse_y);
     
     vesa_update();
 }
