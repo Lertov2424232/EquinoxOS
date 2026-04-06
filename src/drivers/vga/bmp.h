@@ -2,7 +2,7 @@
 #define BMP_H
 
 #include <stdint.h>
-#include "gui/gui.h" // Чтобы заголовок знал про window_t
+#include "../../gui/gui.h" // Чтобы заголовок знал про window_t
 
 #pragma pack(push, 1)
 typedef struct {

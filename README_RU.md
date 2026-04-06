@@ -75,3 +75,9 @@ x86_64-elf-addr2line -e kernel.elf <address>
 ## Статус проекта
 
 ОС находится в стадии активной разработки. В процессе написания кода автор использует вспомогательные инструменты на базе LLM.
+
+![EquinoxOS Screenshot](https://github.com/user-attachments/assets/174f378b-0b7b-4c7c-9fc7-81c8c918355c)
+
+***
+
+Отдельное огромное спасибо моему другу @oxtiskz
