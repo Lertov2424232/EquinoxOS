@@ -17,7 +17,7 @@ void send_ntp_request();
 uint16_t ip_checksum(void* vdata, uint32_t length);
 void rtl8139_receive();
 void send_arp_reply(uint8_t* dest_mac, uint32_t dest_ip);
-
+void rtl8139_install_vfs(void);
 // Теперь компилятор поймет, что это та же самая структура, что и в vfs.h
 uint32_t rtl8139_vfs_write(struct vfs_node* node, uint32_t offset, uint32_t size, uint8_t* buffer);
 // В rtl8139.h
