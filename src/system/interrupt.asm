@@ -131,20 +131,6 @@ mouse_handler:
     RESTORE_REGS
     iretq
 
-; --- СЕКЦИЯ ДАННЫХ ---
-section .data
-[global isr_stub_table]
-isr_stub_table:
-%assign i 0
-%rep 32
-    dq isr%+i
-%assign i i+1
-%endrep
-
-
-[global current_task]
-[global tasks]
-[global schedule]
 [global irq0_handler_asm]
 irq0_handler_asm:
     ; 1. Сохраняем все регистры общего назначения
@@ -194,3 +180,18 @@ irq0_handler_asm:
 
     ; 6. Возвращаемся из прерывания (процессор сам загрузит RIP, CS, RFLAGS, RSP)
     iretq
+
+; --- СЕКЦИЯ ДАННЫХ ---
+section .data
+[global isr_stub_table]
+isr_stub_table:
+%assign i 0
+%rep 32
+    dq isr%+i
+%assign i i+1
+%endrep
+
+
+[global current_task]
+[global tasks]
+[global schedule]

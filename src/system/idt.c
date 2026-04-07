@@ -7,6 +7,7 @@ extern uint64_t isr_stub_table[];
 extern void keyboard_handler();
 extern void timer_handler();
 extern void mouse_handler();
+extern void irq0_handler_asm();
 
 void set_idt_gate(int n, uint64_t handler, uint16_t sel) {
     idt[n].low_offset = (uint16_t)(handler & 0xFFFF);
@@ -30,7 +31,7 @@ void init_idt() {
     }
 
     // Заглушки для IRQ
-    set_idt_gate(32, (uint64_t)timer_handler, sel);
+    set_idt_gate(32, (uint64_t)irq0_handler_asm, sel);
     set_idt_gate(33, (uint64_t)keyboard_handler, sel);
     set_idt_gate(44, (uint64_t)mouse_handler, sel);
 
