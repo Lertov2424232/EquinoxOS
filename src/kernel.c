@@ -41,6 +41,7 @@ bool is_app_running = false;
 bool should_run_app = false; 
 char term_history[8][64] = {0};
 volatile uint8_t last_scancode = 0;
+static EquinoxAPI app_api;
 
 // --- LIMINE REQUESTS ---
 static volatile struct limine_framebuffer_request framebuffer_request = {
@@ -423,36 +424,25 @@ void run_elf(uint8_t* elf_data) {
         }
     }
 
-    term_print("Starting App Window...\n");
-    
-    app_win->active = true;
     strcpy(app_win->title, "Snake Game");
     
     EquinoxAPI api;
-    api.draw_buffer = sys_draw_app_buffer;
-    api.get_scancode = sys_get_scancode;
-    api.get_time_ms = sys_get_time_ms;
-    
-    typedef void (*app_entry_t)(EquinoxAPI*);
-    app_entry_t entry = (app_entry_t)hdr->e_entry;
-    
-    is_app_running = true;
-    
-    // Включаем запись в защищенную память (Ring 0 bypass)
-    uint64_t cr0;
-    __asm__ volatile ("mov %%cr0, %0" : "=r"(cr0));
-    cr0 &= ~0x10000ULL; 
-    __asm__ volatile ("mov %0, %%cr0" : : "r"(cr0));
+    app_api.draw_buffer = sys_draw_app_buffer;
+    app_api.get_scancode = sys_get_scancode;
+    app_api.get_time_ms = sys_get_time_ms;
+    app_api.print = term_print; // Теперь змейка может писать в терминал!
 
-    // Выполнение приложения
-    entry(&api);
+    term_print("Task created for App. Switching...\n");
     
-    is_app_running = false;
-    app_win->active = false;
-    term_print("App closed.\n");
-    
-    cr0 |= 0x10000ULL;
-    __asm__ volatile ("mov %0, %%cr0" : : "r"(cr0));
+    app_win->active = true;
+    strcpy(app_win->title, "Snake Game (Multitasking)");
+
+    // Вместо entry(&api) делаем:
+    task_create((void(*)())hdr->e_entry, &app_api);
+
+    // ВАЖНО: Мы НЕ вызываем entry здесь. 
+    // Планировщик сам переключится на нее через 10мс.
+    is_app_running = true; 
 }
 
 void exec_module() {
@@ -487,7 +477,7 @@ void kmain(void) {
     init_mouse();
     init_timer(100);
     task_init();
-    task_create(network_thread);
+    task_create(network_thread, NULL);
     __asm__("sti");
 
     fat32_init();

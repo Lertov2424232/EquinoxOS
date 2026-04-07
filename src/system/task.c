@@ -16,31 +16,28 @@ void task_init() {
     task_list = current_task;
 }
 
-void task_create(void (*entry)()) {
+void task_create(void (*entry)(), void* arg) {
     task_t* new_task = (task_t*)kmalloc(sizeof(task_t));
     
-    // Выделяем 16 КБ под стек новой задачи через твой PMM
     uint64_t stack_phys = (uint64_t)pmm_alloc_continuous(4); 
-    uint64_t stack_virt = stack_phys + 0xffff800000000000; // HHDM смещение
+    uint64_t stack_virt = stack_phys + 0xffff800000000000;
     
-    // Очищаем стек
     memset((void*)stack_virt, 0, 16384);
 
-    // Подготавливаем стек так, будто по нему только что ударило прерывание
-    // Мы "рисуем" stack_frame_t в конце выделенного стека
     stack_frame_t* frame = (stack_frame_t*)(stack_virt + 16384 - sizeof(stack_frame_t));
     
     frame->rip = (uint64_t)entry;
-    frame->cs = 0x08;         // Сегмент кода ядра
-    frame->ss = 0x10;         // Сегмент данных ядра
-    frame->rflags = 0x202;    // Прерывания разрешены (IF=1)
-    frame->rsp = stack_virt + 16384; 
+    frame->rdi = (uint64_t)arg; // КРИТИЧНО: передаем указатель на API в приложение
+    frame->cs = 0x08;
+    frame->ss = 0x10;
+    frame->rflags = 0x202; // IF=1 (прерывания разрешены)
+    frame->rsp = (uint64_t)frame; // Для корректного восстановления
 
     new_task->rsp = (uint64_t)frame;
     new_task->id = next_pid++;
     new_task->running = true;
 
-    // Вставляем в круговой список
+    // Вставка в список
     new_task->next = task_list->next;
     task_list->next = new_task;
 }

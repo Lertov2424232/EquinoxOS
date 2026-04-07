@@ -20,7 +20,7 @@ typedef struct task {
 } task_t;
 
 void task_init();
-void task_create(void (*entry)());
+void task_create(void (*entry)(), void* arg);
 uint64_t schedule(uint64_t current_rsp); // Вызывается из ассемблера
 
 #endif
