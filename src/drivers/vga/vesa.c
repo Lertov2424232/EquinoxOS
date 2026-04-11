@@ -50,13 +50,18 @@ void draw_background() {
 
 
 void draw_rect(int x, int y, int w, int h, uint32_t color) {
-    for (int i = y; i < y + h; i++) {
-        for (int j = x; j < x + w; j++) {
-            put_pixel(j, i, color);
+    int start_x = (x < 0) ? 0 : x;
+    int start_y = (y < 0) ? 0 : y;
+    int end_x = (x + w > (int)screen_width) ? (int)screen_width : x + w;
+    int end_y = (y + h > (int)screen_height) ? (int)screen_height : y + h;
+
+    for (int i = start_y; i < end_y; i++) {
+        uint32_t* row = &backbuffer[i * screen_width];
+        for (int j = start_x; j < end_x; j++) {
+            row[j] = color;
         }
     }
 }
-
 // Вспомогательная функция для смешивания цветов
 static uint32_t blend(uint32_t color_bg, uint32_t color_fg, uint8_t alpha) {
     uint32_t rb = (((color_fg & 0xFF00FF) * alpha) + ((color_bg & 0xFF00FF) * (255 - alpha))) >> 8;
@@ -199,16 +204,10 @@ void put_pixel_direct(int x, int y, uint32_t color) {
     *pixel_ptr = color;
 }
 
-void draw_rect(int x, int y, int w, int h, uint32_t color) {
-    int start_x = (x < 0) ? 0 : x;
-    int start_y = (y < 0) ? 0 : y;
-    int end_x = (x + w > (int)screen_width) ? (int)screen_width : x + w;
-    int end_y = (y + h > (int)screen_height) ? (int)screen_height : y + h;
-
-    for (int i = start_y; i < end_y; i++) {
-        uint32_t* row = &backbuffer[i * screen_width];
-        for (int j = start_x; j < end_x; j++) {
-            row[j] = color;
+void draw_rect_direct(int x, int y, int w, int h, uint32_t color) {
+    for (int i = y; i < y + h; i++) {
+        for (int j = x; j < x + w; j++) {
+            put_pixel_direct(j, i, color);
         }
     }
 }
