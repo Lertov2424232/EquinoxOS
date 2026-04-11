@@ -140,3 +140,12 @@ int memcmp(const void* s1, const void* s2, size_t n) {
     }
     return 0;
 }
+
+char* strcat(char* dest, const char* src) {
+    char* ptr = dest + strlen(dest);
+    while (*src) {
+        *ptr++ = *src++;
+    }
+    *ptr = '\0';
+    return dest;
+}

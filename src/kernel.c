@@ -36,6 +36,7 @@ extern size_t used_memory;
 extern volatile uint32_t tick;
 extern char shell_buffer[64];
 uint64_t hhdm_offset;
+static fat32_file_info_t real_files[16];
 
 // --- ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ---
 bool is_app_running = false;
@@ -243,14 +244,10 @@ void update_gui() {
 
         // Scan files on first open or refresh click
         if (!explorer_scanned) {
-            explorer_file_count = 0;
-            // Add device entries
-            strcpy(explorer_files[explorer_file_count++], "[dev] fb0");
-            strcpy(explorer_files[explorer_file_count++], "[dev] net");
-            // TODO: real fat32 file listing could go here
+            explorer_file_count = fat32_get_files(real_files, 16);
             explorer_scanned = true;
         }
-
+        
         // Refresh button click
         if (mouse_just_pressed) {
             int rx = mouse_x - explorer_win->x;
@@ -262,16 +259,21 @@ void update_gui() {
 
         // Draw file list with icons
         int y_off = 30;
-        for(int i = 0; i < explorer_file_count && y_off < explorer_win->h - 10; i++) {
-            // Alternate row background
-            if (i % 2 == 0)
-                gui_window_draw_rect(explorer_win, 0, y_off - 2, explorer_win->w, 18, 0xF8F8F8);
-            // Folder/device icon (small colored square)
-            uint32_t ic = (explorer_files[i][0] == '[') ? 0x0078D7 : 0xF0C040;
-            gui_window_draw_rect(explorer_win, 8, y_off, 12, 12, ic);
-            gui_window_draw_string(explorer_win, explorer_files[i], 26, y_off + 2, 0x222222);
-            y_off += 18;
-        }
+    for(int i = 0; i < explorer_file_count; i++) {
+        if (i % 2 == 0) gui_window_draw_rect(explorer_win, 0, y_off - 2, explorer_win->w, 18, 0xF0F0F0);
+        
+        // Рисуем иконку в зависимости от расширения
+        uint32_t icon_color = 0xF0C040; // Желтый для файлов
+        if (strstr(real_files[i].name, ".BMP")) icon_color = 0xFF00FF; // Розовый для картинок
+        
+        gui_window_draw_rect(explorer_win, 8, y_off, 12, 12, icon_color);
+        
+        char file_info[32];
+        sprintf(file_info, "%s  (%d bytes)", real_files[i].name, real_files[i].size);
+        gui_window_draw_string(explorer_win, file_info, 26, y_off + 2, 0x222222);
+        
+        y_off += 18;
+    }
 
         if (explorer_file_count == 0) {
             gui_window_draw_string(explorer_win, "No files found", 26, 40, 0x999999);
@@ -286,7 +288,26 @@ void update_gui() {
         gui_window_draw_string(notepad_win, "Notepad - EquinoxOS", 8, 5, 0x333333);
         // Separator
         gui_window_draw_rect(notepad_win, 0, 18, notepad_win->w, 1, 0xCCCCCC);
-        // Text content
+        gui_window_draw_rect(notepad_win, notepad_win->w - 80, 2, 50, 15, 0x228B22); // Лесной зеленый
+        gui_window_draw_string(notepad_win, "SAVE", notepad_win->w - 75, 6, 0xFFFFFF);
+        if (mouse_left_button && !prev_mouse_left) {
+        int rx = mouse_x - notepad_win->x;
+        int ry = mouse_y - notepad_win->y;
+        
+        // Проверка нажатия на SAVE
+        if (rx >= notepad_win->w - 80 && rx < notepad_win->w - 30 && ry >= 2 && ry < 17) {
+            char save_buffer[2048] = {0};
+            for (int i = 0; i <= notepad_line; i++) {
+                strcat(save_buffer, notepad_buf[i]);
+                strcat(save_buffer, "\n");
+            }
+            // Сохраняем как NOTES.TXT
+            fat32_save_file("NOTES", save_buffer, strlen(save_buffer));
+            
+            // Заставляем Explorer пересканировать диск
+            explorer_scanned = false; 
+        }
+    }
         for(int i = 0; i < NOTEPAD_MAX_LINES; i++) {
             gui_window_draw_string(notepad_win, notepad_buf[i], 8, 22 + i * 14, 0x000000);
         }
