@@ -95,4 +95,4 @@ limine:
 	.\limine.exe bios-install equos.iso
 
 run:
-	qemu-system-x86_64 -m 128M -drive file=hdd.img,format=raw,index=0,media=disk -cdrom equos.iso -serial stdio -netdev user,id=n0,hostfwd=tcp::2222-:22 -device rtl8139,netdev=n0 -object filter-dump,id=f1,netdev=n0,file=packets.pcap
+	qemu-system-x86_64 -m 128M -boot d -drive file=hdd.img,format=raw,index=0,media=disk -cdrom equos.iso -serial stdio -netdev user,id=n0,hostfwd=tcp::2222-:22 -device rtl8139,netdev=n0 -object filter-dump,id=f1,netdev=n0,file=packets.pcap

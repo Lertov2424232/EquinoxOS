@@ -15,6 +15,7 @@ int strcmp(const char* s1, const char* s2);
 char* strcpy(char* dest, const char* src);
 int memcmp(const void* s1, const void* s2, size_t n);
 char* strstr(const char* haystack, const char* needle);
+char* strcat(char* dest, const char* src);
 
 // Конвертация чисел в строки (супер-важно для будущего printf!)
 void itoa(int64_t num, int base, char* buffer);
