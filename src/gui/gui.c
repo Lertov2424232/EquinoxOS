@@ -1,8 +1,8 @@
 #include "gui.h"
-#include "system/memory.h"
-#include "drivers/vga/vesa.h"
-#include "drivers/mouse/mouse.h"
-#include "libc/string.h"
+#include "../system/memory.h"
+#include "../drivers/vga/vesa.h"
+#include "../drivers/mouse/mouse.h"
+#include "../libc/string.h"
 
 window_t* window_list_head = NULL;
 
@@ -314,7 +314,7 @@ void gui_compositor_render() {
         if (curr->active) {
             handle_mouse_drag(curr);
 
-            draw_shadow(curr->x, curr->y, curr->w, curr->h);
+            // draw_shadow(curr->x, curr->y, curr->w, curr->h);
 
             // Title bar
             uint32_t header_col = curr->dragging ? 0x0055AA : 0x0078D7;

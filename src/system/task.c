@@ -6,6 +6,8 @@
 static task_t* current_task = NULL;
 static task_t* task_list = NULL;
 static uint64_t next_pid = 1;
+extern uint64_t hhdm_offset;
+
 
 void task_init() {
     // Создаем "задачу" для самого ядра
@@ -20,7 +22,7 @@ void task_create(void (*entry)(), void* arg) {
     task_t* new_task = (task_t*)kmalloc(sizeof(task_t));
     
     uint64_t stack_phys = (uint64_t)pmm_alloc_continuous(4); 
-    uint64_t stack_virt = stack_phys + 0xffff800000000000;
+    uint64_t stack_virt = stack_phys + hhdm_offset;
     
     memset((void*)stack_virt, 0, 16384);
 
@@ -28,8 +30,8 @@ void task_create(void (*entry)(), void* arg) {
     
     frame->rip = (uint64_t)entry;
     frame->rdi = (uint64_t)arg; // КРИТИЧНО: передаем указатель на API в приложение
-    frame->cs = 0x08;
-    frame->ss = 0x10;
+    frame->cs = 0x28;
+    frame->ss = 0x30;
     frame->rflags = 0x202; // IF=1 (прерывания разрешены)
     frame->rsp = (uint64_t)frame; // Для корректного восстановления
 
@@ -54,4 +56,8 @@ uint64_t schedule(uint64_t current_rsp) {
 
     // Возвращаем ассемблеру указатель на новый стек
     return current_task->rsp;
+}
+
+void yield(void) {
+    __asm__ volatile ("int $32"); // Вызываем обработчик таймера (IRQ0)
 }

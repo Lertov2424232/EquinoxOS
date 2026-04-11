@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include "net.h"
+#include <stdbool.h>
 
 // 1. Опережающее объявление, чтобы компилятор знал, что такая структура существует
 struct vfs_node; 
@@ -24,5 +25,6 @@ uint32_t rtl8139_vfs_write(struct vfs_node* node, uint32_t offset, uint32_t size
 uint16_t tcp_checksum(ipv4_header_t* ip, tcp_header_t* tcp, uint8_t* payload, uint32_t payload_len);
 void send_tcp(uint8_t flags, uint8_t* payload, uint32_t payload_len);
 void net_wget();
+bool rtl8139_has_data();
 
 #endif

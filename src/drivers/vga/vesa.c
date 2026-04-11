@@ -10,6 +10,7 @@ uint32_t screen_width;
 uint32_t screen_height;
 uint32_t screen_pitch;
 uint32_t* backbuffer;
+static uint32_t* cached_bg = NULL;
 
 // =========================================================================
 //                              ОСНОВНАЯ ГРАФИКА (ДВОЙНАЯ БУФЕРИЗАЦИЯ)
@@ -32,18 +33,32 @@ void put_pixel(int x, int y, uint32_t color) {
 }
 
 void draw_background() {
-    for (int y = 0; y < (int)screen_height; y++) {
-        for (int x = 0; x < (int)screen_width; x++) {
+    // Вычисляем каждый пиксель только ОДИН раз при запуске
+    if (!cached_bg) {
+        cached_bg = (uint32_t*)kmalloc(screen_width * screen_height * 4);
+        for (int y = 0; y < (int)screen_height; y++) {
             uint32_t blue = 100 + (y / 10); 
-            put_pixel(x, y, (blue << 0) | (50 << 8) | (30 << 16));
+            uint32_t color = (blue << 0) | (50 << 8) | (30 << 16);
+            for (int x = 0; x < (int)screen_width; x++) {
+                cached_bg[y * screen_width + x] = color;
+            }
         }
     }
+    // Вместо сотен тысяч вызовов put_pixel просто копируем готовый буфер!
+    memcpy(backbuffer, cached_bg, screen_width * screen_height * 4);
 }
 
+
 void draw_rect(int x, int y, int w, int h, uint32_t color) {
-    for (int i = y; i < y + h; i++) {
-        for (int j = x; j < x + w; j++) {
-            put_pixel(j, i, color);
+    int start_x = (x < 0) ? 0 : x;
+    int start_y = (y < 0) ? 0 : y;
+    int end_x = (x + w > (int)screen_width) ? (int)screen_width : x + w;
+    int end_y = (y + h > (int)screen_height) ? (int)screen_height : y + h;
+
+    for (int i = start_y; i < end_y; i++) {
+        uint32_t* row = &backbuffer[i * screen_width];
+        for (int j = start_x; j < end_x; j++) {
+            row[j] = color;
         }
     }
 }
@@ -124,9 +139,15 @@ void vesa_update() {
     uint8_t* dst = (uint8_t*)fb_base_addr;
     uint8_t* src = (uint8_t*)backbuffer;
 
-    for (uint32_t i = 0; i < screen_height; i++) {
-        // Копируем построчно, учитывая pitch видеокарты (он может отличаться от width * 4)
-        memcpy(dst + (i * screen_pitch), src + (i * screen_width * 4), screen_width * 4);
+    // Если Pitch равен ширине*4 (а у Limine в 99% случаев это так), 
+    // мы можем скопировать ВЕСЬ ЭКРАН за 1 вызов memcpy! Это сверхбыстро.
+    if (screen_pitch == screen_width * 4) {
+        memcpy(dst, src, screen_height * screen_width * 4);
+    } else {
+        // Запасной вариант для нестандартных разрешений
+        for (uint32_t i = 0; i < screen_height; i++) {
+            memcpy(dst + (i * screen_pitch), src + (i * screen_width * 4), screen_width * 4);
+        }
     }
 }
 

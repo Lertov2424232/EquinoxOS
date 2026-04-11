@@ -1,7 +1,8 @@
 #include "fat32.h"
-#include "drivers/disk/ata.h"
-#include "system/memory.h"
-#include "libc/string.h"
+#include "../drivers/disk/ata.h"
+#include "../system/memory.h"
+#include "../libc/string.h"
+#include "../drivers/vga/vesa.h"
 
 static uint32_t part_lba = 0;
 static fat32_bpb_t bpb;
