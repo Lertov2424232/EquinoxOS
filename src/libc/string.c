@@ -2,22 +2,20 @@
 
 // Копирует блок памяти из src в dest
 void* memcpy(void* dest, const void* src, size_t n) {
-    uint64_t* d64 = (uint64_t*)dest;
-    const uint64_t* s64 = (const uint64_t*)src;
-
+    uint64_t* d = (uint64_t*)dest;
+    const uint64_t* s = (const uint64_t*)src;
+    
     // Копируем по 8 байт
-    size_t n64 = n / 8;
-    for (size_t i = 0; i < n64; i++) {
-        d64[i] = s64[i];
+    while (n >= 8) {
+        *d++ = *s++;
+        n -= 8;
     }
-
-    // Докопируем остаток (если n не кратно 8)
-    uint8_t* d8 = (uint8_t*)(d64 + n64);
-    const uint8_t* s8 = (const uint8_t*)(s64 + n64);
-    for (size_t i = 0; i < (n % 8); i++) {
-        d8[i] = s8[i];
-    }
-
+    
+    // Остаток докопируем по байтам
+    uint8_t* d2 = (uint8_t*)d;
+    uint8_t* s2 = (uint8_t*)s;
+    while (n--) *d2++ = *s2++;
+    
     return dest;
 }
 

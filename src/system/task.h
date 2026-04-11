@@ -22,5 +22,6 @@ typedef struct task {
 void task_init();
 void task_create(void (*entry)(), void* arg);
 uint64_t schedule(uint64_t current_rsp); // Вызывается из ассемблера
+void yield(void);
 
 #endif

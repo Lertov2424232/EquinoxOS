@@ -133,7 +133,9 @@ mouse_handler:
 
 [global irq0_handler_asm]
 irq0_handler_asm:
-    ; 1. Сохраняем все регистры общего назначения
+    push qword 0      ; fake error code
+    push qword 32     ; interrupt number
+    
     push rax
     push rbx
     push rcx
@@ -150,18 +152,15 @@ irq0_handler_asm:
     push r14
     push r15
 
-    ; 2. Передаем текущий RSP (указатель на этот кадр) в функцию schedule
-    mov rdi, rsp
-    call schedule
+    mov rdi, rsp      ; Передаем текущий RSP как аргумент
+    call schedule     ; schedule вернет новый RSP в RAX
     
-    ; 3. Функция schedule вернула нам RSP новой задачи в RAX
-    mov rsp, rax
+    mov rsp, rax      ; Переключаем стек
 
-    ; 4. Сигнализируем PIC о конце прерывания (EOI)
+    ; Сигнал контроллеру прерываний (EOI)
     mov al, 0x20
     out 0x20, al
 
-    ; 5. Восстанавливаем регистры новой задачи
     pop r15
     pop r14
     pop r13
@@ -177,10 +176,9 @@ irq0_handler_asm:
     pop rcx
     pop rbx
     pop rax
-
-    ; 6. Возвращаемся из прерывания (процессор сам загрузит RIP, CS, RFLAGS, RSP)
+    
+    add rsp, 16       ; Чистим fake error и int num
     iretq
-
 ; --- СЕКЦИЯ ДАННЫХ ---
 section .data
 [global isr_stub_table]
@@ -190,8 +188,3 @@ isr_stub_table:
     dq isr%+i
 %assign i i+1
 %endrep
-
-
-[global current_task]
-[global tasks]
-[global schedule]
