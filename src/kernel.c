@@ -35,6 +35,7 @@
 extern size_t used_memory; 
 extern volatile uint32_t tick;
 extern char shell_buffer[64];
+uint64_t hhdm_offset;
 
 // --- ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ---
 bool is_app_running = false;
@@ -380,13 +381,13 @@ void sys_draw_app_buffer(int x, int y, int w, int h, uint32_t* buffer) {
 
 void network_thread() {
     while(1) {
+        if (!rtl8139_has_data()) { // Если есть такая проверка
+            yield(); 
+            continue;
+        }
         rtl8139_receive();
-        // Мы больше не тормозим GUI!
-        // Если пакетов нет, можно чуть-чуть подождать
-        __asm__("pause"); 
     }
 }
-
 void init_sse() {
     uint64_t cr0;
     __asm__ volatile ("mov %%cr0, %0" : "=r"(cr0));
@@ -460,7 +461,7 @@ void exec_module() {
 void kmain(void) {
     // 1. Память
     pmm_init(); 
-    uint64_t hhdm_offset = hhdm_request.response->offset;
+    hhdm_offset = hhdm_request.response->offset;
     init_heap((uint64_t)pmm_alloc_continuous(16384) + hhdm_offset, 64 * 1024 * 1024);
 
     // 2. Графика и VFS
@@ -492,8 +493,37 @@ void kmain(void) {
 
     shell_init();
 
+    extern volatile int32_t mouse_x, mouse_y;
+    extern volatile uint8_t mouse_left_button;
+    int32_t last_mx = -1, last_my = -1;
+    uint8_t last_mb = 0;
+    uint32_t last_anim_tick = 0;
+
+    // Сразу нарисуем первый кадр
+    update_gui();
+
     while(1) {
-        update_gui();
+        bool needs_redraw = false;
+
+        // 1. Проверяем, сдвинулась ли мышь или нажалась ли кнопка
+        if (mouse_x != last_mx || mouse_y != last_my || mouse_left_button != last_mb) {
+            needs_redraw = true;
+            last_mx = mouse_x;
+            last_my = mouse_y;
+            last_mb = mouse_left_button;
+        }
+
+        // 2. Обновляем экран периодически для анимаций (например, каретки Notepad)
+        // tick обновляется 100 раз в секунду. 50 тиков = 0.5 секунды.
+        if (tick - last_anim_tick >= 50) {
+            needs_redraw = true;
+            last_anim_tick = tick;
+        }
+
+        // Если что-то изменилось — перерисовываем!
+        if (needs_redraw) {
+            update_gui();
+        }
         
         if (should_run_app) {
             should_run_app = false;

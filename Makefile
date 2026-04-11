@@ -8,7 +8,7 @@ APP_SRC = app/snake.c
 APP_OBJ = app/snake.o
 
 # Флаги ядра
-CFLAGS = -ffreestanding -O2 -Wall -Wextra -fno-exceptions -std=c11 \
+CFLAGS = -ffreestanding -O0 -Wall -Wextra -fno-exceptions -std=c11 \
          -Isrc -Isrc/drivers -Isrc/shell -Isrc/boot/limine \
          -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 \
          -fno-stack-protector -fno-pic -g

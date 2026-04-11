@@ -1,10 +1,10 @@
-#include "drivers/net/rtl8139.h"
-#include "drivers/net/net.h"
-#include "io/io.h"
-#include "fs/vfs.h"
-#include "libc/string.h"
-#include "libc/stdio.h"
-#include "api.h"
+#include "rtl8139.h"
+#include "net.h"
+#include "../../io/io.h"
+#include "../../fs/vfs.h"
+#include "../../libc/string.h"
+#include "../../libc/stdio.h"
+#include "../../api.h"
 
 uint32_t tcp_seq = 1000;
 uint32_t tcp_ack = 0;
@@ -462,4 +462,11 @@ void net_wget() {
     tcp_seq = 1000;
     tcp_ack = 0;
     send_tcp(TCP_SYN, NULL, 0); // Шаг 1: Привет!
+}
+
+bool rtl8139_has_data() {
+    // Читаем ISR (Interrupt Status Register)
+    // 0x3E - смещение регистра, io_base - адрес твоей сетевухи
+    uint16_t status = inw(rtl_io_base + 0x3E); 
+    return (status & 0x01); // Возвращаем true, если бит ROK (Receive OK) установлен
 }
