@@ -32,6 +32,7 @@ void init_idt() {
 
     // Заглушки для IRQ
     set_idt_gate(32, (uint64_t)irq0_handler_asm, sel);
+    set_idt_gate(32, (uint64_t)timer_handler, sel);
     set_idt_gate(33, (uint64_t)keyboard_handler, sel);
     set_idt_gate(44, (uint64_t)mouse_handler, sel);
 

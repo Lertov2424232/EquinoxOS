@@ -459,77 +459,49 @@ void exec_module() {
 }
 
 void kmain(void) {
-    // 1. Память
+    // 1. Память (без нее ничего не работает)
     pmm_init(); 
     hhdm_offset = hhdm_request.response->offset;
     init_heap((uint64_t)pmm_alloc_continuous(16384) + hhdm_offset, 64 * 1024 * 1024);
 
-    // 2. Графика и VFS
-    vfs_init();
+    // 2. Видео
     struct limine_framebuffer *fb = framebuffer_request.response->framebuffers[0];
     init_vesa((uintptr_t)fb->address, fb->width, fb->height, fb->pitch);
-    fb_install_vfs();
 
-    // 3. Прерывания и база
+    // 3. Базовая инициализация прерываний для таймера
     __asm__("cli");
-    init_idt();
-    init_sse();
+    init_idt();      // Здесь IRQ32 теперь указывает на timer_handler
     pic_remap();
-    init_mouse();
-    init_timer(100);
-    task_init();
-    task_create(network_thread, NULL);
-    __asm__("sti");
+    init_timer(100); // 100 Гц
+    __asm__("sti");  // Теперь tick начнет расти, но планировщик еще не работает
 
+    // 4. ЗАПУСКАЕМ ТЕСТЫ (Теперь boot_delay не зависнет!)
+    extern bool eqstart_perform_tests();
+    eqstart_perform_tests();
+
+    // 5. Вот ТЕПЕРЬ, когда тесты прошли, инициализируем тяжелые подсистемы
+    vfs_init();
+    fb_install_vfs();
     fat32_init();
-    // 4. Периферия
     pci_init();
-    rtl8139_install_vfs(); 
+    rtl8139_install_vfs();
+    init_mouse();
 
+    // 6. ВКЛЮЧАЕМ МНОГОЗАДАЧНОСТЬ
+    // Перенаправляем таймер на планировщик прямо перед запуском задач
+    extern void irq0_handler_asm();
+    set_idt_gate(32, (uint64_t)irq0_handler_asm, 0x28); 
+    
+    task_init(); 
     gui_init(); 
-
-    printf("EquinoxOS Booted. Memory: %d MB free\n", free_memory / 1024 / 1024);
-    printf("Devices registered: /dev/fb0, /dev/net\n");
-
     shell_init();
 
-    extern volatile int32_t mouse_x, mouse_y;
-    extern volatile uint8_t mouse_left_button;
-    int32_t last_mx = -1, last_my = -1;
-    uint8_t last_mb = 0;
-    uint32_t last_anim_tick = 0;
-
-    // Сразу нарисуем первый кадр
-    update_gui();
-
     while(1) {
-        bool needs_redraw = false;
-
-        // 1. Проверяем, сдвинулась ли мышь или нажалась ли кнопка
-        if (mouse_x != last_mx || mouse_y != last_my || mouse_left_button != last_mb) {
-            needs_redraw = true;
-            last_mx = mouse_x;
-            last_my = mouse_y;
-            last_mb = mouse_left_button;
-        }
-
-        // 2. Обновляем экран периодически для анимаций (например, каретки Notepad)
-        // tick обновляется 100 раз в секунду. 50 тиков = 0.5 секунды.
-        if (tick - last_anim_tick >= 50) {
-            needs_redraw = true;
-            last_anim_tick = tick;
-        }
-
-        // Если что-то изменилось — перерисовываем!
-        if (needs_redraw) {
-            update_gui();
-        }
-        
+        update_gui();
         if (should_run_app) {
             should_run_app = false;
             exec_module();
         }
-
         __asm__("hlt");
     }
 }
