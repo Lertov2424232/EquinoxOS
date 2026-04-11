@@ -49,10 +49,20 @@ typedef struct {
     uint16_t cluster_low;
     uint32_t file_size;
 } fat32_entry_t;
+
+typedef struct {
+    char name[13];
+    uint32_t size;
+    uint32_t cluster;
+} fat32_file_info_t;
 #pragma pack(pop)
 
 void fat32_init(void);
 uint8_t* fat32_read_file(const char* name, uint32_t* out_size);
 void fat32_list_files();
+int fat32_get_files(fat32_file_info_t* out_list, int max_files);
+uint32_t fat32_find_free_cluster();
+void fat32_set_cluster_entry(uint32_t cluster, uint32_t value);
+void fat32_save_file(const char* name, const char* data, uint32_t size);
 
 #endif
