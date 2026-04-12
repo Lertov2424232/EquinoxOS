@@ -179,6 +179,30 @@ irq0_handler_asm:
     
     add rsp, 16       ; Чистим fake error и int num
     iretq
+
+[extern syscall_handler]
+[global syscall_interrupt_asm]
+syscall_interrupt_asm:
+    push rbp
+    push rdi
+    push rsi
+    push rdx
+    push rcx
+    push rbx
+    push rax
+    
+    mov rdi, rsp        ; Передаем указатель на регистры в C-функцию
+    call syscall_handler
+    
+    pop rax
+    pop rbx
+    pop rcx
+    pop rdx
+    pop rsi
+    pop rdi
+    pop rbp
+    iretq
+
 ; --- СЕКЦИЯ ДАННЫХ ---
 section .data
 [global isr_stub_table]
