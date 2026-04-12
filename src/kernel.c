@@ -584,9 +584,19 @@ void kmain(void) {
             64 * 1024 * 1024);
 
   // 2. Видео
-  struct limine_framebuffer *fb = framebuffer_request.response->framebuffers[0];
-  init_vesa((uintptr_t)fb->address, fb->width, fb->height, fb->pitch);
+   struct limine_framebuffer *fb = framebuffer_request.response->framebuffers[0];
+   init_vesa((uintptr_t)fb->address, fb->width, fb->height, fb->pitch);
+   uint64_t font_size = 0; 
 
+    // Передаем адрес этой переменной (&font_size)
+    void* font = sys_get_file("font.psf", &font_size);
+
+    if (font) {
+        vesa_set_font(font);
+        term_print("[SYS] PSF Font loaded and set.\n");
+    } else {
+        term_print("[SYS] Failed to load font.psf!\n");
+    }
   // 3. Базовая инициализация прерываний для таймера
   __asm__("cli");
   init_idt(); // Здесь IRQ32 теперь указывает на timer_handler

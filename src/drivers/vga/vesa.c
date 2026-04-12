@@ -11,10 +11,12 @@ uint32_t screen_height;
 uint32_t screen_pitch;
 uint32_t* backbuffer;
 static uint32_t* cached_bg = NULL;
+static psf1_t* current_font = NULL;
 
 // =========================================================================
 //                              ОСНОВНАЯ ГРАФИКА (ДВОЙНАЯ БУФЕРИЗАЦИЯ)
 // =========================================================================
+
 
 void init_vesa(uint64_t addr, uint32_t width, uint32_t height, uint32_t pitch) {
     fb_base_addr = (uintptr_t)addr;
@@ -83,16 +85,21 @@ void draw_transparent_rect(int x, int y, int w, int h, uint32_t color, uint8_t a
 }
 
 void vesa_draw_char(char c, int x, int y, uint32_t fg) {
-    if (c < 0 || c > 127) return;
-    for (int i = 0; i < 8; i++) {
-        for (int j = 0; j < 8; j++) {
-            if (font8x8_basic[(int)c][i] & (1 << j)) {
-                put_pixel(x + j, y + i, fg);
+    if (!current_font) return; // Если шрифт не загружен, ничего не рисуем
+
+    // Указатель на начало данных символа
+    uint8_t* glyph = (uint8_t*)current_font + sizeof(psf1_t) + ((uint8_t)c * current_font->charsize);
+
+    for (int cy = 0; cy < current_font->charsize; cy++) {
+        for (int cx = 0; cx < 8; cx++) {
+            // Проверяем бит в байте (строке) глифа
+            if ((*glyph >> (7 - cx)) & 1) {
+                put_pixel(x + cx, y + cy, fg);
             }
         }
+        glyph++; // Переходим к следующему байту (следующей строке пикселей)
     }
 }
-
 void vesa_draw_string(const char* s, int x, int y, uint32_t fg) {
     while (*s) {
         vesa_draw_char(*s, x, y, fg);
@@ -143,6 +150,23 @@ void vesa_update() {
         memcpy(dst + (i * screen_pitch), src + (i * screen_width * 4), screen_width * 4);
     }
 }
+
+void vesa_draw_psf_char(psf_t* font, char c, int x, int y, uint32_t fg) {
+    uint8_t* glyph = (uint8_t*)font + font->headersize + (uint8_t)c * font->bytesperglyph;
+    for (uint32_t cy = 0; cy < font->height; cy++) {
+        for (uint32_t cx = 0; cx < font->width; cx++) {
+            if ((glyph[cy] >> (font->width - 1 - cx)) & 1) {
+                put_pixel(x + cx, y + cy, fg);
+            }
+        }
+    }
+}
+
+void vesa_set_font(void* font_addr) {
+    current_font = (psf1_t*)font_addr;
+}
+
+
 
 // =========================================================================
 //                         VFS УСТРОЙСТВО (/dev/fb0)
