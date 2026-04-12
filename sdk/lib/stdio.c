@@ -54,14 +54,13 @@ int vsprintf(char *buffer, const char *format, va_list args) {
   return ptr - buffer;
 }
 
-void printf(const char *format, ...) {
-  char buffer[1024];
-  va_list args;
-  va_start(args, format);
-  vsprintf(buffer, format, args);
-  va_end(args);
+void printf(const char* format, ...) {
+    char buffer[1024];
+    va_list args;
+    va_start(args, format);
+    vsprintf(buffer, format, args);
+    va_end(args);
 
-  // ВОТ ОН - МОМЕНТ ИСТИНЫ
-  // Мы вызываем прерывание 0x80 (SYS_PRINT = 1)
-  syscall(SYS_PRINT, (uint64_t)buffer, 0, 0, 0, 0);
+    // Вызываем обновленный _syscall с 6 аргументами
+    _syscall(SYS_PRINT, (uint64_t)buffer, 0, 0, 0, 0);
 }

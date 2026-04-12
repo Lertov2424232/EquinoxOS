@@ -2,6 +2,8 @@
 #include <string.h>
 #include <stdbool.h>
 #include <equos.h>   
+#include <eid.h>
+
 
 #define COL_BG      0x111111
 #define COL_SNAKE   0x00FF00
@@ -26,10 +28,41 @@ unsigned int seed = 123;
 int rand() { seed = seed * 1103515245 + 12345; return (seed / 65536) % 32768; }
 
 // Обертки над syscall для удобства
-uint32_t get_time() { return syscall(SYS_GET_TIME, 0, 0, 0, 0, 0); }
-uint8_t get_key() { return syscall(SYS_GET_SCANCODE, 0, 0, 0, 0, 0); }
-void draw_frame() { syscall(SYS_DRAW_BUFFER, 0, 0, 400, 300, (uint64_t)screen_buffer); }
+uint32_t get_time() { 
+    return (uint32_t)_syscall(SYS_GET_TIME, 0, 0, 0, 0, 0); 
+}
 
+uint8_t get_key() { 
+    return (uint8_t)_syscall(SYS_GET_SCANCODE, 0, 0, 0, 0, 0); 
+}
+
+void draw_frame() { 
+    _syscall(SYS_DRAW_BUFFER, 0, 0, 400, 300, (uintptr_t)screen_buffer); 
+}
+
+void sleep(uint32_t ms) {
+    uint32_t start = get_time();
+    while (get_time() < start + (ms / 10)) {
+        _syscall(SYS_YIELD, 0, 0, 0, 0, 0);
+    }
+}
+
+bool in_menu = true;
+int menu_selection = 0;
+
+void draw_menu() {
+    // Очищаем фон
+    for(int i=0; i<400*300; i++) screen_buffer[i] = 0x222222;
+
+    // Рисуем лого
+    printf("--- EQUINOX SNAKE ---\n"); // Это пойдет в терминал ядра
+
+    // Рисуем кнопки через наш EID
+    eid_draw_button(screen_buffer, 400, 100, 100, 200, 40, "START GAME", (menu_selection == 0));
+    eid_draw_button(screen_buffer, 400, 100, 160, 200, 40, "EXIT", (menu_selection == 1));
+
+    draw_frame();
+}
 
 
 int main() {
@@ -39,7 +72,17 @@ int main() {
     snake[1] = (Point){9, 10};
     snake[2] = (Point){8, 10};
     
-    while (1) {
+     while(1) {
+        if (in_menu) {
+            draw_menu();
+            uint8_t key = get_key();
+            if (key == 0x48) menu_selection = 0; // Up
+            if (key == 0x50) menu_selection = 1; // Down
+            if (key == 0x1C) { // Enter
+                if (menu_selection == 0) in_menu = false;
+                else _syscall(SYS_EXIT, 0, 0, 0, 0, 0);
+            }
+        } else {
         // Очистка
         for (int i = 0; i < 400 * 300; i++) screen_buffer[i] = COL_BG;
 
@@ -87,4 +130,5 @@ int main() {
     }
 
     return 0;
+}
 }

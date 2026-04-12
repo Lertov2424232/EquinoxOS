@@ -22,6 +22,23 @@ extern uint32_t screen_pitch;
 #define COLOR_GREY        0xCCCCCC
 #define COLOR_DARK_GREY   0x333333
 
+typedef struct {
+    uint32_t magic;         // 0x864ab536
+    uint32_t version;
+    uint32_t headersize;    // Смещение до данных шрифта
+    uint32_t flags;
+    uint32_t numglyph;      // Количество символов
+    uint32_t bytesperglyph; // Сколько байт на один символ (например, 16)
+    uint32_t height;        // Высота (16)
+    uint32_t width;         // Ширина (8)
+} psf_t;
+
+typedef struct {
+    uint8_t magic[2];     // 0x36, 0x04
+    uint8_t mode;         // Режим (0..3)
+    uint8_t charsize;     // Высота символа (у тебя будет 16)
+} psf1_t;
+
 // Прототипы функций с правильными аргументами
 void init_vesa(uint64_t fb_addr, uint32_t width, uint32_t height, uint32_t pitch);
 void put_pixel(int x, int y, uint32_t color);
@@ -36,5 +53,7 @@ void vesa_update();
 void vesa_draw_buffer(int x, int y, int w, int h, uint32_t* buffer);
 void fb_install_vfs(void);
 void put_pixel_alpha(int x, int y, uint32_t argb);
+void vesa_draw_psf_char(psf_t* font, char c, int x, int y, uint32_t fg);
+void vesa_set_font(void* font_addr);
 
 #endif
