@@ -7,6 +7,7 @@ static task_t* current_task = NULL;
 static task_t* task_list = NULL;
 static uint64_t next_pid = 1;
 extern uint64_t hhdm_offset;
+extern volatile uint32_t tick;
 
 
 void task_init() {
@@ -47,7 +48,7 @@ void task_create(void (*entry)(), void* arg) {
 // Эту функцию вызывает таймер 100 раз в секунду
 uint64_t schedule(uint64_t current_rsp) {
     if (!current_task) return current_rsp;
-
+    tick++; 
     // Сохраняем указатель на стек текущей задачи
     current_task->rsp = current_rsp;
 
