@@ -558,16 +558,22 @@ void run_elf(uint8_t *elf_data) {
 }
 
 void exec_module() {
-  if (module_request.response == NULL)
-    return;
-  for (uint64_t i = 0; i < module_request.response->module_count; i++) {
-    struct limine_file *mod = module_request.response->modules[i];
-    if (strstr(mod->path, "snake.elf\n")) {
-      run_elf(mod->address);
-      return;
+    if (module_request.response == NULL) {
+        term_print("Limine modules not found!\n");
+        return;
     }
-  }
-  term_print("snake.elf not found!\n");
+
+    for (uint64_t i = 0; i < module_request.response->module_count; i++) {
+        struct limine_file* mod = module_request.response->modules[i];
+        
+        // УБРАЛИ \n ИЗ ПОИСКА!
+        if (strstr(mod->path, "app.elf")) { 
+            term_print("Found app.elf. Loading...\n");
+            run_elf(mod->address);
+            return;
+        }
+    }
+    term_print("Error: app.elf not found in modules!\n");
 }
 
 void kmain(void) {
