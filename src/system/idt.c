@@ -36,7 +36,7 @@ void init_idt() {
   set_idt_gate(32, (uint64_t)timer_handler, sel);
   set_idt_gate(33, (uint64_t)keyboard_handler, sel);
   set_idt_gate(44, (uint64_t)mouse_handler, sel);
-  set_idt_gate(0x80, (uint64_t)syscall_interrupt_asm, 0x08);
+  set_idt_gate(0x80, (uint64_t)syscall_interrupt_asm, 0x28);
 
   // 3. ЗАГРУЖАЕМ (Только эта строчка говорит процессору "смотри сюда")
   __asm__ __volatile__("lidt %0" : : "m"(idt_reg));

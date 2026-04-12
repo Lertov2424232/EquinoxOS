@@ -30,6 +30,8 @@ uint32_t get_time() { return syscall(SYS_GET_TIME, 0, 0, 0, 0, 0); }
 uint8_t get_key() { return syscall(SYS_GET_SCANCODE, 0, 0, 0, 0, 0); }
 void draw_frame() { syscall(SYS_DRAW_BUFFER, 0, 0, 400, 300, (uint64_t)screen_buffer); }
 
+
+
 int main() {
     printf("Snake Application Started!\n");
 
@@ -79,7 +81,9 @@ int main() {
 
         // Задержка
         uint32_t start = get_time();
-        while (get_time() < start + 100); 
+        while (get_time() < start + 10) { // Ждем 10 тиков (100мс)
+    __asm__("pause"); 
+}
     }
 
     return 0;
