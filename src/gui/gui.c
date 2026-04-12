@@ -301,55 +301,100 @@ void gui_window_draw_line(window_t* win, int x0, int y0, int x1, int y1, int thi
     }
 }
 
-// Главный цикл отрисовки Compositor'a
-void gui_compositor_render() {
-    draw_background();
+// Вспомогательная функция для отрисовки градиента в заголовке
+static void draw_titlebar_gradient(int x, int y, int w, int h, uint32_t color, bool active) {
+    for (int i = 0; i < h; i++) {
+        // Вычисляем осветление для верхних пикселей (эффект объема)
+        // Если окно не в фокусе, делаем градиент серым/тусклым
+        uint8_t r = (color >> 16) & 0xFF;
+        uint8_t g = (color >> 8) & 0xFF;
+        uint8_t b = color & 0xFF;
 
-    // Desktop icons
+        int light = (h - i) * 1; // Чем выше строка, тем светлее (на 1 единицу за пиксель)
+        
+        uint8_t nr = (r + light > 255) ? 255 : r + light;
+        uint8_t ng = (g + light > 255) ? 255 : g + light;
+        uint8_t nb = (b + light > 255) ? 255 : b + light;
+
+        if (!active) {
+            // Обесцвечиваем для неактивных окон
+            uint8_t avg = (nr + ng + nb) / 3;
+            nr = ng = nb = avg + 20; 
+        }
+
+        uint32_t grad_color = (nr << 16) | (ng << 8) | nb;
+        draw_rect(x, y + i, w, 1, grad_color);
+    }
+}
+
+void gui_compositor_render() {
+    // 1. Сначала рисуем фон и иконки (нижний слой)
+    draw_background();
     gui_render_desktop_icons();
 
-    // Windows
+    // 2. Проходим по списку окон
     window_t* curr = window_list_head;
     while (curr) {
         if (curr->active) {
+            // Обработка перетаскивания (обновляет curr->x и curr->y)
             handle_mouse_drag(curr);
 
-            // draw_shadow(curr->x, curr->y, curr->w, curr->h);
+            // --- РЕНДЕРИНГ РАМКИ ОКНА (План 1.5) ---
+            
+            // Темная внешняя обводка (1 пиксель)
+            draw_rect(curr->x - 1, curr->y - 26, curr->w + 2, curr->h + 27, 0x1A1A1A);
+            
+            // Заголовок с градиентом
+            uint32_t theme_color = 0x0078D7; // Стандартный синий
+            draw_titlebar_gradient(curr->x, curr->y - 25, curr->w, 25, theme_color, curr->dragging);
 
-            // Title bar
-            uint32_t header_col = curr->dragging ? 0x0055AA : 0x0078D7;
-            draw_rect(curr->x, curr->y - 25, curr->w, 25, header_col);
-            vesa_draw_string(curr->title, curr->x + 8, curr->y - 19, 0xFFFFFF);
+            // Белая разделительная полоса между заголовком и контентом
+            draw_rect(curr->x, curr->y - 1, curr->w, 1, 0xDDDDDD);
 
-            // Close button [X]
-            draw_rect(curr->x + curr->w - 25, curr->y - 25, 25, 25, 0xE81123);
-            vesa_draw_string("X", curr->x + curr->w - 17, curr->y - 19, 0xFFFFFF);
+            // Текст заголовка (белый с небольшой тенью для читаемости)
+            vesa_draw_string(curr->title, curr->x + 9, curr->y - 18, 0x222222); // Тень
+            vesa_draw_string(curr->title, curr->x + 8, curr->y - 19, 0xFFFFFF); // Основной текст
 
-            // Window content buffer
+            // Кнопка закрытия [X] (стиль Windows 10)
+            draw_rect(curr->x + curr->w - 32, curr->y - 22, 28, 19, 0xE81123);
+            vesa_draw_string("X", curr->x + curr->w - 22, curr->y - 18, 0xFFFFFF);
+
+            // --- РЕНДЕРИНГ КОНТЕНТА ОКНА (Блиттинг буфера) ---
+            // Копируем содержимое win->buffer в backbuffer
             for (int i = 0; i < curr->h; i++) {
                 int draw_y = curr->y + i;
+                
+                // Проверка выхода за границы экрана по вертикали
                 if (draw_y < 0 || draw_y >= (int)screen_height) continue;
                 
                 int start_x = curr->x;
-                int end_x = curr->x + curr->w;
-                int offset = 0;
-                
-                if (start_x < 0) { offset = -start_x; start_x = 0; }
-                if (end_x > (int)screen_width) end_x = screen_width;
-                
-                if (start_x < end_x) {
+                int copy_w = curr->w;
+                int offset_x = 0;
+
+                // Проверка выхода за границы экрана по горизонтали (Clipping)
+                if (start_x < 0) {
+                    offset_x = -start_x;
+                    copy_w += start_x;
+                    start_x = 0;
+                }
+                if (start_x + copy_w > (int)screen_width) {
+                    copy_w = screen_width - start_x;
+                }
+
+                if (copy_w > 0) {
+                    // Используем memcpy для быстрой отрисовки строки
                     memcpy(&backbuffer[draw_y * screen_width + start_x], 
-                           &curr->buffer[i * curr->w + offset], 
-                           (end_x - start_x) * 4);
+                           &curr->buffer[i * curr->w + offset_x], 
+                           copy_w * 4);
                 }
             }
         }
         curr = curr->next;
     }
 
-    // Taskbar
+    // 3. Панель задач (над окнами)
     gui_render_taskbar();
 
-    // Cursor
+    // 4. Курсор (самый верхний слой)
     draw_cursor(mouse_x, mouse_y);
 }
