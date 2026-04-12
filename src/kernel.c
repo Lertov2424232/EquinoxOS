@@ -87,6 +87,35 @@ static int notepad_line = 0;
 static int notepad_col = 0;
 static bool notepad_inited = false;
 
+void notepad_load_content(const char* data, uint32_t size) {
+    // Полностью очищаем блокнот перед загрузкой
+    for(int i = 0; i < NOTEPAD_MAX_LINES; i++) {
+        memset(notepad_buf[i], 0, NOTEPAD_LINE_LEN);
+    }
+    notepad_line = 0;
+    notepad_col = 0;
+
+    if (!data) return;
+
+    for (uint32_t i = 0; i < size; i++) {
+        char c = data[i];
+        if (c == '\0') break;
+
+        if (c == '\n' || c == '\r') {
+            if (notepad_line < NOTEPAD_MAX_LINES - 1) {
+                notepad_line++;
+                notepad_col = 0;
+            }
+            // Пропускаем \n если это \r\n
+            if (c == '\r' && i + 1 < size && data[i+1] == '\n') i++;
+        } else {
+            if (notepad_col < NOTEPAD_LINE_LEN - 1) {
+                notepad_buf[notepad_line][notepad_col++] = c;
+            }
+        }
+    }
+}
+
 void notepad_handle_char(char c) {
     if (!notepad_inited) return;
     if (c == '\b') {
@@ -233,50 +262,78 @@ void update_gui() {
     if (explorer_win && explorer_win->active) {
         gui_window_draw_rect(explorer_win, 0, 0, explorer_win->w, explorer_win->h, 0xFFFFFF);
 
-        // Toolbar
+        // Панель инструментов
         gui_window_draw_rect(explorer_win, 0, 0, explorer_win->w, 24, 0xF0F0F0);
-        gui_window_draw_string(explorer_win, "Path: /", 8, 7, 0x333333);
-        // Refresh button
+        gui_window_draw_string(explorer_win, "Path: / (FAT32 DISK)", 8, 7, 0x333333);
+        
+        // Кнопка Refresh (Обновить)
         gui_window_draw_rect(explorer_win, explorer_win->w - 60, 3, 52, 18, 0xDDDDDD);
-        gui_window_draw_string(explorer_win, "Refresh", explorer_win->w - 56, 7, 0x333333);
-        // Separator
+        gui_window_draw_string(explorer_win, "REFR", explorer_win->w - 50, 7, 0x333333);
         gui_window_draw_rect(explorer_win, 0, 24, explorer_win->w, 1, 0xCCCCCC);
 
-        // Scan files on first open or refresh click
+        // Сканируем файлы, если окно только открыто или нажали Refresh
         if (!explorer_scanned) {
             explorer_file_count = fat32_get_files(real_files, 16);
             explorer_scanned = true;
         }
         
-        // Refresh button click
+        // Обработка клика по кнопке Refresh
         if (mouse_just_pressed) {
             int rx = mouse_x - explorer_win->x;
             int ry = mouse_y - explorer_win->y;
             if (rx >= explorer_win->w - 60 && rx < explorer_win->w - 8 && ry >= 3 && ry < 21) {
-                explorer_scanned = false;
+                explorer_scanned = false; // Сброс флага заставит перечитать диск
             }
         }
 
-        // Draw file list with icons
+        // Список файлов
         int y_off = 30;
-    for(int i = 0; i < explorer_file_count; i++) {
-        if (i % 2 == 0) gui_window_draw_rect(explorer_win, 0, y_off - 2, explorer_win->w, 18, 0xF0F0F0);
-        
-        // Рисуем иконку в зависимости от расширения
-        uint32_t icon_color = 0xF0C040; // Желтый для файлов
-        if (strstr(real_files[i].name, ".BMP")) icon_color = 0xFF00FF; // Розовый для картинок
-        
-        gui_window_draw_rect(explorer_win, 8, y_off, 12, 12, icon_color);
-        
-        char file_info[32];
-        sprintf(file_info, "%s  (%d bytes)", real_files[i].name, real_files[i].size);
-        gui_window_draw_string(explorer_win, file_info, 26, y_off + 2, 0x222222);
-        
-        y_off += 18;
-    }
-
         if (explorer_file_count == 0) {
-            gui_window_draw_string(explorer_win, "No files found", 26, 40, 0x999999);
+            gui_window_draw_string(explorer_win, "No files found on disk.", 20, 40, 0x999999);
+        }
+
+        for(int i = 0; i < explorer_file_count; i++) {
+            int row_y = y_off - 2;
+            
+            // Подсветка каждой второй строки
+            if (i % 2 == 0) {
+                gui_window_draw_rect(explorer_win, 0, row_y, explorer_win->w, 18, 0xF5F5F5);
+            }
+
+            // РИСУЕМ ТЕКСТ (имя файла) - ТЫ ЭТО ПОТЕРЯЛ В ПРОШЛОМ КОДЕ!
+            gui_window_draw_rect(explorer_win, 5, y_off + 2, 8, 8, 0xF0C040); // Маленькая иконка
+            gui_window_draw_string(explorer_win, real_files[i].name, 20, y_off, 0x000000);
+
+            // ПРОВЕРКА КЛИКА ПО ФАЙЛУ
+            if (mouse_just_pressed) {
+                int rx = mouse_x - explorer_win->x;
+                int ry = mouse_y - explorer_win->y;
+
+                // Если кликнули в пределах этой строки
+                if (rx > 0 && rx < explorer_win->w && ry >= row_y && ry < row_y + 18) {
+                    term_print("Explorer: Opening ");
+                    term_print(real_files[i].name);
+                    term_print("\n");
+
+                    uint32_t f_size = 0;
+                    // Читаем данные из FAT32
+                    char* file_data = (char*)fat32_read_file(real_files[i].name, &f_size);
+                    
+                    if (file_data) {
+                        // Загружаем в блокнот
+                        notepad_load_content(file_data, f_size);
+                        
+                        // Фокусируемся на блокноте
+                        notepad_win->active = true;
+                        window_bring_to_front(notepad_win);
+                        
+                        kfree(file_data); // Обязательно чистим память за собой
+                    } else {
+                        term_print("Explorer: Failed to read file!\n");
+                    }
+                }
+            }
+            y_off += 18; // Смещаемся ниже для следующего файла
         }
     }
 
