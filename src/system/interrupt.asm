@@ -190,10 +190,14 @@ syscall_interrupt_asm:
     push rcx
     push rbx
     push rax
+    push r8
+    push r9
     
-    mov rdi, rsp        ; Передаем указатель на регистры в C-функцию
+    mov rdi, rsp        ; Передаем указатель на всю эту пачку регистров в C
     call syscall_handler
     
+    pop r9
+    pop r8
     pop rax
     pop rbx
     pop rcx
