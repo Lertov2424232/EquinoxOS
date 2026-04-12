@@ -76,74 +76,47 @@ uint32_t fat32_get_next_cluster(uint32_t cluster) {
 }
 
 uint8_t* fat32_read_file(const char* name, uint32_t* out_size) {
-    if (!name || name[0] == '\0') {
-        term_print("FAT32: Invalid filename!\n");
-        return 0;
-    }
-
-    // Проверка инициализации BPB
-    if (bpb.sectors_per_cluster == 0) {
-        term_print("FAT32: FS not initialized or invalid!\n");
-        return 0;
-    }
-
     char fat_name[11];
-    memset(fat_name, ' ', 11);
-    int i = 0, j = 0;
-    while(name[i] && name[i] != '.' && j < 8) fat_name[j++] = name[i++];
-    if(name[i] == '.') {
-        i++; j = 8;
-        while(name[i] && j < 11) fat_name[j++] = name[i++];
-    }
-    for(int k=0; k<11; k++) if(fat_name[k] >= 'a' && fat_name[k] <= 'z') fat_name[k] -= 32;
+    fat32_to_83(name, fat_name); // Превращаем "NOTES.TXT" в "NOTES   TXT"
 
     uint32_t current_cluster = bpb.root_cluster;
-    if (current_cluster < 2) {
-        term_print("FAT32: Root cluster error!\n");
-        return 0;
-    }
-
     uint8_t* cluster_buf = kmalloc(bpb.sectors_per_cluster * 512);
-
-    term_print("FAT32: Searching for file...\n");
 
     while (current_cluster >= 2 && current_cluster < 0x0FFFFFF8) {
         uint32_t lba = first_data_sector + (current_cluster - 2) * bpb.sectors_per_cluster;
         read_sectors_ata_pio((uintptr_t)cluster_buf, lba, bpb.sectors_per_cluster);
 
         fat32_entry_t* entries = (fat32_entry_t*)cluster_buf;
-        for (int e = 0; e < (bpb.sectors_per_cluster * 512 / 32); e++) {
-            if (entries[e].name[0] == 0) goto not_found;
+        for (int e = 0; e < (int)(bpb.sectors_per_cluster * 512 / 32); e++) {
+            if (entries[e].name[0] == 0x00) break;    // Конец списка
+            if (entries[e].name[0] == 0xE5) continue; // Файл удален - ИГНОРИРУЕМ
+
+            // СРАВНИВАЕМ С ПОДГОТОВЛЕННЫМ ИМЕНЕМ!
             if (memcmp(entries[e].name, fat_name, 11) == 0) {
-                // ФАЙЛ НАЙДЕН
                 uint32_t size = entries[e].file_size;
                 *out_size = size;
-                uint8_t* file_data = kmalloc(size + 1024);
                 
+                uint8_t* file_data = kmalloc(size + 512); // Запас под сектор
                 uint32_t f_cluster = (entries[e].cluster_high << 16) | entries[e].cluster_low;
                 uint32_t copied = 0;
                 
-                term_print("FAT32: Loading clusters...\n");
                 while (f_cluster >= 2 && f_cluster < 0x0FFFFFF8 && copied < size) {
                     uint32_t f_lba = first_data_sector + (f_cluster - 2) * bpb.sectors_per_cluster;
+                    // Читаем целый кластер
                     read_sectors_ata_pio((uintptr_t)(file_data + copied), f_lba, bpb.sectors_per_cluster);
                     copied += (bpb.sectors_per_cluster * 512);
                     f_cluster = fat32_get_next_cluster(f_cluster);
                 }
                 kfree(cluster_buf);
-                term_print("FAT32: Done.\n");
                 return file_data;
             }
         }
         current_cluster = fat32_get_next_cluster(current_cluster);
-        // Защита от бесконечного цикла, если FAT битая
-        if (current_cluster == 0) break;
     }
 
-not_found:
     kfree(cluster_buf);
-    term_print("FAT32: File not found.\n");
-    return 0;
+    term_print("FAT32: File not found during read.\n");
+    return NULL;
 }
 
 void fat32_list_files() {
@@ -183,8 +156,6 @@ void fat32_list_files() {
 }
 
 int fat32_get_files(fat32_file_info_t* out_list, int max_files) {
-    if (bpb.sectors_per_cluster == 0) return 0;
-
     uint8_t* buf = kmalloc(bpb.sectors_per_cluster * 512);
     uint32_t cluster = bpb.root_cluster;
     int count = 0;
@@ -194,16 +165,27 @@ int fat32_get_files(fat32_file_info_t* out_list, int max_files) {
         read_sectors_ata_pio((uintptr_t)buf, lba, bpb.sectors_per_cluster);
 
         fat32_entry_t* entries = (fat32_entry_t*)buf;
-        for (int i = 0; i < (bpb.sectors_per_cluster * 512 / 32); i++) {
-            if (entries[i].name[0] == 0) break; 
-            if (entries[i].name[0] == 0xE5 || (entries[i].attr & 0x08)) continue;
+        for (int i = 0; i < (int)(bpb.sectors_per_cluster * 512 / 32); i++) {
+            if (entries[i].name[0] == 0x00) break;
+            
+            // ЖЕСТКАЯ ПРОВЕРКА НА УДАЛЕНИЕ И СИСТЕМНЫЕ ФАЙЛЫ
+            if ((uint8_t)entries[i].name[0] == 0xE5) continue; 
+            if (entries[i].attr & 0x08) continue; // Volume Label
 
-            // Форматируем имя 8.3 -> "NAME.EXT"
+            // Форматируем красиво для Explorer: "NOTES.TXT"
+            char* out_name = out_list[count].name;
             int p = 0;
-            for(int j=0; j<8; j++) if(entries[i].name[j] != ' ') out_list[count].name[p++] = entries[i].name[j];
-            out_list[count].name[p++] = '.';
-            for(int j=8; j<11; j++) if(entries[i].name[j] != ' ') out_list[count].name[p++] = entries[i].name[j];
-            out_list[count].name[p] = '\0';
+            for(int j=0; j<8; j++) {
+                if(entries[i].name[j] != ' ') out_name[p++] = entries[i].name[j];
+            }
+            // Добавляем точку, только если есть расширение
+            if (entries[i].name[8] != ' ') {
+                out_name[p++] = '.';
+                for(int j=8; j<11; j++) {
+                    if(entries[i].name[j] != ' ') out_name[p++] = entries[i].name[j];
+                }
+            }
+            out_name[p] = '\0';
             
             out_list[count].size = entries[i].file_size;
             out_list[count].cluster = (entries[i].cluster_high << 16) | entries[i].cluster_low;
@@ -246,46 +228,81 @@ void fat32_set_cluster_entry(uint32_t cluster, uint32_t value) {
 }
 
 void fat32_save_file(const char* name, const char* data, uint32_t size) {
-    // 1. Подготовка имени (8.3)
     char fat_name[11];
-    memset(fat_name, ' ', 11);
-    int p = 0;
-    while(name[p] && name[p] != '.' && p < 8) { fat_name[p] = name[p]; p++; }
-    // Для простоты считаем, что расширение .TXT
-    memcpy(&fat_name[8], "TXT", 3); 
+    fat32_to_83(name, fat_name);
 
-    // 2. Ищем свободный кластер для данных
-    uint32_t cluster = fat32_find_free_cluster();
-    if (cluster < 2) return;
-
-    // 3. Записываем данные в кластер
-    uint32_t lba = first_data_sector + (cluster - 2) * bpb.sectors_per_cluster;
-    uint8_t* data_buf = kmalloc(bpb.sectors_per_cluster * 512);
-    memset(data_buf, 0, bpb.sectors_per_cluster * 512);
-    memcpy(data_buf, data, size > 512 ? 512 : size); // Пока пишем только 1 сектор для теста
-    write_sectors_ata_pio(lba, 1, (uint16_t*)data_buf);
-    kfree(data_buf);
-
-    // 4. Обновляем FAT
-    fat32_set_cluster_entry(cluster, 0x0FFFFFFF);
-
-    // 5. Ищем свободное место в корневой директории
-    uint8_t* root_buf = kmalloc(512);
-    read_sectors_ata_pio((uintptr_t)root_buf, first_data_sector + (bpb.root_cluster - 2) * bpb.sectors_per_cluster, 1);
+    uint8_t* root_buf = kmalloc(bpb.sectors_per_cluster * 512);
+    uint32_t root_lba = first_data_sector + (bpb.root_cluster - 2) * bpb.sectors_per_cluster;
+    read_sectors_ata_pio((uintptr_t)root_buf, root_lba, bpb.sectors_per_cluster);
     
     fat32_entry_t* entries = (fat32_entry_t*)root_buf;
-    for (int i = 0; i < 16; i++) {
-        if (entries[i].name[0] == 0x00 || entries[i].name[0] == 0xE5) {
-            memcpy(entries[i].name, fat_name, 11);
-            entries[i].attr = 0x20; // Archive
-            entries[i].file_size = size;
-            entries[i].cluster_low = cluster & 0xFFFF;
-            entries[i].cluster_high = (cluster >> 16) & 0xFFFF;
-            
-            write_sectors_ata_pio(first_data_sector + (bpb.root_cluster - 2) * bpb.sectors_per_cluster, 1, (uint16_t*)root_buf);
+    int target_idx = -1;
+
+    // Сначала ищем: может такой файл уже есть?
+    for (int i = 0; i < (bpb.sectors_per_cluster * 512 / 32); i++) {
+        if (memcmp(entries[i].name, fat_name, 11) == 0) {
+            target_idx = i;
             break;
         }
     }
+
+    // Если не нашли, ищем свободное место (как раньше)
+    if (target_idx == -1) {
+        for (int i = 0; i < (bpb.sectors_per_cluster * 512 / 32); i++) {
+            if (entries[i].name[0] == 0x00 || entries[i].name[0] == 0xE5) {
+                target_idx = i;
+                memcpy(entries[target_idx].name, fat_name, 11);
+                // Выделяем новый кластер только для нового файла
+                uint32_t new_cluster = fat32_find_free_cluster();
+                entries[target_idx].cluster_low = new_cluster & 0xFFFF;
+                entries[target_idx].cluster_high = (new_cluster >> 16) & 0xFFFF;
+                fat32_set_cluster_entry(new_cluster, 0x0FFFFFFF);
+                break;
+            }
+        }
+    }
+
+    if (target_idx != -1) {
+        entries[target_idx].attr = 0x20;
+        entries[target_idx].file_size = size;
+        
+        // Пишем данные в кластер файла
+        uint32_t cluster = (entries[target_idx].cluster_high << 16) | entries[target_idx].cluster_low;
+        uint32_t lba = first_data_sector + (cluster - 2) * bpb.sectors_per_cluster;
+        
+        uint8_t* data_buf = kmalloc(bpb.sectors_per_cluster * 512);
+        memset(data_buf, 0, bpb.sectors_per_cluster * 512);
+        memcpy(data_buf, data, size);
+        write_sectors_ata_pio(lba, 1, (uint16_t*)data_buf);
+        kfree(data_buf);
+
+        // Сохраняем обновленную таблицу директории
+        write_sectors_ata_pio(root_lba, 1, (uint16_t*)root_buf);
+        term_print("FAT32: File updated/created.\n");
+    }
+
     kfree(root_buf);
-    term_print("FAT32: File saved successfully.\n");
+}
+
+void fat32_to_83(const char* src, char* dst) {
+    memset(dst, ' ', 11);
+    int i = 0, j = 0;
+
+    // Копируем имя (до точки или до конца)
+    for (i = 0; i < 8 && src[i] != '.' && src[i] != '\0'; i++) {
+        char c = src[i];
+        if (c >= 'a' && c <= 'z') c -= 32;
+        dst[i] = c;
+    }
+
+    // Ищем точку для расширения
+    const char* dot = strstr(src, ".");
+    if (dot) {
+        dot++; // Пропускаем саму точку
+        for (j = 0; j < 3 && dot[j] != '\0'; j++) {
+            char c = dot[j];
+            if (c >= 'a' && c <= 'z') c -= 32;
+            dst[8 + j] = c;
+        }
+    }
 }
