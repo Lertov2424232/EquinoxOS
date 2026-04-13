@@ -48,22 +48,30 @@ void sleep(uint32_t ms) {
 }
 
 bool in_menu = true;
-int menu_selection = 0;
+int menu_selection = 0; // 0 - Start, 1 - Exit
 
-void draw_menu() {
-    // Очищаем фон
-    for(int i=0; i<400*300; i++) screen_buffer[i] = 0x222222;
+void render_menu() {
+    // 1. Рисуем фон "окна" приложения
+    eid_draw_rect(screen_buffer, 400, 0, 0, 400, 300, EID_CLR_SURFACE);
+    
+    // 2. Декор
+    eid_draw_window_frame(screen_buffer, 400, 400, 300, "Snake Game Setup");
+    
+    // 3. Заголовок внутри
+    eid_draw_text(screen_buffer, 400, 130, 60, "SNAKE REBORN", 0x000080);
 
-    // Рисуем лого
-    printf("--- EQUINOX SNAKE ---\n"); // Это пойдет в терминал ядра
+    // 4. Кнопки
+    eid_draw_button(screen_buffer, 400, 100, 120, 200, 35, "START GAME", 
+                (menu_selection == 0) ? EID_STATE_PRESSED : EID_STATE_NORMAL);
 
-    // Рисуем кнопки через наш EID
-    eid_draw_button(screen_buffer, 400, 100, 100, 200, 40, "START GAME", (menu_selection == 0));
-    eid_draw_button(screen_buffer, 400, 100, 160, 200, 40, "EXIT", (menu_selection == 1));
+    eid_draw_button(screen_buffer, 400, 100, 170, 200, 35, "EXIT TO OS", 
+                (menu_selection == 1) ? EID_STATE_PRESSED : EID_STATE_NORMAL);
+
+    // 5. Чекбокс для красоты
+    eid_draw_checkbox(screen_buffer, 400, 100, 230, "Classic Mode", true);
 
     draw_frame();
 }
-
 
 int main() {
     printf("Snake Application Started!\n");
@@ -74,7 +82,7 @@ int main() {
     
      while(1) {
         if (in_menu) {
-            draw_menu();
+            render_menu();
             uint8_t key = get_key();
             if (key == 0x48) menu_selection = 0; // Up
             if (key == 0x50) menu_selection = 1; // Down
