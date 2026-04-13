@@ -11,7 +11,11 @@ uint32_t screen_height;
 uint32_t screen_pitch;
 uint32_t* backbuffer;
 static uint32_t* cached_bg = NULL;
-static psf1_t* current_font = NULL;
+psf1_t* current_font = NULL;
+
+void* vesa_get_font() {
+    return current_font;
+}
 
 // =========================================================================
 //                              ОСНОВНАЯ ГРАФИКА (ДВОЙНАЯ БУФЕРИЗАЦИЯ)

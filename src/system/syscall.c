@@ -50,6 +50,10 @@ void syscall_handler(syscall_regs_t* regs) {
         case 10: // SYS_EXIT
             term_print("[SYS] Application exited.\n");
             break;
+        case 12: // SYS_GET_FONT
+            extern void* vesa_get_font();
+            regs->rax = (uint64_t)vesa_get_font();
+            break;
 
         default:
             break;
