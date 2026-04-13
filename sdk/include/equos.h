@@ -5,12 +5,13 @@
 
 #define SYS_PRINT         1
 #define SYS_READ_FILE     2
+#define SYS_WRITE_FILE    3
 #define SYS_DRAW_BUFFER   5
 #define SYS_GET_TIME      6
 #define SYS_GET_SCANCODE  9
 #define SYS_EXIT          10
 #define SYS_YIELD         11
-#define SYS_GET_FONT 12
+#define SYS_GET_FONT      12
 
 // Переименовали в _syscall и всегда принимаем 5 аргументов + номер
 static inline uint64_t _syscall(uint64_t num, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5) {
@@ -33,6 +34,10 @@ static inline uint64_t _syscall(uint64_t num, uint64_t a1, uint64_t a2, uint64_t
 
 static inline void* get_system_font() {
     return (void*)_syscall(SYS_GET_FONT, 0, 0, 0, 0, 0);
+}
+
+static inline void write_file(const char* name, void* buf, uint32_t size) {
+    _syscall(SYS_WRITE_FILE, (uint64_t)name, (uint64_t)buf, size, 0, 0);
 }
 
 #endif

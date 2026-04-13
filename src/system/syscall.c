@@ -19,19 +19,22 @@ void syscall_handler(syscall_regs_t* regs) {
             term_print((const char*)regs->rdi); 
             break;
         case 2: { // SYS_READ_FILE (name: rdi, size_ptr: rsi)
-    uint32_t size = 0;
-    uint8_t* data = fat32_read_file((const char*)regs->rdi, &size);
-    if (data) {
-        // Записываем размер обратно в память программы
-        *(uint32_t*)regs->rsi = size;
-        // Возвращаем указатель на данные в RAX
-        // ВАЖНО: Тут нужно будет копировать данные в User Space, но пока вернем адрес ядра
-        regs->rax = (uint64_t)data; 
-    } else {
-        regs->rax = 0;
-    }
-    break;
-}
+            uint32_t size = 0;
+            uint8_t* data = fat32_read_file((const char*)regs->rdi, &size);
+            if (data) {
+                // Записываем размер обратно в память программы
+                *(uint32_t*)regs->rsi = size;
+                // Возвращаем указатель на данные в RAX
+                // ВАЖНО: Тут нужно будет копировать данные в User Space, но пока вернем адрес ядра
+                regs->rax = (uint64_t)data; 
+            } else {
+                regs->rax = 0;
+            }
+            break;
+        }
+        case 3: // SYS_WRITE_FILE (name: rdi, buf: rsi, size: rdx)
+            fat32_save_file((const char*)regs->rdi, (const char*)regs->rsi, (uint32_t)regs->rdx);
+            break;
 
         case 5: // SYS_DRAW_BUFFER
             sys_draw_app_buffer(regs->rdi, regs->rsi, regs->rdx, regs->rcx, (uint32_t*)regs->r8);
