@@ -8,6 +8,9 @@
 extern volatile uint8_t last_scancode;
 extern bool is_app_running;
 extern void notepad_handle_char(char c);
+static uint8_t key_buffer[16];
+static int key_head = 0;
+static int key_tail = 0;
 
 static bool shift_pressed = false;
 
@@ -33,15 +36,31 @@ char get_ascii_char(uint8_t scancode) {
     return shift_pressed ? ascii_table_shift[scancode] : ascii_table[scancode];
 }
 
+void keyboard_push(uint8_t scancode) {
+    int next = (key_head + 1) % 16;
+    if (next != key_tail) {
+        key_buffer[key_head] = scancode;
+        key_head = next;
+    }
+}
+
+uint8_t keyboard_pop() {
+    if (key_head == key_tail) return 0;
+    uint8_t sc = key_buffer[key_tail];
+    key_tail = (key_tail + 1) % 16;
+    return sc;
+}
+
 void keyboard_callback() {
     uint8_t scancode = inb(0x60);
-    last_scancode = scancode; // Сохраняем для игр (Змейка/Дум)
     
+    // 1. Всегда кладём в буфер (для змейки)
+    keyboard_push(scancode);
+    
+    // 2. Для GUI/Shell (текстовый ввод)
     char c = get_ascii_char(scancode);
-
     if (c > 0) {
         if (!is_app_running) {
-            // Route to notepad if it's active, otherwise to shell
             if (notepad_win && notepad_win->active) {
                 notepad_handle_char(c);
             } else {
