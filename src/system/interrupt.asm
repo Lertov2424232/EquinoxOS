@@ -189,16 +189,16 @@ syscall_interrupt_asm:
     push rdx
     push rcx
     push rbx
-    push rax
     push r8
     push r9
-    
-    mov rdi, rsp        ; Передаем указатель на всю эту пачку регистров в C
+    push rax           ; RAX пушим последним, он будет первым в структуре C
+
+    mov rdi, rsp
     call syscall_handler
-    
+
+    pop rax
     pop r9
     pop r8
-    pop rax
     pop rbx
     pop rcx
     pop rdx

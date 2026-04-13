@@ -19,7 +19,7 @@ ASMFLAGS = -f elf64
 
 # --- ФЛАГИ SDK (ПРИЛОЖЕНИЯ) ---
 SDK_INC = -I./sdk/include
-USER_CFLAGS = -ffreestanding -mcmodel=large -mno-red-zone -fno-stack-protector -fno-pic $(SDK_INC)
+USER_CFLAGS = -ffreestanding -mcmodel=small -mno-red-zone -fno-stack-protector -fno-pic $(SDK_INC)
 
 # Объекты SDK и Ядра
 SDK_OBJS = $(SDK_LIB_DIR)/crt0.o $(SDK_LIB_DIR)/stdio.o $(SDK_LIB_DIR)/string.o $(SDK_LIB_DIR)/eid.o

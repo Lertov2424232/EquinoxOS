@@ -5,10 +5,19 @@
 
 extern volatile uint32_t tick;
 extern void sys_draw_app_buffer(int x, int y, int w, int h, uint32_t* buffer);
+extern uint8_t keyboard_pop();
 
 typedef struct {
-    uint64_t r9, r8, rax, rbx, rcx, rdx, rsi, rdi, rbp;
-    uint64_t rip, cs, rflags, rsp, ss; 
+    uint64_t rax; // syscall_number
+    uint64_t r9;
+    uint64_t r8;
+    uint64_t rbx;
+    uint64_t rcx;
+    uint64_t rdx;
+    uint64_t rsi;
+    uint64_t rdi;
+    uint64_t rbp;
+    uint64_t rip, cs, rflags, rsp, ss;
 } syscall_regs_t;
 
 void syscall_handler(syscall_regs_t* regs) {
@@ -45,13 +54,13 @@ void syscall_handler(syscall_regs_t* regs) {
             break;
 
         case 9: // SYS_GET_SCANCODE
-            extern uint8_t last_scancode;
-            regs->rax = last_scancode;
-            last_scancode = 0;
+            regs->rax = keyboard_pop(); // Вызываем функцию, получаем сканкод
             break;
 
         case 10: // SYS_EXIT
-            term_print("[SYS] Application exited.\n");
+            term_print("[SYS] Killing process...\n");
+            extern bool is_app_running;
+            is_app_running = false;
             break;
         case 12: // SYS_GET_FONT
             extern void* vesa_get_font();

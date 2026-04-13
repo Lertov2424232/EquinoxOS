@@ -5,16 +5,18 @@
 #include "../drivers/vga/vesa.h"
 
 static uint32_t part_lba = 0;
-static fat32_bpb_t bpb;
+static fat32_bpb_t* bpb = NULL;
 static uint32_t first_data_sector;
 static uint32_t fat_start_sector;
 
 void fat32_init() {
-    // 1. Сначала узнаем, видит ли драйвер диск вообще
     ata_identify();
+    
+    // Выделяем память в куче, здесь писать МОЖНО
+    if (!bpb) bpb = (fat32_bpb_t*)kmalloc(sizeof(fat32_bpb_t));
 
     uint8_t* sector_buf = kmalloc(512);
-    if (!sector_buf) return;
+    read_sectors_ata_pio((uintptr_t)sector_buf, 0, 1);
     
     // Чистим буфер ПЕРЕД чтением, чтобы точно знать, что ATA туда что-то записала
     memset(sector_buf, 0xCC, 512); 
@@ -56,14 +58,15 @@ void fat32_init() {
         return;
     }
 
-    memcpy(&bpb, sector_buf, sizeof(fat32_bpb_t));
-    fat_start_sector = part_lba + bpb.reserved_sectors;
-    first_data_sector = fat_start_sector + (bpb.fat_count * bpb.sectors_per_fat_32);
+    memcpy(bpb, sector_buf, sizeof(fat32_bpb_t));
+    
+    // ВАЖНО: везде в коде замени bpb-> на bpb->
+    fat_start_sector = part_lba + bpb->reserved_sectors;
+    first_data_sector = fat_start_sector + (bpb->fat_count * bpb->sectors_per_fat_32);
     
     kfree(sector_buf);
     term_print("FAT32: Mounted successfully!\n");
 }
-
 // Получаем следующий кластер из таблицы FAT
 uint32_t fat32_get_next_cluster(uint32_t cluster) {
     uint32_t fat_offset = cluster * 4;
@@ -79,15 +82,15 @@ uint8_t* fat32_read_file(const char* name, uint32_t* out_size) {
     char fat_name[11];
     fat32_to_83(name, fat_name); // Превращаем "NOTES.TXT" в "NOTES   TXT"
 
-    uint32_t current_cluster = bpb.root_cluster;
-    uint8_t* cluster_buf = kmalloc(bpb.sectors_per_cluster * 512);
+    uint32_t current_cluster = bpb->root_cluster;
+    uint8_t* cluster_buf = kmalloc(bpb->sectors_per_cluster * 512);
 
     while (current_cluster >= 2 && current_cluster < 0x0FFFFFF8) {
-        uint32_t lba = first_data_sector + (current_cluster - 2) * bpb.sectors_per_cluster;
-        read_sectors_ata_pio((uintptr_t)cluster_buf, lba, bpb.sectors_per_cluster);
+        uint32_t lba = first_data_sector + (current_cluster - 2) * bpb->sectors_per_cluster;
+        read_sectors_ata_pio((uintptr_t)cluster_buf, lba, bpb->sectors_per_cluster);
 
         fat32_entry_t* entries = (fat32_entry_t*)cluster_buf;
-        for (int e = 0; e < (int)(bpb.sectors_per_cluster * 512 / 32); e++) {
+        for (int e = 0; e < (int)(bpb->sectors_per_cluster * 512 / 32); e++) {
             if (entries[e].name[0] == 0x00) break;    // Конец списка
             if (entries[e].name[0] == 0xE5) continue; // Файл удален - ИГНОРИРУЕМ
 
@@ -101,10 +104,10 @@ uint8_t* fat32_read_file(const char* name, uint32_t* out_size) {
                 uint32_t copied = 0;
                 
                 while (f_cluster >= 2 && f_cluster < 0x0FFFFFF8 && copied < size) {
-                    uint32_t f_lba = first_data_sector + (f_cluster - 2) * bpb.sectors_per_cluster;
+                    uint32_t f_lba = first_data_sector + (f_cluster - 2) * bpb->sectors_per_cluster;
                     // Читаем целый кластер
-                    read_sectors_ata_pio((uintptr_t)(file_data + copied), f_lba, bpb.sectors_per_cluster);
-                    copied += (bpb.sectors_per_cluster * 512);
+                    read_sectors_ata_pio((uintptr_t)(file_data + copied), f_lba, bpb->sectors_per_cluster);
+                    copied += (bpb->sectors_per_cluster * 512);
                     f_cluster = fat32_get_next_cluster(f_cluster);
                 }
                 kfree(cluster_buf);
@@ -120,21 +123,21 @@ uint8_t* fat32_read_file(const char* name, uint32_t* out_size) {
 }
 
 void fat32_list_files() {
-    if (bpb.sectors_per_cluster == 0) {
+    if (bpb->sectors_per_cluster == 0) {
         term_print("FAT32: Not initialized!\n");
         return;
     }
 
-    uint8_t* buf = kmalloc(bpb.sectors_per_cluster * 512);
-    uint32_t cluster = bpb.root_cluster;
+    uint8_t* buf = kmalloc(bpb->sectors_per_cluster * 512);
+    uint32_t cluster = bpb->root_cluster;
 
     term_print("--- FAT32 ROOT DIR ---\n");
     while (cluster >= 2 && cluster < 0x0FFFFFF8) {
-        uint32_t lba = first_data_sector + (cluster - 2) * bpb.sectors_per_cluster;
-        read_sectors_ata_pio((uintptr_t)buf, lba, bpb.sectors_per_cluster);
+        uint32_t lba = first_data_sector + (cluster - 2) * bpb->sectors_per_cluster;
+        read_sectors_ata_pio((uintptr_t)buf, lba, bpb->sectors_per_cluster);
 
         fat32_entry_t* entries = (fat32_entry_t*)buf;
-        for (int i = 0; i < (bpb.sectors_per_cluster * 512 / 32); i++) {
+        for (int i = 0; i < (bpb->sectors_per_cluster * 512 / 32); i++) {
             if (entries[i].name[0] == 0) break; // Конец списка
             if (entries[i].name[0] == 0xE5) continue; // Удален
             if (entries[i].attr & 0x08) continue; // Метка тома (Volume ID)
@@ -156,16 +159,16 @@ void fat32_list_files() {
 }
 
 int fat32_get_files(fat32_file_info_t* out_list, int max_files) {
-    uint8_t* buf = kmalloc(bpb.sectors_per_cluster * 512);
-    uint32_t cluster = bpb.root_cluster;
+    uint8_t* buf = kmalloc(bpb->sectors_per_cluster * 512);
+    uint32_t cluster = bpb->root_cluster;
     int count = 0;
 
     while (cluster >= 2 && cluster < 0x0FFFFFF8 && count < max_files) {
-        uint32_t lba = first_data_sector + (cluster - 2) * bpb.sectors_per_cluster;
-        read_sectors_ata_pio((uintptr_t)buf, lba, bpb.sectors_per_cluster);
+        uint32_t lba = first_data_sector + (cluster - 2) * bpb->sectors_per_cluster;
+        read_sectors_ata_pio((uintptr_t)buf, lba, bpb->sectors_per_cluster);
 
         fat32_entry_t* entries = (fat32_entry_t*)buf;
-        for (int i = 0; i < (int)(bpb.sectors_per_cluster * 512 / 32); i++) {
+        for (int i = 0; i < (int)(bpb->sectors_per_cluster * 512 / 32); i++) {
             if (entries[i].name[0] == 0x00) break;
             
             // ЖЕСТКАЯ ПРОВЕРКА НА УДАЛЕНИЕ И СИСТЕМНЫЕ ФАЙЛЫ
@@ -199,7 +202,7 @@ int fat32_get_files(fat32_file_info_t* out_list, int max_files) {
 }
 
 uint32_t fat32_find_free_cluster() {
-    uint32_t fat_sectors = bpb.sectors_per_fat_32;
+    uint32_t fat_sectors = bpb->sectors_per_fat_32;
     uint8_t* buf = kmalloc(512);
 
     for (uint32_t i = 0; i < fat_sectors; i++) {
@@ -231,15 +234,15 @@ void fat32_save_file(const char* name, const char* data, uint32_t size) {
     char fat_name[11];
     fat32_to_83(name, fat_name);
 
-    uint8_t* root_buf = kmalloc(bpb.sectors_per_cluster * 512);
-    uint32_t root_lba = first_data_sector + (bpb.root_cluster - 2) * bpb.sectors_per_cluster;
-    read_sectors_ata_pio((uintptr_t)root_buf, root_lba, bpb.sectors_per_cluster);
+    uint8_t* root_buf = kmalloc(bpb->sectors_per_cluster * 512);
+    uint32_t root_lba = first_data_sector + (bpb->root_cluster - 2) * bpb->sectors_per_cluster;
+    read_sectors_ata_pio((uintptr_t)root_buf, root_lba, bpb->sectors_per_cluster);
     
     fat32_entry_t* entries = (fat32_entry_t*)root_buf;
     int target_idx = -1;
 
     // Сначала ищем: может такой файл уже есть?
-    for (int i = 0; i < (bpb.sectors_per_cluster * 512 / 32); i++) {
+    for (int i = 0; i < (bpb->sectors_per_cluster * 512 / 32); i++) {
         if (memcmp(entries[i].name, fat_name, 11) == 0) {
             target_idx = i;
             break;
@@ -248,7 +251,7 @@ void fat32_save_file(const char* name, const char* data, uint32_t size) {
 
     // Если не нашли, ищем свободное место (как раньше)
     if (target_idx == -1) {
-        for (int i = 0; i < (bpb.sectors_per_cluster * 512 / 32); i++) {
+        for (int i = 0; i < (bpb->sectors_per_cluster * 512 / 32); i++) {
             if (entries[i].name[0] == 0x00 || entries[i].name[0] == 0xE5) {
                 target_idx = i;
                 memcpy(entries[target_idx].name, fat_name, 11);
@@ -268,10 +271,10 @@ void fat32_save_file(const char* name, const char* data, uint32_t size) {
         
         // Пишем данные в кластер файла
         uint32_t cluster = (entries[target_idx].cluster_high << 16) | entries[target_idx].cluster_low;
-        uint32_t lba = first_data_sector + (cluster - 2) * bpb.sectors_per_cluster;
+        uint32_t lba = first_data_sector + (cluster - 2) * bpb->sectors_per_cluster;
         
-        uint8_t* data_buf = kmalloc(bpb.sectors_per_cluster * 512);
-        memset(data_buf, 0, bpb.sectors_per_cluster * 512);
+        uint8_t* data_buf = kmalloc(bpb->sectors_per_cluster * 512);
+        memset(data_buf, 0, bpb->sectors_per_cluster * 512);
         memcpy(data_buf, data, size);
         write_sectors_ata_pio(lba, 1, (uint16_t*)data_buf);
         kfree(data_buf);

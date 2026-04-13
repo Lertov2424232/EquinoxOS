@@ -234,8 +234,11 @@ void put_pixel_direct(int x, int y, uint32_t color) {
 
 void draw_rect_direct(int x, int y, int w, int h, uint32_t color) {
     for (int i = y; i < y + h; i++) {
+        if (i < 0 || i >= (int)screen_height) continue;
+        // Пишем сразу в видеопамять по строкам
+        uint32_t* dest = (uint32_t*)(fb_base_addr + (i * screen_pitch));
         for (int j = x; j < x + w; j++) {
-            put_pixel_direct(j, i, color);
+            if (j >= 0 && j < (int)screen_width) dest[j] = color;
         }
     }
 }

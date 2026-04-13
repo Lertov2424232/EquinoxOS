@@ -40,5 +40,6 @@ void eid_draw_button(uint32_t* buf, int win_w, int x, int y, int w, int h, const
 void eid_draw_window_frame(uint32_t* buf, int win_w, int w, int h, const char* title);
 void eid_draw_checkbox(uint32_t* buf, int win_w, int x, int y, const char* label, bool checked);
 void eid_draw_progressbar(uint32_t* buf, int win_w, int x, int y, int w, int h, int progress);
+void eid_draw_rounded_border(uint32_t* buf, int win_w, int x, int y, int w, int h, uint32_t color);
 
 #endif
