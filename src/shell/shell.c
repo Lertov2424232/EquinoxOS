@@ -57,9 +57,23 @@ void shell_handle_char(char c) {
         else if (strcmp(shell_buffer, "malloc") == 0) {
             kmalloc(1024 * 1024);
         }
+        else if (memcmp(shell_buffer, "run ", 4) == 0) {
+    char* filename = shell_buffer + 4;
+    
+    // Убираем пробелы и переносы строк в конце
+    int len = strlen(filename);
+    while(len > 0 && (filename[len-1] == ' ' || filename[len-1] == '\r' || filename[len-1] == '\n')) {
+        filename[len-1] = '\0';
+        len--;
+    }
+    
+    term_print("Attempting to run: ");
+    term_print(filename);
+    term_print("\n");
+    task_exec(filename);
+}
         else if (strcmp(shell_buffer, "run") == 0) {
-            term_print("Starting app.elf...\n");
-            should_run_app = true; 
+            term_print("Usage: run [filename.elf]\n");
         }
         else if (strcmp(shell_buffer, "nettest") == 0) {
             send_arp_request(0x0A000202); 

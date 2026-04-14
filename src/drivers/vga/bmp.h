@@ -30,5 +30,6 @@ typedef struct {
 
 void draw_bmp(const uint8_t* data, int x, int y);
 void bmp_draw_to_window(window_t* win, const uint8_t* data, int x, int y);
+uint8_t* bmp_create_from_window(window_t* win, uint32_t* out_size);
 
 #endif

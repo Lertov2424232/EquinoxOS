@@ -20,8 +20,9 @@ typedef struct task {
 } task_t;
 
 void task_init();
-void task_create(void (*entry)(), void* arg);
+void task_create(void (*entry)(), uint64_t arg1, uint64_t arg2);
 uint64_t schedule(uint64_t current_rsp); // Вызывается из ассемблера
 void yield(void);
+bool task_exec(char* full_command);
 
 #endif
