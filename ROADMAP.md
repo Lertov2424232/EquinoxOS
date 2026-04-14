@@ -7,6 +7,9 @@
 - [x] **Network:** RTL8139 Driver, ARP, IPv4, UDP, TCP (3-way handshake), HTTP GET, and NTP sync.
 - [x] **Filesystem:** FAT32 Read-only support via ATA PIO.
 - [x] **UI:** Desktop Environment with Terminal, Paint (Bresenham), Notepad, and System Monitor.
+- [x] **System Calls:** Implement a `syscall` interface (int 0x80 or `syscall` instruction) for applications to request kernel services (I/O, Memory, UI).
+- [x] **FAT32 Write Support:** Allow saving files from Notepad and creating directories.
+- [x] **Preemptive Multitasking:** Stable scheduler based on APIC/HPET timers.
 
 ---
 
@@ -16,12 +19,10 @@
 - [ ] **Hardware Abstraction Layer (HAL):** Abstract display and input drivers to support multiple backends (VGA/VESA/VirtIO).
 - [ ] **GDT/TSS Refactoring:** Proper implementation of Task State Segments for user-mode switching.
 - [ ] **User Mode (Ring 3):** Isolated address spaces for applications using Paging (ML4/PDP/PD/PT).
-- [ ] **System Calls:** Implement a `syscall` interface (int 0x80 or `syscall` instruction) for applications to request kernel services (I/O, Memory, UI).
 
 ## 📁 Phase 2: Advanced Storage & VFS
 *Goal: Making the system truly data-driven.*
 
-- [ ] **FAT32 Write Support:** Allow saving files from Notepad and creating directories.
 - [ ] **VFS Enhancements:** Proper file descriptors (`open`, `read`, `write`, `close`) and pipe support.
 - [ ] **AHCI Driver:** Implementation of SATA/AHCI support to replace the aging ATA PIO mode for faster disk I/O.
 - [ ] **Partition Parsing:** Support for GPT (GUID Partition Table) alongside MBR.
@@ -30,23 +31,22 @@
 *Goal: Building a high-performance UI toolkit.*
 
 - [ ] **SSE/AVX Optimized Blitting:** Using SIMD instructions to accelerate window compositing and transparency.
-- [ ] **Advanced UI Toolkit:**
+- [ ] **Advanced UI Toolkit:** (Halfly finished)
     *   Standardized Widget Library (Buttons, Checkboxes, Text Inputs).
     *   Window Animations (Fade-in, slide-out).
     *   Real-time Blur (Gaussian/Box blur) using SSE shaders.
-- [ ] **Dynamic Font Rendering:** Transition from 8x8 bitmap fonts to PSF or basic TrueType (TTF) support.
+- [ ] **Dynamic Font Rendering:** Transition from 8x8 bitmap fonts to PSF or basic TrueType (TTF) support. (Halfly finished)
 
 ## ⚙️ Phase 4: Multitasking & IPC
 *Goal: A responsive, multi-threaded environment.*
 
-- [ ] **Preemptive Multitasking:** Stable scheduler based on APIC/HPET timers.
 - [ ] **Inter-Process Communication (IPC):** Shared memory and message passing for GUI events.
 - [ ] **Thread Safety:** Implementing Mutexes and Semaphores in the kernel.
 
 ## 🏗 Phase 5: The Self-Hosting Milestone
 *Goal: The ultimate test—EquinoxOS compiling EquinoxOS.*
 
-- [ ] **C Standard Library (Libc):** Porting `newlib` or building a custom `mlibc` implementation.
+- [ ] **C Standard Library (Libc):** Porting `newlib` or building a custom `mlibc` implementation. (Halfly finished)
 - [ ] **Shell Improvements:** Support for scripts, environment variables, and piping.
 - [ ] **Porting Toolchains:**
     *   Porting `TinyCC` (TCC) or a basic `GCC` cross-compiler.

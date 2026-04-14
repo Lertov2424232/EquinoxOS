@@ -68,48 +68,63 @@ void ata_identify() {
     term_print("\n");
 }
 
-void read_sectors_ata_pio(uintptr_t target_address, uint64_t LBA, uint8_t sector_count) {
-    if (!ata_wait_bsy()) return;
-
-    outb(ATA_PRIMARY_DRIVE_SEL, 0xE0 | ((LBA >> 24) & 0x0F));
-    ata_400ns_delay();
-
-    outb(ATA_PRIMARY_SECCOUNT, sector_count);
-    outb(ATA_PRIMARY_LBA_LOW,  (uint8_t)LBA);
-    outb(ATA_PRIMARY_LBA_MID,  (uint8_t)(LBA >> 8));
-    outb(ATA_PRIMARY_LBA_HIGH, (uint8_t)(LBA >> 16));
-    outb(ATA_PRIMARY_COMMAND,  0x20); // Read
-
+void read_sectors_ata_pio(uintptr_t target_address, uint64_t LBA, uint32_t sector_count) {
     uint16_t* target = (uint16_t*)target_address;
+    
+    while (sector_count > 0) {
+        // За один раз контроллер ATA PIO принимает до 255 секторов 
+        // (0 означает 256 в некоторых спецификациях, но 255 безопаснее)
+        uint8_t chunk = (sector_count > 255) ? 255 : (uint8_t)sector_count;
 
-    for (int j = 0; j < sector_count; j++) {
-        if (!ata_wait_bsy() || !ata_wait_drq()) return;
-        for (int i = 0; i < 256; i++) {
-            target[i] = inw(ATA_PRIMARY_DATA);
+        if (!ata_wait_bsy()) return;
+        outb(ATA_PRIMARY_DRIVE_SEL, 0xE0 | ((LBA >> 24) & 0x0F));
+        ata_400ns_delay();
+        outb(ATA_PRIMARY_SECCOUNT, chunk);
+        outb(ATA_PRIMARY_LBA_LOW,  (uint8_t)LBA);
+        outb(ATA_PRIMARY_LBA_MID,  (uint8_t)(LBA >> 8));
+        outb(ATA_PRIMARY_LBA_HIGH, (uint8_t)(LBA >> 16));
+        outb(ATA_PRIMARY_COMMAND,  0x20);
+
+        for (int j = 0; j < chunk; j++) {
+            if (!ata_wait_bsy() || !ata_wait_drq()) return;
+            for (int i = 0; i < 256; i++) {
+                target[i] = inw(ATA_PRIMARY_DATA);
+            }
+            target += 256;
         }
-        target += 256;
+
+        sector_count -= chunk;
+        LBA += chunk;
     }
 }
 
-void write_sectors_ata_pio(uint64_t LBA, uint8_t sector_count, uint16_t* buffer) {
-    if (!ata_wait_bsy()) return;
+void write_sectors_ata_pio(uint64_t LBA, uint32_t sector_count, uint16_t* buffer) {
+    uint16_t* ptr = buffer;
 
-    outb(ATA_PRIMARY_DRIVE_SEL, ATA_DRIVE_MASTER | ((LBA >> 24) & 0x0F));
-    ata_400ns_delay();
+    while (sector_count > 0) {
+        uint8_t chunk = (sector_count > 255) ? 255 : (uint8_t)sector_count;
 
-    outb(ATA_PRIMARY_SECCOUNT, sector_count);
-    outb(ATA_PRIMARY_LBA_LOW,  (uint8_t)LBA);
-    outb(ATA_PRIMARY_LBA_MID,  (uint8_t)(LBA >> 8));
-    outb(ATA_PRIMARY_LBA_HIGH, (uint8_t)(LBA >> 16));
-    outb(ATA_PRIMARY_COMMAND,  0x30); // Write Sectors
+        if (!ata_wait_bsy()) return;
+        outb(ATA_PRIMARY_DRIVE_SEL, 0xE0 | ((LBA >> 24) & 0x0F));
+        ata_400ns_delay();
+        outb(ATA_PRIMARY_SECCOUNT, chunk);
+        outb(ATA_PRIMARY_LBA_LOW,  (uint8_t)LBA);
+        outb(ATA_PRIMARY_LBA_MID,  (uint8_t)(LBA >> 8));
+        outb(ATA_PRIMARY_LBA_HIGH, (uint8_t)(LBA >> 16));
+        outb(ATA_PRIMARY_COMMAND,  0x30); // Write
 
-    for (int j = 0; j < sector_count; j++) {
-        if (!ata_wait_bsy() || !ata_wait_drq()) return;
-        for (int i = 0; i < 256; i++) {
-            outw(ATA_PRIMARY_DATA, buffer[i]);
+        for (int j = 0; j < chunk; j++) {
+            if (!ata_wait_bsy() || !ata_wait_drq()) return;
+            for (int i = 0; i < 256; i++) {
+                outw(ATA_PRIMARY_DATA, ptr[i]);
+            }
+            ptr += 256;
         }
+        
+        outb(ATA_PRIMARY_COMMAND, 0xE7); // Cache Flush после каждой пачки
+        ata_wait_bsy();
+
+        sector_count -= chunk;
+        LBA += chunk;
     }
-    
-    outb(ATA_PRIMARY_COMMAND, 0xE7); // Cache Flush
-    ata_wait_bsy();
 }

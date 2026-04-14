@@ -149,3 +149,46 @@ char* strcat(char* dest, const char* src) {
     *ptr = '\0';
     return dest;
 }
+
+static char* strtok_last = NULL;
+
+char* strtok(char* s, const char* delim) {
+    if (!s) s = strtok_last;
+    if (!s) return NULL;
+
+    // Пропускаем ведущие разделители
+    while (*s && strpbrk(s, delim) == s) {
+        s++;
+    }
+
+    if (!*s) {
+        strtok_last = NULL;
+        return NULL;
+    }
+
+    char* start = s;
+    // Ищем конец токена
+    while (*s && strpbrk(s, delim) != s) {
+        s++;
+    }
+
+    if (*s) {
+        *s = '\0';
+        strtok_last = s + 1;
+    } else {
+        strtok_last = NULL;
+    }
+
+    return start;
+}
+
+// Вспомогательная функция для strtok
+char* strpbrk(const char* s1, const char* s2) {
+    while (*s1) {
+        for (const char* p = s2; *p; p++) {
+            if (*s1 == *p) return (char*)s1;
+        }
+        s1++;
+    }
+    return NULL;
+}

@@ -227,7 +227,30 @@ void update_gui() {
     gui_window_draw_rect(paint_win, paint_win->w - 22, 2, 16, 16, paint_color);
     // "Clear" button
     gui_window_draw_string(paint_win, "CLR", paint_win->w - 60, 6, 0x333333);
+    gui_window_draw_rect(paint_win, paint_win->w - 110, 2, 45, 15, 0x444444);
+    gui_window_draw_string(paint_win, "SAVE", paint_win->w - 105, 6, 0xFFFFFF);
 
+    if (mouse_left_button && !prev_mouse_left) {
+      int rel_x = mouse_x - paint_win->x;
+      int rel_y = mouse_y - paint_win->y;
+
+      // Клик по SAVE в Paint
+      if (rel_y >= 2 && rel_y < 17 && rel_x >= paint_win->w - 110 && rel_x < paint_win->w - 65) {
+          term_print("Paint: Generating BMP...\n");
+          
+          uint32_t bmp_size = 0;
+          uint8_t* bmp_data = bmp_create_from_window(paint_win, &bmp_size);
+          
+          if (bmp_data) {
+              // Сохраняем на диск. 
+              // ВАЖНО: Сейчас твоя fat32_save_file запишет только первые 512 байт!
+              fat32_save_file("IMAGE.BMP`", (char*)bmp_data, bmp_size);
+              kfree(bmp_data);
+              term_print("Paint: Saved to IMAGE.BMP (Check size limit!)\n");
+              explorer_scanned = false; // Чтобы Explorer увидел файл
+          }
+      }
+    }
     if (mouse_left_button) {
       int rel_x = mouse_x - paint_win->x;
       int rel_y = mouse_y - paint_win->y;
@@ -477,15 +500,25 @@ uint8_t sys_get_scancode() {
 
 // Вызывается приложением для отрисовки
 void sys_draw_app_buffer(int x, int y, int w, int h, uint32_t *buffer) {
-  if (app_win && app_win->active) {
-    // Копируем пиксели программы в личный буфер окна!
-    for (int i = 0; i < h; i++) {
-      memcpy(&app_win->buffer[i * w], &buffer[i * w], w * 4);
-    }
+  if (!app_win) return;
+
+  // 1. АВТОМАТИЧЕСКИ ДЕЛАЕМ ОКНО ВИДИМЫМ!
+  if (!app_win->active) {
+      app_win->active = true;
+      window_bring_to_front(app_win);
   }
+
+  // 2. ЗАЩИТА ОТ КРАША (обрезаем картинку, если она больше окна)
+  int copy_w = (w > app_win->w) ? app_win->w : w;
+  int copy_h = (h > app_win->h) ? app_win->h : h;
+
+  // 3. КОПИРУЕМ ПИКСЕЛИ
+  for (int i = 0; i < copy_h; i++) {
+    memcpy(&app_win->buffer[i * app_win->w], &buffer[i * w], copy_w * 4);
+  }
+
   update_gui(); // Перерисовываем
 }
-
 // =========================================================================
 //                              MAIN LOOPS & INIT
 // =========================================================================
@@ -550,7 +583,7 @@ void run_elf(uint8_t *elf_data) {
   strcpy(app_win->title, "Snake Game (Multitasking)");
 
   // Вместо entry(&api) делаем:
-  task_create((void (*)())hdr->e_entry, &app_api);
+  task_create((void (*)())hdr->e_entry, (uint64_t)&app_api, 0);
 
   // ВАЖНО: Мы НЕ вызываем entry здесь.
   // Планировщик сам переключится на нее через 10мс.

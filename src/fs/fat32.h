@@ -65,5 +65,6 @@ uint32_t fat32_find_free_cluster();
 void fat32_set_cluster_entry(uint32_t cluster, uint32_t value);
 void fat32_save_file(const char* name, const char* data, uint32_t size);
 void fat32_to_83(const char* src, char* dst);
+uint32_t fat32_allocate_cluster_chain(uint32_t count);
 
 #endif
