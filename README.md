@@ -63,7 +63,9 @@ x86_64-elf-addr2line -e kernel.elf <address>
 ## Project Status
 The OS is under active development. Development involves the use of LLM-assisted coding as part of the author's workflow. 
 
-![EquinoxOS Screenshot](https://github.com/user-attachments/assets/174f378b-0b7b-4c7c-9fc7-81c8c918355c)
+<img width="1278" height="801" alt="image" src="https://github.com/user-attachments/assets/5c9ab047-cd60-42a9-904e-8b5c63db58eb" />
+<img width="464" height="581" alt="image" src="https://github.com/user-attachments/assets/52dd9b4d-a635-423a-b7bc-64052a4fc246" />
+<img width="455" height="565" alt="image" src="https://github.com/user-attachments/assets/9e21c077-ce9d-4bbc-8865-e1cd939073c6" />
 
 
 ***
