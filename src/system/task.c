@@ -31,11 +31,14 @@ void task_create(void (*entry)(), uint64_t arg1, uint64_t arg2) {
     stack_frame_t* frame = (stack_frame_t*)(stack_virt + 16384 - sizeof(stack_frame_t));
     
     frame->rip = (uint64_t)entry;
-    frame->rdi = arg1; // Теперь тут ровный 64-битный адрес для змейки или argc для bmpview!
-    frame->rsi = arg2; // argv или NULL
-    frame->cs = 0x28;
-    frame->ss = 0x30;
-    frame->rflags = 0x202;
+    frame->rdi = arg1; 
+    frame->rsi = arg2;
+    
+    // ВНИМАНИЕ: СЕГМЕНТЫ ДЛЯ RING 3
+    frame->cs = 0x20 | 3; // User Code + RPL 3
+    frame->ss = 0x18 | 3; // User Data + RPL 3
+    
+    frame->rflags = 0x202; // IF = 1 (разрешить прерывания в Ring 3)
     frame->rsp = (uint64_t)frame;
 
     new_task->rsp = (uint64_t)frame;
@@ -48,14 +51,13 @@ void task_create(void (*entry)(), uint64_t arg1, uint64_t arg2) {
 // Эту функцию вызывает таймер 100 раз в секунду
 uint64_t schedule(uint64_t current_rsp) {
     if (!current_task) return current_rsp;
-    tick++; 
-    // Сохраняем указатель на стек текущей задачи
+    
     current_task->rsp = current_rsp;
-
-    // Берем следующую задачу
     current_task = current_task->next;
 
-    // Возвращаем ассемблеру указатель на новый стек
+    extern void gdt_set_tss_stack(uint64_t);
+    gdt_set_tss_stack(current_task->rsp + sizeof(stack_frame_t));
+
     return current_task->rsp;
 }
 
