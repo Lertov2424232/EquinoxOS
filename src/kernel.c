@@ -611,6 +611,8 @@ void exec_module() {
 
 void kmain(void) {
   // 1. Память (без нее ничего не работает)
+  extern void init_gdt();
+  init_gdt(); 
   pmm_init();
   hhdm_offset = hhdm_request.response->offset;
   init_heap((uint64_t)pmm_alloc_continuous(16384) + hhdm_offset,
@@ -642,6 +644,9 @@ void kmain(void) {
   eqstart_perform_tests();
 
   // 5. Вот ТЕПЕРЬ, когда тесты прошли, инициализируем тяжелые подсистемы
+  task_init();
+  extern void irq0_handler_asm();
+  set_idt_gate(32, (uint64_t)irq0_handler_asm, 0x08); 
   vfs_init();
   fb_install_vfs();
   fat32_init();
@@ -649,12 +654,6 @@ void kmain(void) {
   rtl8139_install_vfs();
   init_mouse();
 
-  // 6. ВКЛЮЧАЕМ МНОГОЗАДАЧНОСТЬ
-  // Перенаправляем таймер на планировщик прямо перед запуском задач
-  extern void irq0_handler_asm();
-  set_idt_gate(32, (uint64_t)irq0_handler_asm, 0x28);
-
-  task_init();
   gui_init();
   shell_init();
 

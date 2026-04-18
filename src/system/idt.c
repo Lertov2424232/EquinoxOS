@@ -21,23 +21,22 @@ void set_idt_gate(int n, uint64_t handler, uint16_t sel) {
 }
 
 void init_idt() {
-  // 1. Сначала СТРОГО подготавливаем структуру дескриптора
   idt_reg.limit = (uint16_t)(sizeof(idt_gate_t) * 256 - 1);
   idt_reg.base = (uint64_t)&idt;
 
-  // 2. Заполняем таблицу
-  uint16_t sel = 0x28; // Стандарт Limine
-  for (int i = 0; i < 32; i++) {
-    set_idt_gate(i, isr_stub_table[i], sel);
+  uint16_t sel = 0x08; // <--- БЫЛО 0x28. СТАВИМ 0x08 (Kernel Code)
+  for (int i = 0; i < 256; i++) { // Лучше занулить все 256
+      set_idt_gate(i, isr_stub_table[i < 32 ? i : 0], sel); 
   }
 
-  // Заглушки для IRQ
-  set_idt_gate(32, (uint64_t)irq0_handler_asm, sel);
-  set_idt_gate(32, (uint64_t)timer_handler, sel);
+  // Временные заглушки
+  set_idt_gate(32, (uint64_t)timer_handler, sel); // Просто счетчик тиков
   set_idt_gate(33, (uint64_t)keyboard_handler, sel);
   set_idt_gate(44, (uint64_t)mouse_handler, sel);
-  set_idt_gate(0x80, (uint64_t)syscall_interrupt_asm, 0x28);
+  
+  // Системный вызов (с разрешением для Ring 3)
+  set_idt_gate(0x80, (uint64_t)syscall_interrupt_asm, sel);
+  idt[0x80].flags = 0xEE; 
 
-  // 3. ЗАГРУЖАЕМ (Только эта строчка говорит процессору "смотри сюда")
   __asm__ __volatile__("lidt %0" : : "m"(idt_reg));
 }
