@@ -48,11 +48,15 @@ volatile uint8_t last_scancode = 0;
 static EquinoxAPI app_api;
 
 // --- LIMINE REQUESTS ---
-static volatile struct limine_framebuffer_request framebuffer_request = {
+#define LIMINE_REQ __attribute__((used, section(".limine_requests")))
+
+LIMINE_REQ static volatile struct limine_framebuffer_request framebuffer_request = {
     .id = LIMINE_FRAMEBUFFER_REQUEST_ID, .revision = 0};
-static volatile struct limine_module_request module_request = {
+
+LIMINE_REQ static volatile struct limine_module_request module_request = {
     .id = LIMINE_MODULE_REQUEST_ID, .revision = 0};
-static volatile struct limine_hhdm_request hhdm_request = {
+
+LIMINE_REQ static volatile struct limine_hhdm_request hhdm_request = {
     .id = LIMINE_HHDM_REQUEST_ID, .revision = 0};
 
 // =========================================================================
@@ -618,8 +622,12 @@ void exec_module() {
 }
 
 void kmain(void) {
-  // 1. Базовая настройка памяти
-  if (hhdm_request.response) hhdm_offset = hhdm_request.response->offset;
+  if (hhdm_request.response == NULL) {
+        // Если Limine не ответил, мы не можем работать
+        draw_rect_direct(0, 0, 100, 100, 0xFF0000); 
+        while(1) __asm__("cli; hlt");
+    }
+    hhdm_offset = hhdm_request.response->offset;
   
   init_gdt(); 
   init_sse();

@@ -47,23 +47,40 @@ bool eqstart_perform_tests() {
     for(int i=0; i<32; i++) pmm_free((void*)((uint64_t)cont_p + i*4096));
     log("PMM: OK.", 0x00FF00);
 
+    log("Checking HHDM offset...", 0xAAAAAA);
+    MUST(hhdm_offset >= 0xFFFF800000000000, "HHDM Offset is invalid or NULL. Limine requests failed.");
+    log("HHDM: OK.", 0x00FF00);
+
     // --- ЭТАП 2: ВИРТУАЛЬНАЯ ПАМЯТЬ (VMM) ---
-    log("Stress-testing VMM isolation...", 0xAAAAAA);
+    log("Checking VMM integrity...", 0xAAAAAA);
     page_table_t* test_pml4 = vmm_create_address_space();
-    MUST(test_pml4 != NULL, "VMM failed to create new PML4.");
+    MUST(test_pml4 != NULL, "VMM failed to create PML4.");
     
-    // Тест маппинга: мапим физику в "странный" адрес и читаем
-    uint64_t dummy_virt = 0xDEADC0DE000;
-    void* dummy_phys = pmm_alloc();
-    vmm_map(test_pml4, dummy_virt, (uint64_t)dummy_phys, PTE_PRESENT | PTE_WRITABLE | PTE_USER);
+    // Имитируем маппинг стека из snake.elf
+    uint64_t stack_addr = 0x70000003000; // Та самая страница, где CR2: ...3FF0
+    void* stack_phys = pmm_alloc();
+    vmm_map(test_pml4, stack_addr, (uint64_t)stack_phys, PTE_USER | PTE_WRITABLE);
     
-    // ПРОВЕРКА: Видит ли ядро маппинг в структуре страниц (ручной обход)
-    uint64_t* pml4_v = (uint64_t*)test_pml4;
-    MUST(pml4_v[(dummy_virt >> 39) & 0x1FF] & PTE_PRESENT, "VMM Mapping failed at PML4 level.");
-    
-    // Очистка
-    pmm_free(dummy_phys);
-    log("VMM: OK. Page directory walking stable.", 0x00FF00);
+    // РУЧНОЙ ОБХОД (Цербер лезет в потроха)
+    uint64_t* pml4 = (uint64_t*)test_pml4;
+    uint64_t e1 = pml4[(stack_addr >> 39) & 0x1FF];
+    MUST(e1 & PTE_PRESENT, "VMM Diagnostic: PML4 Entry missing!");
+    MUST(e1 & PTE_USER, "VMM Diagnostic: PML4 Entry is Supervisor only!");
+
+    uint64_t* pdpt = (uint64_t*)VIRT(e1 & ~0xFFF);
+    uint64_t e2 = pdpt[(stack_addr >> 30) & 0x1FF];
+    MUST(e2 & PTE_PRESENT, "VMM Diagnostic: PDPT Entry missing!");
+
+    uint64_t* pd = (uint64_t*)VIRT(e2 & ~0xFFF);
+    uint64_t e3 = pd[(stack_addr >> 21) & 0x1FF];
+    MUST(e3 & PTE_PRESENT, "VMM Diagnostic: PD Entry missing!");
+
+    uint64_t* pt = (uint64_t*)VIRT(e3 & ~0xFFF);
+    uint64_t e4 = pt[(stack_addr >> 12) & 0x1FF];
+    MUST(e4 & PTE_PRESENT, "VMM Diagnostic: PT Entry (Leaf) missing!");
+    MUST(e4 & PTE_USER, "VMM Diagnostic: Page is not marked for USER!");
+
+    log("VMM: Integrity verified. Mapping logic is solid.", 0x00FF00);
 
     // --- ЭТАП 3: GDT И TSS (КРИТИЧНО ДЛЯ RING 3) ---
     log("Checking GDT/TSS descriptors...", 0xAAAAAA);

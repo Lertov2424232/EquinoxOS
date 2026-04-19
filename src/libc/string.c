@@ -2,23 +2,26 @@
 
 // Копирует блок памяти из src в dest
 void* memcpy(void* dest, const void* src, size_t n) {
-    uint64_t* d = (uint64_t*)dest;
-    const uint64_t* s = (const uint64_t*)src;
-    
-    // Копируем по 8 байт
-    while (n >= 8) {
-        *d++ = *s++;
-        n -= 8;
+    uint8_t* d = (uint8_t*)dest;
+    const uint8_t* s = (const uint8_t*)src;
+
+    // Пока n >= 8 и оба указателя выровнены по 8 байт, копируем быстро
+    if (((uintptr_t)d % 8 == 0) && ((uintptr_t)s % 8 == 0)) {
+        while (n >= 8) {
+            *(uint64_t*)d = *(const uint64_t*)s;
+            d += 8;
+            s += 8;
+            n -= 8;
+        }
     }
-    
-    // Остаток докопируем по байтам
-    uint8_t* d2 = (uint8_t*)d;
-    uint8_t* s2 = (uint8_t*)s;
-    while (n--) *d2++ = *s2++;
-    
+
+    // Остаток (или если не выровнено) - побайтово
+    while (n--) {
+        *d++ = *s++;
+    }
+
     return dest;
 }
-
 // Заполняет блок памяти одним байтом (например, нулями)
 void* memset(void* s, int c, size_t n) {
     uint8_t* p = (uint8_t*)s;

@@ -11,14 +11,15 @@ static task_t* task_list = NULL;
 static uint64_t next_pid = 1;
 extern uint64_t hhdm_offset;
 extern volatile uint32_t tick;
-
+static uint64_t kernel_cr3 = 0;
 
 void task_init() {
+    __asm__ volatile("mov %%cr3, %0" : "=r"(kernel_cr3));
     current_task = (task_t*)kmalloc(sizeof(task_t));
+    current_task->cr3 = kernel_cr3;
     current_task->id = next_pid++;
     current_task->running = true;
-    current_task->cr3 = 0; 
-    
+
     // КРИТИЧНО: У ПЕРВОЙ задачи ядра тоже должен быть стек для TSS
     current_task->kstack_at_bottom = (uint64_t)kmalloc(16384) + 16384; 
     
@@ -44,6 +45,10 @@ void task_create(void (*entry)(), uint64_t arg1, uint64_t arg2, uint64_t cr3) {
     if (cr3 != 0) {
         // Мапим юзер-стек
         void* ustack_phys = pmm_alloc_continuous(4);
+        if (!ustack_phys) {
+            draw_rect_direct(0,0,100,100,0xFF0000); // Рисуем красный квадрат, если PMM сдох
+            while(1);
+        }
         for (int i = 0; i < 4; i++) {
             vmm_map((page_table_t*)VIRT(cr3), 
                     user_stack_virt + (i * 4096), 
@@ -77,19 +82,17 @@ void task_create(void (*entry)(), uint64_t arg1, uint64_t arg2, uint64_t cr3) {
 }
 
 uint64_t schedule(uint64_t current_rsp) {
-    tick++; 
+    tick++;
     if (!current_task) return current_rsp;
     
     current_task->rsp = current_rsp;
     current_task = current_task->next;
 
-    if (current_task->cr3 != 0) {
-        __asm__ volatile("mov %0, %%cr3" : : "r"(current_task->cr3));
-    }
+    // Переключаем CR3 ВСЕГДА (либо на процесс, либо обратно на ядро)
+    uint64_t new_cr3 = (current_task->cr3 == 0) ? kernel_cr3 : current_task->cr3;
+    __asm__ volatile("mov %0, %%cr3" : : "r"(new_cr3));
 
-    // ОЧЕНЬ ВАЖНО: TSS.RSP0 должен указывать на чистый верх стека ядра этой задачи
     gdt_set_tss_stack(current_task->kstack_at_bottom);
-
     return current_task->rsp;
 }
 
