@@ -36,8 +36,9 @@
 extern size_t used_memory;
 extern volatile uint32_t tick;
 extern char shell_buffer[64];
-uint64_t hhdm_offset;
-static fat32_file_info_t real_files[16];
+uint64_t hhdm_offset = 0;
+static fat32_file_info_t real_files[256];
+uint64_t canary_safety = 0xDEADBEEFCAFEBABE; 
 
 // --- ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ---
 bool is_app_running = false;
@@ -534,16 +535,20 @@ void network_thread() {
   }
 }
 void init_sse() {
-  uint64_t cr0;
-  __asm__ volatile("mov %%cr0, %0" : "=r"(cr0));
-  cr0 &= ~(1 << 2); // Сбросить EM (Emulation)
-  cr0 |= (1 << 1);  // Установить MP (Monitor Coprocessor)
-  __asm__ volatile("mov %0, %%cr0" : : "r"(cr0));
+    // 1. Включаем SSE (стандартно)
+    uint64_t cr0;
+    __asm__ volatile("mov %%cr0, %0" : "=r"(cr0));
+    cr0 &= ~(1 << 2); // Сбросить EM (Emulation)
+    cr0 |= (1 << 1);  // Установить MP (Monitor Coprocessor)
+    __asm__ volatile("mov %0, %%cr0" : : "r"(cr0));
 
-  uint64_t cr4;
-  __asm__ volatile("mov %%cr4, %0" : "=r"(cr4));
-  cr4 |= (3 << 9); // Установить OSFXSR (9) и OSXMMEXCPT (10)
-  __asm__ volatile("mov %0, %%cr4" : : "r"(cr4));
+    // 2. ОТКЛЮЧАЕМ SMAP (бит 21 в CR4) и включаем SSE в CR4
+    uint64_t cr4;
+    __asm__ volatile("mov %%cr4, %0" : "=r"(cr4));
+    cr4 |= (1 << 9);  // OSFXSR (SSE support)
+    cr4 |= (1 << 10); // OSXMMEXCPT (SSE exceptions)
+    cr4 &= ~(1ULL << 21); // КРИТИЧНО: Отключаем SMAP (чтобы ядро могло читать буферы юзера)
+    __asm__ volatile("mov %0, %%cr4" : : "r"(cr4));
 }
 
 void run_elf(uint8_t *elf_data) {
@@ -614,10 +619,14 @@ void exec_module() {
 
 void kmain(void) {
   // 1. Память (без нее ничего не работает)
+  if (hhdm_request.response) {
+      hhdm_offset = hhdm_request.response->offset;
+  }
+  hhdm_offset = hhdm_request.response->offset;
   extern void init_gdt();
   init_gdt(); 
+  init_sse();
   pmm_init();
-  hhdm_offset = hhdm_request.response->offset;
   vmm_init(); 
   init_heap((uint64_t)pmm_alloc_continuous(16384) + hhdm_offset,
             64 * 1024 * 1024);

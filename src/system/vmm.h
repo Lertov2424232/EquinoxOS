@@ -2,17 +2,16 @@
 #define VMM_H
 
 #include <stdint.h>
-#include <stddef.h>
 #include <stdbool.h>
 
-// Эти макросы нужны всем, кто работает с памятью
-extern uint64_t hhdm_offset;
-#define VIRT(addr) ((uint64_t)(addr) + hhdm_offset)
-#define PHYS(addr) ((uint64_t)(addr) - hhdm_offset)
+extern uint64_t hhdm_offset; // Оставляем просто uint64_t
+
+// Форсируем 64-битную арифметику при сложении
+#define VIRT(addr) ((uint64_t)(addr) + (uint64_t)hhdm_offset)
+#define PHYS(addr) ((uint64_t)(addr) - (uint64_t)hhdm_offset)
 
 #define PAGE_SIZE 4096
 
-// Флаги страниц
 #define PTE_PRESENT  (1ULL << 0)
 #define PTE_WRITABLE (1ULL << 1)
 #define PTE_USER     (1ULL << 2)
