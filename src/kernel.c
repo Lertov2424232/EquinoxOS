@@ -17,6 +17,7 @@
 #include "system/pmm.h"
 #include "system/task.h"
 #include "system/timer.h"
+#include "system/vmm.h" 
 
 // --- ДРАЙВЕРЫ ---
 #include "drivers/mouse/mouse.h"
@@ -546,48 +547,50 @@ void init_sse() {
 }
 
 void run_elf(uint8_t *elf_data) {
-  Elf64_Ehdr *hdr = (Elf64_Ehdr *)elf_data;
+    Elf64_Ehdr *hdr = (Elf64_Ehdr *)elf_data;
 
-  if (hdr->e_ident[0] != 0x7F || hdr->e_ident[1] != 'E' ||
-      hdr->e_ident[2] != 'L' || hdr->e_ident[3] != 'F') {
-    term_print("Not a valid ELF file!\n");
-    return;
-  }
-
-  term_print("Loading ELF segments...\n");
-
-  Elf64_Phdr *phdr = (Elf64_Phdr *)(elf_data + hdr->e_phoff);
-  for (int i = 0; i < hdr->e_phnum; i++) {
-    if (phdr[i].p_type == 1) { // PT_LOAD = 1
-      uint8_t *dest = (uint8_t *)phdr[i].p_vaddr;
-      uint8_t *src = elf_data + phdr[i].p_offset;
-      memcpy(dest, src, phdr[i].p_filesz);
-
-      if (phdr[i].p_memsz > phdr[i].p_filesz) {
-        memset(dest + phdr[i].p_filesz, 0, phdr[i].p_memsz - phdr[i].p_filesz);
-      }
+    if (hdr->e_ident[0] != 0x7F || hdr->e_ident[1] != 'E' ||
+        hdr->e_ident[2] != 'L' || hdr->e_ident[3] != 'F') {
+        term_print("Not a valid ELF file!\n");
+        return;
     }
-  }
 
-  strcpy(app_win->title, "Snake Game");
+    term_print("VMM: Creating address space for Ring 3...\n");
+    
+    // 1. Создаем новые таблицы страниц для процесса
+    page_table_t* proc_pml4 = vmm_create_address_space();
+    uint64_t phys_pml4 = (uint64_t)proc_pml4 - hhdm_offset; // Переводим в физический адрес
 
-  EquinoxAPI api;
-  app_api.draw_buffer = sys_draw_app_buffer;
-  app_api.get_scancode = sys_get_scancode;
-  app_api.get_time_ms = sys_get_time_ms;
-  app_api.print = term_print; // Теперь змейка может писать в терминал!
+    // 2. Загружаем сегменты ELF в НОВОЕ пространство
+    Elf64_Phdr *phdr = (Elf64_Phdr *)(elf_data + hdr->e_phoff);
+    for (int i = 0; i < hdr->e_phnum; i++) {
+        if (phdr[i].p_type == 1) { // PT_LOAD
+            // Выделяем физические страницы
+            uint64_t pages = (phdr[i].p_memsz + 4095) / 4096;
+            void* phys_mem = pmm_alloc_continuous(pages);
+            
+            // Мапим их в виртуальное пространство процесса с флагом USER
+            for (uint64_t p = 0; p < pages; p++) {
+                vmm_map(proc_pml4, 
+                        phdr[i].p_vaddr + (p * 4096), 
+                        (uint64_t)phys_mem + (p * 4096), 
+                        PTE_USER | PTE_WRITABLE);
+            }
 
-  term_print("Task created for App. Switching...\n");
+            // Копируем данные из ELF в эти физические страницы через HHDM
+            memset((void*)((uint64_t)phys_mem + hhdm_offset), 0, phdr[i].p_memsz);
+            memcpy((void*)((uint64_t)phys_mem + hhdm_offset), elf_data + phdr[i].p_offset, phdr[i].p_filesz);
+        }
+    }
 
-  app_win->active = true;
-  strcpy(app_win->title, "Snake Game (Multitasking)");
+    term_print("Task: Jumping to Ring 3...\n");
 
-  // Вместо entry(&api) делаем:
-  task_create((void (*)())hdr->e_entry, (uint64_t)&app_api, 0);
+    // 3. Создаем задачу с указанием её CR3 (phys_pml4)
+    // Передаем адрес API (arg1) - только учти, что адрес app_api должен быть доступен юзеру!
+    // Пока передадим просто 0, чтобы проверить сам прыжок.
+    task_create((void (*)())hdr->e_entry, 0, 0, phys_pml4);
 
-  // ВАЖНО: Мы НЕ вызываем entry здесь.
-  // Планировщик сам переключится на нее через 10мс.
-  is_app_running = true;
+    is_app_running = true;
 }
 
 void exec_module() {
@@ -615,6 +618,7 @@ void kmain(void) {
   init_gdt(); 
   pmm_init();
   hhdm_offset = hhdm_request.response->offset;
+  vmm_init(); 
   init_heap((uint64_t)pmm_alloc_continuous(16384) + hhdm_offset,
             64 * 1024 * 1024);
 

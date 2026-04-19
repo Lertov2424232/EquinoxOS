@@ -7,3 +7,4 @@ obj/
 *.swp
 *~
 test.bin
+qemu.log
