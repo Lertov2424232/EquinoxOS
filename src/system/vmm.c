@@ -2,21 +2,22 @@
 #include "pmm.h"
 #include "../libc/string.h"
 
-// hhdm_offset уже объявлен в vmm.h как extern, здесь просто используем
 static page_table_t* kernel_pml4;
 
-// Вспомогательная функция
 static page_table_t* get_next_level(page_table_t* table, uint64_t index, bool allocate) {
-    // Используем ~0xFFFULL, чтобы не потерять верхние 32 бита физического адреса!
+    // ВНИМАНИЕ: Используем ~0xFFFULL
     if (table[index] & PTE_PRESENT) {
         return (page_table_t*)VIRT(table[index] & ~0xFFFULL);
     }
+    
     if (!allocate) return NULL;
 
-    void* next_level_phys = pmm_alloc(); 
+    void* next_level_phys = pmm_alloc();
+    if (!next_level_phys) return NULL; // Защита от OOM
+
     memset((void*)VIRT(next_level_phys), 0, PAGE_SIZE);
     
-    // ВАЖНО: Ставим PTE_USER на всех уровнях дерева для юзер-страниц
+    // Флаг User должен быть на ВСЕХ уровнях (PML4, PDPT, PD)
     table[index] = (uint64_t)next_level_phys | PTE_PRESENT | PTE_WRITABLE | PTE_USER;
     
     return (page_table_t*)VIRT(next_level_phys);

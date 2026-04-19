@@ -1,7 +1,10 @@
 #include <stdint.h>
 #include "../drivers/vga/vesa.h"
 #include "../libc/stdio.h"
+#include "../libc/string.h"
 #include "../gui/gui.h"
+#include "vmm.h"
+#include "pmm.h"
 
 extern volatile uint32_t tick;
 extern void sys_draw_app_buffer(int x, int y, int w, int h, uint32_t* buffer);
@@ -20,6 +23,36 @@ typedef struct {
     uint64_t rip, cs, rflags, rsp, ss;
 } syscall_regs_t;
 
+uint64_t copy_to_user(void* kernel_buf, uint64_t size) {
+    if (!kernel_buf || size == 0) return 0;
+
+    uint64_t pages = (size + 4095) / 4096;
+    // 1. Находим свободные физические страницы
+    void* phys = pmm_alloc_continuous(pages);
+    
+    // 2. Придумываем виртуальный адрес в пространстве юзера (например, в районе 0x80000000)
+    // В идеале тут должен быть полноценный user_heap_alloc
+    static uint64_t user_dynamic_ptr = 0x80000000; 
+    uint64_t target_virt = user_dynamic_ptr;
+    user_dynamic_ptr += (pages * 4096);
+
+    // 3. Мапим их в текущий CR3 (который принадлежит процессу)
+    uint64_t cr3;
+    __asm__ volatile("mov %%cr3, %0" : "=r"(cr3));
+    
+    for (uint64_t i = 0; i < pages; i++) {
+        vmm_map((page_table_t*)VIRT(cr3), 
+                target_virt + (i * 4096), 
+                (uint64_t)phys + (i * 4096), 
+                PTE_USER | PTE_WRITABLE);
+    }
+
+    // 4. Копируем данные из ядра в эти новые страницы юзера
+    memcpy((void*)target_virt, kernel_buf, size);
+
+    return target_virt;
+}
+
 void syscall_handler(syscall_regs_t* regs) {
     uint64_t num = regs->rax;
 
@@ -27,15 +60,15 @@ void syscall_handler(syscall_regs_t* regs) {
         case 1: // SYS_PRINT
             term_print((const char*)regs->rdi); 
             break;
-        case 2: { // SYS_READ_FILE (name: rdi, size_ptr: rsi)
+        case 2: { // SYS_READ_FILE
             uint32_t size = 0;
-            uint8_t* data = fat32_read_file((const char*)regs->rdi, &size);
-            if (data) {
-                // Записываем размер обратно в память программы
-                *(uint32_t*)regs->rsi = size;
-                // Возвращаем указатель на данные в RAX
-                // ВАЖНО: Тут нужно будет копировать данные в User Space, но пока вернем адрес ядра
-                regs->rax = (uint64_t)data; 
+            uint8_t* kdata = fat32_read_file((const char*)regs->rdi, &size);
+            if (kdata) {
+                // Копируем данные файла в память, доступную Ring 3
+                regs->rax = copy_to_user(kdata, size);
+                // Записываем размер (RSI — адрес в памяти юзера)
+                if (regs->rsi) *(uint32_t*)regs->rsi = size;
+                kfree(kdata); // Удаляем ядерную копию
             } else {
                 regs->rax = 0;
             }
@@ -62,10 +95,13 @@ void syscall_handler(syscall_regs_t* regs) {
             extern bool is_app_running;
             is_app_running = false;
             break;
-        case 12: // SYS_GET_FONT
+        case 12: { // SYS_GET_FONT
             extern void* vesa_get_font();
-            regs->rax = (uint64_t)vesa_get_font();
+            void* kfont = vesa_get_font();
+            // Мапим шрифт юзеру (шрифт обычно 4096 байт)
+            regs->rax = copy_to_user(kfont, 4096);
             break;
+        }
 
         default:
             break;
