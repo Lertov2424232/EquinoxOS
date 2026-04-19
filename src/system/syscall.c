@@ -5,6 +5,8 @@
 #include "../gui/gui.h"
 #include "vmm.h"
 #include "pmm.h"
+#include "../fs/fat32.h"
+#include "memory.h"
 
 extern volatile uint32_t tick;
 extern void sys_draw_app_buffer(int x, int y, int w, int h, uint32_t* buffer);
@@ -64,11 +66,24 @@ void syscall_handler(syscall_regs_t* regs) {
             uint32_t size = 0;
             uint8_t* kdata = fat32_read_file((const char*)regs->rdi, &size);
             if (kdata) {
+                // АНТИ-КРАШ: Если драйвер FAT32 вернул физический адрес (ниже HHDM),
+                // мы ОБЯЗАНЫ перевести его в виртуальный через HHDM!
+                // Потому что в таблицах пользователя (где мы сейчас находимся)
+                // нет маппинга физической памяти 1:1.
+                uint64_t kdata_addr = (uint64_t)kdata;
+                if (kdata_addr < hhdm_offset) {
+                    kdata_addr = VIRT(kdata_addr);
+                }
+
                 // Копируем данные файла в память, доступную Ring 3
-                regs->rax = copy_to_user(kdata, size);
+                regs->rax = copy_to_user((void*)kdata_addr, size);
+                
                 // Записываем размер (RSI — адрес в памяти юзера)
                 if (regs->rsi) *(uint32_t*)regs->rsi = size;
-                kfree(kdata); // Удаляем ядерную копию
+                
+                // ВНИМАНИЕ: Если fat32_read_file использует pmm_alloc, 
+                // то тут нужно pmm_free. Если kmalloc - то kfree.
+                kfree(kdata); 
             } else {
                 regs->rax = 0;
             }
@@ -98,8 +113,13 @@ void syscall_handler(syscall_regs_t* regs) {
         case 12: { // SYS_GET_FONT
             extern void* vesa_get_font();
             void* kfont = vesa_get_font();
-            // Мапим шрифт юзеру (шрифт обычно 4096 байт)
-            regs->rax = copy_to_user(kfont, 4096);
+            
+            uint64_t font_addr = (uint64_t)kfont;
+            if (font_addr < hhdm_offset) {
+                font_addr = VIRT(font_addr);
+            }
+            
+            regs->rax = copy_to_user((void*)font_addr, 4096);
             break;
         }
 
