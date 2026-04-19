@@ -35,8 +35,8 @@ static page_table_t* get_next_level(page_table_t* table, uint64_t index, bool al
     return (page_table_t*)VIRT(next_level_phys);
 }
 
+// Обнови vmm_map, чтобы он был агрессивнее
 void vmm_map(page_table_t* pml4, uint64_t virt, uint64_t phys, uint64_t flags) {
-    // Выравниваем адреса (на всякий случай, если кто-то прислал мусор)
     virt &= ~0xFFFULL;
     phys &= ~0xFFFULL;
 
@@ -49,10 +49,9 @@ void vmm_map(page_table_t* pml4, uint64_t virt, uint64_t phys, uint64_t flags) {
     page_table_t* pd   = get_next_level(pdpt, pdpt_idx, true);
     page_table_t* pt   = get_next_level(pd,   pd_idx,   true);
 
-    // Устанавливаем конечную запись в Page Table
     pt[pt_idx] = phys | flags | PTE_PRESENT;
 
-    // Инвалидируем TLB (только для текущего CR3, но пускай будет)
+    // Полная инвалидация страницы
     __asm__ volatile("invlpg (%0)" : : "r"(virt) : "memory");
 }
 
@@ -70,11 +69,15 @@ page_table_t* vmm_create_address_space() {
     page_table_t* new_pml4 = (page_table_t*)VIRT(phys);
     memset(new_pml4, 0, PAGE_SIZE);
 
-    // Копируем маппинг ядра (256-511). Это HHDM и сам Kernel.
-    // Это позволит ядру работать после переключения CR3.
+    // Копируем ВЕСЬ верхний диапазон (ядро + HHDM + куча)
+    // В Limine это обычно всё, что выше 256-го индекса
     for (int i = 256; i < 512; i++) {
         new_pml4[i] = kernel_pml4[i];
     }
-
+    
+    // БЕЗПОЩАДНЫЙ ФИКС: Если твоя куча оказалась в нижней половине (ошибка дизайна),
+    // нам ПРИДЕТСЯ скопировать и нижние таблицы, но это опасно для изоляции.
+    // Лучше убедись, что hhdm_offset > 0xFFFF800000000000
+    
     return new_pml4;
 }

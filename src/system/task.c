@@ -33,47 +33,40 @@ void task_create(void (*entry)(), uint64_t arg1, uint64_t arg2, uint64_t cr3) {
     new_task->running = true;
     new_task->cr3 = cr3;
 
-    // Стек ядра (выделяем всегда)
+    // Стек ядра
     void* kstack_phys = pmm_alloc_continuous(4); 
     uint64_t kstack_virt = (uint64_t)kstack_phys + hhdm_offset;
     memset((void*)kstack_virt, 0, 16384);
-    
-    // Запоминаем "дно" стека для TSS.RSP0 (стек растет вниз, так что это адрес + 16кб)
     new_task->kstack_at_bottom = kstack_virt + 16384;
 
     uint64_t user_stack_virt = 0x70000000000;
     if (cr3 != 0) {
-        // Мапим юзер-стек
-        void* ustack_phys = pmm_alloc_continuous(4);
-        if (!ustack_phys) {
-            draw_rect_direct(0,0,100,100,0xFF0000); // Рисуем красный квадрат, если PMM сдох
-            while(1);
-        }
-        for (int i = 0; i < 4; i++) {
+        // Мапим 8 страниц стека (32КБ) для надежности
+        void* ustack_phys = pmm_alloc_continuous(8);
+        for (int i = 0; i < 8; i++) {
             vmm_map((page_table_t*)VIRT(cr3), 
                     user_stack_virt + (i * 4096), 
                     (uint64_t)ustack_phys + (i * 4096), 
-                    PTE_USER | PTE_WRITABLE);
+                    PTE_USER | PTE_WRITABLE | PTE_PRESENT);
         }
     }
 
-    // Готовим фрейм на стеке ядра
     stack_frame_t* frame = (stack_frame_t*)(new_task->kstack_at_bottom - sizeof(stack_frame_t));
     memset(frame, 0, sizeof(stack_frame_t));
     
     frame->rip = (uint64_t)entry;
     frame->rdi = arg1; 
     frame->rsi = arg2;
-    frame->rflags = 0x202;
+    frame->rflags = 0x202; // IF = 1
     
     if (cr3 == 0) {
-        frame->cs = 0x08;
-        frame->ss = 0x10;
-        frame->rsp = kstack_virt + 16000; // Просто чуть выше фрейма
+        frame->cs = 0x08; frame->ss = 0x10;
+        frame->rsp = kstack_virt + 16000;
     } else {
-        frame->cs = 0x23;
-        frame->ss = 0x1B;
-        frame->rsp = user_stack_virt + 16384 - 8; // Стек юзера
+        frame->cs = 0x23; // User Code
+        frame->ss = 0x1B; // User Data
+        // Стек должен быть выровнен по 16 байт - 8 (для соответствия ABI)
+        frame->rsp = user_stack_virt + (8 * 4096) - 16; 
     }
     
     new_task->rsp = (uint64_t)frame;
@@ -81,21 +74,29 @@ void task_create(void (*entry)(), uint64_t arg1, uint64_t arg2, uint64_t cr3) {
     task_list->next = new_task;
 }
 
+// task.c
 uint64_t schedule(uint64_t current_rsp) {
     tick++;
     if (!current_task) return current_rsp;
     
+    // Сохраняем состояние
     current_task->rsp = current_rsp;
+    
+    // ПЕРЕКЛЮЧАЕМСЯ НА СЛЕДУЮЩУЮ ЗАДАЧУ
     current_task = current_task->next;
 
-    // Переключаем CR3 ВСЕГДА (либо на процесс, либо обратно на ядро)
+    // Сначала загружаем CR3
     uint64_t new_cr3 = (current_task->cr3 == 0) ? kernel_cr3 : current_task->cr3;
-    __asm__ volatile("mov %0, %%cr3" : : "r"(new_cr3));
+    
+    // КРИТИЧНО: Мы меняем CR3. С этого момента мы видим ТОЛЬКО то, 
+    // что промаплено в таблицах новой задачи.
+    __asm__ volatile("mov %0, %%cr3" : : "r"(new_cr3) : "memory");
 
+    // Теперь обновляем TSS (стек для прерываний из Ring 3)
     gdt_set_tss_stack(current_task->kstack_at_bottom);
+    
     return current_task->rsp;
 }
-
 void yield(void) {
     __asm__ volatile ("int $32"); // Вызываем обработчик таймера (IRQ0)
 }

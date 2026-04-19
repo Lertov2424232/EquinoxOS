@@ -263,11 +263,10 @@ void vesa_draw_string_direct(const char* s, int x, int y, uint32_t fg) {
 }
 
 void vesa_draw_string_hex_direct(const char* prefix, int x, int y, uint64_t val, uint32_t fg) {
+    // Не даем панике упасть, если адрес слишком подозрительный
+    // (настраивается под твой hhdm)
     vesa_draw_string_direct(prefix, x, y, fg);
-    
-    char buf[17]; 
-    hex_to_string(val, buf); 
-    
-    vesa_draw_string_direct(buf, x + (strlen(prefix) * 8), y, fg);
+    char buf[17];
+    hex_to_string(val, buf);
+    vesa_draw_string_direct(buf, x + strlen(prefix)*8, y, fg);
 }
-

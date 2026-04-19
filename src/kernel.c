@@ -57,8 +57,17 @@ LIMINE_REQ static volatile struct limine_module_request module_request = {
     .id = LIMINE_MODULE_REQUEST_ID, .revision = 0};
 
 LIMINE_REQ static volatile struct limine_hhdm_request hhdm_request = {
-    .id = LIMINE_HHDM_REQUEST_ID, .revision = 0};
-
+    .id = LIMINE_HHDM_REQUEST_ID, 
+    .revision = 3 // ТРЕБУЕМ СОВРЕМЕННЫЙ ПРОТОКОЛ
+};
+    
+// LIMINE_REQ static volatile struct limine_paging_mode_request paging_request = {
+//    .id = LIMINE_PAGING_MODE_REQUEST_ID,
+//    .revision = 0,
+//    .mode = LIMINE_PAGING_MODE_X86_64_4LVL, // ПРИНУДИТЕЛЬНО 4 УРОВНЯ
+//    .max_mode = LIMINE_PAGING_MODE_X86_64_4LVL,
+//    .min_mode = LIMINE_PAGING_MODE_X86_64_4LVL
+// };
 // =========================================================================
 //                              GUI & WINDOWS
 // (TODO: В будущем вынести в отдельный gui.c / gui.h)
