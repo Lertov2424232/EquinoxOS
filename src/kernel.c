@@ -208,7 +208,7 @@ void update_gui() {
   if (main_win && main_win->active) {
     gui_window_draw_rect(main_win, 0, 0, main_win->w, main_win->h, 0xFFFFFF);
     char mem_info[64];
-    sprintf(mem_info, "RAM: %d MB", used_memory / 1024 / 1024);
+    sprintf(mem_info, "RAM: %u MB", (uint32_t)(used_memory / 1024 / 1024));
     gui_window_draw_string(main_win, mem_info, 15, 15, 0x000000);
   }
 
