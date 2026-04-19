@@ -85,8 +85,16 @@ void panic_handler(interrupt_frame_t* frame) {
     // 9. Дамп вершины стека (Первые 5 значений, куда указывает RSP)
     vesa_draw_string_direct("--- RAW STACK DUMP ---", 500, 310, 0xAAAAFF);
     uint64_t* stack = (uint64_t*)frame->rsp;
-    for (int i = 0; i < 5; i++) {
-        vesa_draw_string_hex_direct("-> ", 500, 330 + (i * 20), stack[i], 0xCCCCCC);
+    
+    // ПРОВЕРКА: Если RSP в юзер-спейсе (ниже 0xFFFF...) и мы в панике, 
+    // лучше не лезть туда без проверки маппинга, иначе - рекурсивный краш.
+    if (frame->rsp < 0x00007FFFFFFFFFFF) {
+        vesa_draw_string_direct("User stack access unsafe", 500, 330, 0xFF7777);
+    } else {
+        for (int i = 0; i < 5; i++) {
+            // Рискуем, только если это стек ядра
+            vesa_draw_string_hex_direct("-> ", 500, 330 + (i * 20), stack[i], 0xCCCCCC);
+        }
     }
 
     vesa_draw_string_direct("Please restart your computer.", 30, 420, 0x00FF00);
