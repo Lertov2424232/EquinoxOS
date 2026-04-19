@@ -14,15 +14,15 @@ typedef struct {
 
 typedef struct task {
     uint64_t rsp;             // Указатель на стек задачи
+    uint64_t cr3;
     struct task* next;        // Следующая задача в очереди
     uint64_t id;
     bool running;
 } task_t;
 
 void task_init();
-void task_create(void (*entry)(), uint64_t arg1, uint64_t arg2);
 uint64_t schedule(uint64_t current_rsp); // Вызывается из ассемблера
 void yield(void);
-bool task_exec(char* full_command);
+void task_create(void (*entry)(), uint64_t arg1, uint64_t arg2, uint64_t cr3);
 
 #endif
