@@ -13,9 +13,10 @@ typedef struct {
 } __attribute__((packed)) stack_frame_t;
 
 typedef struct task {
-    uint64_t rsp;             // Указатель на стек задачи
+    uint64_t rsp;
+    uint64_t kstack_at_bottom; // <--- ДОБАВЬ ЭТО (Верхушка стека ядра)
     uint64_t cr3;
-    struct task* next;        // Следующая задача в очереди
+    struct task* next;
     uint64_t id;
     bool running;
 } task_t;

@@ -28,72 +28,62 @@ void task_create(void (*entry)(), uint64_t arg1, uint64_t arg2, uint64_t cr3) {
     new_task->running = true;
     new_task->cr3 = cr3;
 
-    // 1. Выделяем физическую память под стек (4 страницы = 16 КБ)
-    void* stack_phys = pmm_alloc_continuous(4);
-    uint64_t stack_virt_for_kernel = (uint64_t)stack_phys + hhdm_offset;
-    memset((void*)stack_virt_for_kernel, 0, 16384);
+    // Стек ядра (выделяем всегда)
+    void* kstack_phys = pmm_alloc_continuous(4); 
+    uint64_t kstack_virt = (uint64_t)kstack_phys + hhdm_offset;
+    memset((void*)kstack_virt, 0, 16384);
+    
+    // Запоминаем "дно" стека для TSS.RSP0 (стек растет вниз, так что это адрес + 16кб)
+    new_task->kstack_at_bottom = kstack_virt + 16384;
 
-    // 2. Определяем виртуальный адрес стека, который будет видеть сама программа
-    uint64_t stack_virt_for_user;
-
-    if (cr3 == 0) {
-        // Если это задача ядра, она видит стек через HHDM
-        stack_virt_for_user = stack_virt_for_kernel;
-    } else {
-        // Если это Ring 3, мапим физический стек на фиксированный USER-адрес
-        stack_virt_for_user = 0x70000000000; 
+    uint64_t user_stack_virt = 0x70000000000;
+    if (cr3 != 0) {
+        // Мапим юзер-стек
+        void* ustack_phys = pmm_alloc_continuous(4);
         for (int i = 0; i < 4; i++) {
             vmm_map((page_table_t*)VIRT(cr3), 
-                    stack_virt_for_user + (i * 4096), 
-                    (uint64_t)stack_phys + (i * 4096), 
+                    user_stack_virt + (i * 4096), 
+                    (uint64_t)ustack_phys + (i * 4096), 
                     PTE_USER | PTE_WRITABLE);
         }
     }
 
-    // 3. Готовим кадр стека (stack_frame_t)
-    // Мы (ядро) пишем его по адресу в HHDM
-    stack_frame_t* frame = (stack_frame_t*)(stack_virt_for_kernel + 16384 - sizeof(stack_frame_t));
+    // Готовим фрейм на стеке ядра
+    stack_frame_t* frame = (stack_frame_t*)(new_task->kstack_at_bottom - sizeof(stack_frame_t));
+    memset(frame, 0, sizeof(stack_frame_t));
     
     frame->rip = (uint64_t)entry;
     frame->rdi = arg1; 
     frame->rsi = arg2;
+    frame->rflags = 0x202;
     
-    // Выбор сегментов в зависимости от кольца защиты
     if (cr3 == 0) {
-        frame->cs = 0x08;   // Kernel Code
-        frame->ss = 0x10;   // Kernel Data
-        frame->rflags = 0x202; // Прерывания разрешены
+        frame->cs = 0x08;
+        frame->ss = 0x10;
+        frame->rsp = kstack_virt + 16000; // Просто чуть выше фрейма
     } else {
-        frame->cs = 0x23;   // User Code (0x20 | 3)
-        frame->ss = 0x1B;   // User Data (0x18 | 3)
-        frame->rflags = 0x202;
+        frame->cs = 0x23;
+        frame->ss = 0x1B;
+        frame->rsp = user_stack_virt + 16384 - 8; // Стек юзера
     }
     
-    // Программа при старте должна думать, что её RSP находится здесь:
-    frame->rsp = stack_virt_for_user + 16384 - sizeof(stack_frame_t);
-
-    // А планировщик ядра будет переключаться на этот физический адрес (через HHDM)
     new_task->rsp = (uint64_t)frame;
-
     new_task->next = task_list->next;
     task_list->next = new_task;
 }
-// Эту функцию вызывает таймер 100 раз в секунду
+
 uint64_t schedule(uint64_t current_rsp) {
     if (!current_task) return current_rsp;
     
     current_task->rsp = current_rsp;
     current_task = current_task->next;
 
-    // Переключение таблиц страниц
     if (current_task->cr3 != 0) {
         __asm__ volatile("mov %0, %%cr3" : : "r"(current_task->cr3));
     }
 
-    // Установка стека ядра для возврата из Ring 3
-    extern void gdt_set_tss_stack(uint64_t);
-    // Стек ядра должен быть валидным адресом в HHDM
-    gdt_set_tss_stack(current_task->rsp + sizeof(stack_frame_t));
+    // ОЧЕНЬ ВАЖНО: TSS.RSP0 должен указывать на чистый верх стека ядра этой задачи
+    gdt_set_tss_stack(current_task->kstack_at_bottom);
 
     return current_task->rsp;
 }
