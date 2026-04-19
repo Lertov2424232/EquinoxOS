@@ -3,12 +3,15 @@
 #include "boot/limine/limine.h"
 #include "libc/string.h"
 
+#include <stdint.h>
+
 // --- МАКРОСЫ ДЛЯ РАБОТЫ С БИТАМИ ---
 // 1 = страница занята, 0 = страница свободна
+extern uint64_t hhdm_offset;
 #define BITMAP_SET(bit)   (bitmap[(bit) / 8] |=  (1 << ((bit) % 8)))
 #define BITMAP_CLEAR(bit) (bitmap[(bit) / 8] &= ~(1 << ((bit) % 8)))
 #define BITMAP_TEST(bit)  (bitmap[(bit) / 8] &   (1 << ((bit) % 8)))
-
+#define VIRT(addr) ((uint64_t)(addr) + hhdm_offset)
 #define PAGE_SIZE 4096
 
 // --- ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ---
@@ -29,6 +32,7 @@ static volatile struct limine_memmap_request memmap_request = {
 
 void pmm_init() {
     struct limine_memmap_response* map = memmap_request.response;
+
     uint64_t max_addr = 0;
 
     // 1. Ищем максимальный физический адрес
@@ -45,10 +49,12 @@ void pmm_init() {
     // 2. Ищем место под сам массив bitmap
     for (uint64_t i = 0; i < map->entry_count; i++) {
         if (map->entries[i]->type == LIMINE_MEMMAP_USABLE && map->entries[i]->length >= bitmap_size) {
-            bitmap = (uint8_t*)map->entries[i]->base;
-            memset(bitmap, 0xFF, bitmap_size); // 0xFF - изначально помечаем всю память как ЗАНЯТУЮ
+            // ВНИМАНИЕ: сам указатель bitmap должен быть виртуальным адресом!
+            bitmap = (uint8_t*)VIRT(map->entries[i]->base); 
             
-            // Защищаем сам bitmap, сдвигая начало свободного блока
+            // Теперь memset не упадет, так как мы пишем по валидному адресу HHDM
+            memset(bitmap, 0xFF, bitmap_size); 
+            
             map->entries[i]->base += bitmap_size;
             map->entries[i]->length -= bitmap_size;
             break;

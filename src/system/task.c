@@ -17,7 +17,11 @@ void task_init() {
     current_task = (task_t*)kmalloc(sizeof(task_t));
     current_task->id = next_pid++;
     current_task->running = true;
-    current_task->cr3 = 0; // <--- Ядро не меняет CR3
+    current_task->cr3 = 0; 
+    
+    // КРИТИЧНО: У ПЕРВОЙ задачи ядра тоже должен быть стек для TSS
+    current_task->kstack_at_bottom = (uint64_t)kmalloc(16384) + 16384; 
+    
     current_task->next = current_task;
     task_list = current_task;
 }
@@ -161,7 +165,16 @@ bool task_exec(char* full_command) {
     // 6. Создаем задачу
     term_print("EXEC: Starting Ring 3 process...\n");
     // Передаем argc в RDI, argv пока оставим 0
-    task_create((void(*)())header->e_entry, (uint64_t)argc, 0, phys_pml4);
+    uint64_t user_argv_page = 0x80000000; 
+    void* phys_argv = pmm_alloc();
+    vmm_map(proc_pml4, user_argv_page, (uint64_t)phys_argv, PTE_USER | PTE_WRITABLE);
+    
+    // Копируем туда хотя бы имя файла
+    char* user_argv_data = (char*)VIRT(phys_argv);
+    strcpy(user_argv_data, argv[0]);
+
+    // Передаем argc и адрес "массива" (упрощенно)
+    task_create((void(*)())header->e_entry, (uint64_t)argc, user_argv_page, phys_pml4);
     
     // 7. Очистка временных буферов
     kfree(elf_raw);
