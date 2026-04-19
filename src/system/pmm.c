@@ -44,19 +44,20 @@ void pmm_init() {
     }
 
     total_pages = max_addr / PAGE_SIZE;
-    uint64_t bitmap_size = (total_pages + 7) / 8; // Округляем вверх
+    uint64_t bitmap_size = (total_pages + 7) / 8;
+    // Выравниваем размер битмапа вверх до целой страницы!
+    uint64_t bitmap_pages = (bitmap_size + PAGE_SIZE - 1) / PAGE_SIZE;
+    uint64_t bitmap_size_aligned = bitmap_pages * PAGE_SIZE;
 
-    // 2. Ищем место под сам массив bitmap
+    // Ищем место под битмап
     for (uint64_t i = 0; i < map->entry_count; i++) {
-        if (map->entries[i]->type == LIMINE_MEMMAP_USABLE && map->entries[i]->length >= bitmap_size) {
-            // ВНИМАНИЕ: сам указатель bitmap должен быть виртуальным адресом!
+        if (map->entries[i]->type == LIMINE_MEMMAP_USABLE && map->entries[i]->length >= bitmap_size_aligned) {
             bitmap = (uint8_t*)VIRT(map->entries[i]->base); 
+            memset(bitmap, 0xFF, bitmap_size_aligned); // Сначала всё занято
             
-            // Теперь memset не упадет, так как мы пишем по валидному адресу HHDM
-            memset(bitmap, 0xFF, bitmap_size); 
-            
-            map->entries[i]->base += bitmap_size;
-            map->entries[i]->length -= bitmap_size;
+            // Смещаем базу региона, чтобы PMM не считал эти страницы свободными
+            map->entries[i]->base += bitmap_size_aligned;
+            map->entries[i]->length -= bitmap_size_aligned;
             break;
         }
     }
