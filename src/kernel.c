@@ -618,58 +618,54 @@ void exec_module() {
 }
 
 void kmain(void) {
-  // 1. Память (без нее ничего не работает)
-  if (hhdm_request.response) {
-      hhdm_offset = hhdm_request.response->offset;
-  }
-  hhdm_offset = hhdm_request.response->offset;
-  extern void init_gdt();
+  // 1. Базовая настройка памяти
+  if (hhdm_request.response) hhdm_offset = hhdm_request.response->offset;
+  
   init_gdt(); 
   init_sse();
   pmm_init();
   vmm_init(); 
-  init_heap((uint64_t)pmm_alloc_continuous(16384) + hhdm_offset,
-            64 * 1024 * 1024);
+  
+  // Инициализация кучи
+  init_heap((uint64_t)pmm_alloc_continuous(16384) + hhdm_offset, 64 * 1024 * 1024);
 
-  // 2. Видео
-   struct limine_framebuffer *fb = framebuffer_request.response->framebuffers[0];
-   init_vesa((uintptr_t)fb->address, fb->width, fb->height, fb->pitch);
-   uint64_t font_size = 0; 
+  // 2. Видео (чтобы видеть лог Цербера)
+  struct limine_framebuffer *fb = framebuffer_request.response->framebuffers[0];
+  init_vesa((uintptr_t)fb->address, fb->width, fb->height, fb->pitch);
 
-    // Передаем адрес этой переменной (&font_size)
-    void* font = sys_get_file("font.psf", &font_size);
-
-    if (font) {
-        vesa_set_font(font);
-        term_print("[SYS] PSF Font loaded and set.\n");
-    } else {
-        term_print("[SYS] Failed to load font.psf!\n");
-    }
-  // 3. Базовая инициализация прерываний для таймера
+  // 3. ПРЕРЫВАНИЯ (КРИТИЧЕСКИЙ ПОРЯДОК)
   __asm__("cli");
-  init_idt(); // Здесь IRQ32 теперь указывает на timer_handler
-  pic_remap();
-  init_timer(100); // 100 Гц
-  __asm__("sti");  // Теперь tick начнет расти, но планировщик еще не работает
-
-  // 4. ЗАПУСКАЕМ ТЕСТЫ (Теперь boot_delay не зависнет!)
-  extern bool eqstart_perform_tests();
-  eqstart_perform_tests();
-
-  // 5. Вот ТЕПЕРЬ, когда тесты прошли, инициализируем тяжелые подсистемы
-  task_init();
+  
+  init_idt();      // Загружает базовую таблицу
+  pic_remap();     // Перенаправляет PIC на 0x20+
+  init_timer(100); // Настраивает PIT на 100Гц
+  tick = 0; 
+  // !!! ВАЖНО: Ставим АСЕМБЛЕРНЫЙ обработчик СРАЗУ, до включения прерываний !!!
   extern void irq0_handler_asm();
   set_idt_gate(32, (uint64_t)irq0_handler_asm, 0x08); 
+
+  __asm__("sti");  // Включаем прерывания
+
+  // Даем таймеру "прокашляться" (небольшая задержка)
+  for(volatile int i = 0; i < 2000000; i++); 
+
+  // 4. ЗАПУСКАЕМ ТЕСТЫ (Теперь Цербер увидит тикающий таймер)
+  extern bool eqstart_perform_tests();
+  if (!eqstart_perform_tests()) {
+      // Если тесты не прошли, Цербер сам повесит систему внутри.
+  }
+
+  // 5. Если дошли сюда — всё зашибись, запускаем остальное
+  task_init();
   vfs_init();
-  fb_install_vfs();
   fat32_init();
   pci_init();
-  rtl8139_install_vfs();
   init_mouse();
-
   gui_init();
   shell_init();
-
+  uint64_t font_size = 0;
+  void* font_ptr = sys_get_file("font.psf", &font_size);
+  vesa_set_font(font_ptr);
   while (1) {
     update_gui();
     if (should_run_app) {

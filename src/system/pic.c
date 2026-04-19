@@ -19,11 +19,6 @@
 #define ICW4_SFNM	0x10
 
 void pic_remap() {
-    uint8_t a1, a2;
-
-    a1 = inb(PIC1_DATA); // Сохраняем маски
-    a2 = inb(PIC2_DATA);
-
     // ICW1 - Начало инициализации
     outb(PIC1_COMMAND, ICW1_INIT | ICW1_ICW4); 
     outb(PIC2_COMMAND, ICW1_INIT | ICW1_ICW4);
@@ -37,19 +32,15 @@ void pic_remap() {
     outb(PIC2_DATA, 0x02); // Slave: Его ID 2
 
     // ICW4 - Режим работы
-    outb(PIC1_DATA, ICW4_8086); // 8086 режим
-    outb(PIC2_DATA, ICW4_8086); // 8086 режим
+    outb(PIC1_DATA, ICW4_8086); 
+    outb(PIC2_DATA, ICW4_8086); 
 
-    outb(PIC1_DATA, 0xFF); // Замаскировать все Master IRQ
-    outb(PIC2_DATA, 0xFF); // Замаскировать все Slave IRQ
-    
-    // РАЗМАСКИРОВЫВАЕМ НУЖНЫЕ (Master PIC)
-    // IRQ0 (таймер), IRQ1 (клавиатура), IRQ2 (для каскада Slave)
-    // 0xFF - (1<<0) - (1<<1) - (1<<2)
-    outb(PIC1_DATA, ~( (1<<0) | (1<<1) | (1<<2) ) & a1); // Разрешить IRQ0, IRQ1, IRQ2
+    // ЖЕСТКАЯ МАСКА (0 - разрешено, 1 - запрещено)
+    // Разрешаем: IRQ0 (Таймер), IRQ1 (Клава), IRQ2 (Каскад)
+    // В двоичном: 1111 1000 = 0xF8
+    outb(PIC1_DATA, 0xF8); 
 
-    // РАЗМАСКИРОВЫВАЕМ НУЖНЫЕ (Slave PIC)
-    // IRQ12 (мышь)
-    // 0xFF - (1<<4)
-    outb(PIC2_DATA, ~(1<<4) & a2); // Разрешить IRQ12
+    // Разрешаем: IRQ12 (Мышь)
+    // В двоичном: 1110 1111 = 0xEF
+    outb(PIC2_DATA, 0xEF); 
 }

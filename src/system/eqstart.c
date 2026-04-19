@@ -88,12 +88,24 @@ bool eqstart_perform_tests() {
     log("Heap: OK.", 0x00FF00);
 
     // --- ЭТАП 5: ПРЕРЫВАНИЯ ---
-    log("Checking IDT state...", 0xAAAAAA);
+    log("Checking IDT/PIT state...", 0xAAAAAA);
     uint32_t start_tick = tick;
-    // Даем 50мс на проверку тиков
-    for(volatile int i=0; i<1000000; i++); 
-    MUST(tick > start_tick, "PIT Timer not incrementing. Interrupts dead?");
-    log("Interrupts: OK.", 0x00FF00);
+    
+    // Даем таймеру до 100мс (при 100Гц это 10 тиков)
+    // Если за 50 миллионов итераций ничего не произошло - значит реально сдох
+    bool timer_ok = false;
+    for (volatile uint64_t i = 0; i < 50000000; i++) {
+        if (tick > start_tick) {
+            timer_ok = true;
+            break;
+        }
+    }
+
+    MUST(timer_ok, "PIT Timer not incrementing. Interrupts dead or PIC misconfigured.");
+    
+    char tick_msg[32];
+    sprintf(tick_msg, "Interrupts: OK. Ticks detected: %u", tick);
+    log(tick_msg, 0x00FF00);
 
     vesa_draw_string_direct("VITAL SYSTEMS STANDING BY. LAUNCHING KERNEL...", 50, 450, 0x00FFFF);
     return true;
