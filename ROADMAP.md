@@ -10,7 +10,7 @@
 - [x] **System Calls:** Implement a `syscall` interface (int 0x80 or `syscall` instruction) for applications to request kernel services (I/O, Memory, UI).
 - [x] **FAT32 Write Support:** Allow saving files from Notepad and creating directories.
 - [x] **Preemptive Multitasking:** Stable scheduler based on APIC/HPET timers.
-
+- [x] **User Mode (Ring 3):** Isolated address spaces for applications using Paging (ML4/PDP/PD/PT).
 ---
 
 ## 🛠 Phase 1: Architectural Integrity (HAL & Rings)
@@ -18,7 +18,6 @@
 
 - [ ] **Hardware Abstraction Layer (HAL):** Abstract display and input drivers to support multiple backends (VGA/VESA/VirtIO).
 - [ ] **GDT/TSS Refactoring:** Proper implementation of Task State Segments for user-mode switching.
-- [ ] **User Mode (Ring 3):** Isolated address spaces for applications using Paging (ML4/PDP/PD/PT).
 
 ## 📁 Phase 2: Advanced Storage & VFS
 *Goal: Making the system truly data-driven.*
