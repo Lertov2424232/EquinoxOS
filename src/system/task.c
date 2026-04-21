@@ -174,11 +174,31 @@ bool task_exec(char* full_command) {
     void* phys_argv = pmm_alloc();
     vmm_map(proc_pml4, user_argv_page, (uint64_t)phys_argv, PTE_USER | PTE_WRITABLE);
     
-    // Копируем туда хотя бы имя файла
-    char* user_argv_data = (char*)VIRT(phys_argv);
-    strcpy(user_argv_data, argv[0]);
+    // Формируем структуру в физической памяти (ядро пишет через HHDM)
+    uint64_t* user_argv_array = (uint64_t*)VIRT(phys_argv); 
+    char* user_string_area = (char*)VIRT(phys_argv) + 128; // Строки положим через 128 байт
+    
+    uint64_t current_string_offset = 128; // Смещение относительно начала страницы
 
-    // Передаем argc и адрес "массива" (упрощенно)
+    // Заполняем массив указателей и копируем сами строки
+    for (int i = 0; i < argc; i++) {
+        // Записываем УКАЗАТЕЛЬ (виртуальный адрес в памяти юзера!)
+        user_argv_array[i] = user_argv_page + current_string_offset;
+        
+        // Копируем саму строку (через HHDM)
+        strcpy(user_string_area, argv[i]);
+        
+        // Сдвигаем указатели для следующей строки
+        int len = strlen(argv[i]) + 1; // +1 для нуль-терминатора
+        user_string_area += len;
+        current_string_offset += len;
+    }
+    // Последний элемент массива argv должен быть NULL по стандарту C
+    user_argv_array[argc] = 0; 
+
+    term_print("EXEC: Starting Ring 3 process with arguments...\n");
+    
+    // Передаем argc в RDI (arg1), и адрес МАССИВА в RSI (arg2)
     task_create((void(*)())header->e_entry, (uint64_t)argc, user_argv_page, phys_pml4);
     
     // 7. Очистка временных буферов

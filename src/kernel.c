@@ -531,8 +531,6 @@ void sys_draw_app_buffer(int x, int y, int w, int h, uint32_t *buffer) {
   for (int i = 0; i < copy_h; i++) {
     memcpy(&app_win->buffer[i * app_win->w], &buffer[i * w], copy_w * 4);
   }
-
-  update_gui(); // Перерисовываем
 }
 // =========================================================================
 //                              MAIN LOOPS & INIT
