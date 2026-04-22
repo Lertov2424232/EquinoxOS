@@ -17,6 +17,8 @@ extern void term_print(const char* str);
 #define ATA_DRIVE_MASTER 0xE0 
 #define ATA_DRIVE_SLAVE  0xF0
 
+extern void term_print(const char* str);
+
 static void ata_400ns_delay() {
     for(int i = 0; i < 4; i++) inb(ATA_PRIMARY_STATUS);
 }
