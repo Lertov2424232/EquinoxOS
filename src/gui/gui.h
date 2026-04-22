@@ -35,6 +35,7 @@ void gui_init(void);
 window_t* window_create(int x, int y, int w, int h, const char* title);
 void window_bring_to_front(window_t* win);
 void gui_compositor_render(void);
+void draw_cursor(int x, int y);
 
 // Window drawing
 void gui_window_put_pixel(window_t* win, int x, int y, uint32_t color);
