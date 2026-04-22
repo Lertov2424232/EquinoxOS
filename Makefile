@@ -19,32 +19,22 @@ ASMFLAGS = -f elf64
 
 # --- ФЛАГИ SDK (ПРИЛОЖЕНИЯ) ---
 SDK_INC = -I./sdk/include
-USER_CFLAGS = -ffreestanding -mcmodel=small -mno-red-zone -fno-stack-protector -fno-pic -D__clang__ $(SDK_INC)
-
-# --- ФЛАГИ MLIBC ---
-MLIBC_CFLAGS = -ffreestanding -nostdinc -D__clang__ -I./sdk/include
-MLIBC_LDFLAGS = -nostdlib -L./sdk/lib -lc /usr/lib/gcc/x86_64-elf/15.2.0/libgcc.a
+USER_CFLAGS = -ffreestanding -mcmodel=small -mno-red-zone -fno-stack-protector -fno-pic $(SDK_INC)
 
 # Объекты SDK и Ядра
-# Note: stdio.o and string.o removed - mlibc provides these
-SDK_OBJS = $(SDK_LIB_DIR)/crt0.o $(SDK_LIB_DIR)/eid.o
-MLIBC_CRT0 = $(SDK_LIB_DIR)/crt0.o
+SDK_OBJS = $(SDK_LIB_DIR)/crt0.o $(SDK_LIB_DIR)/stdio.o $(SDK_LIB_DIR)/string.o $(SDK_LIB_DIR)/eid.o
 OBJ = $(OBJ_DIR)/kernel.o $(OBJ_DIR)/io.o $(OBJ_DIR)/keyboard.o $(OBJ_DIR)/rtl8139.o $(OBJ_DIR)/vfs.o $(OBJ_DIR)/gui.o $(OBJ_DIR)/syscall.o \
       $(OBJ_DIR)/gdt_flush.o $(OBJ_DIR)/idt.o $(OBJ_DIR)/stdio.o $(OBJ_DIR)/pci.o $(OBJ_DIR)/pmm.o $(OBJ_DIR)/shell.o $(OBJ_DIR)/eqstart.o \
-      $(OBJ_DIR)/pic.o $(OBJ_DIR)/interrupt.o $(OBJ_DIR)/timer.o $(OBJ_DIR)/ata.o $(OBJ_DIR)/bmp.o $(OBJ_DIR)/task.o $(OBJ_DIR)/fat32.o \
-      $(OBJ_DIR)/serial.o $(OBJ_DIR)/memory.o $(OBJ_DIR)/fs.o $(OBJ_DIR)/vesa.o $(OBJ_DIR)/mouse.o $(OBJ_DIR)/string.o $(OBJ_DIR)/panic.o \
-      $(OBJ_DIR)/vmm.o $(OBJ_DIR)/gdt.o
+      $(OBJ_DIR)/pic.o $(OBJ_DIR)/interrupt.o $(OBJ_DIR)/timer.o $(OBJ_DIR)/ata.o $(OBJ_DIR)/bmp.o $(OBJ_DIR)/task.o $(OBJ_DIR)/fat32.o $(OBJ_DIR)/serial.o \
+      $(OBJ_DIR)/memory.o $(OBJ_DIR)/fs.o $(OBJ_DIR)/vesa.o $(OBJ_DIR)/mouse.o $(OBJ_DIR)/string.o $(OBJ_DIR)/panic.o $(OBJ_DIR)/vmm.o $(OBJ_DIR)/gdt.o
 
-all: setup kernel.elf compile_app compile_mlibc_test copykernel
+all: setup kernel.elf compile_app
 
 setup:
-	mkdir -p $(OBJ_DIR)
+	@if not exist $(OBJ_DIR) mkdir $(OBJ_DIR)
 
 kernel.elf: $(OBJ)
 	$(LD) $(LDFLAGS) $(OBJ) -o kernel.elf
-
-copykernel:
-	cp -f kernel.elf $(ISO_ROOT)/kernel.elf
 
 # --- СБОРКА ЯДРА ---
 $(OBJ_DIR)/%.o: src/%.c
@@ -91,26 +81,25 @@ $(SDK_LIB_DIR)/%.o: $(SDK_LIB_DIR)/%.asm
 
 # --- СБОРКА ПРИЛОЖЕНИЯ ---
 compile_app: $(SDK_OBJS)
-	$(CC) $(USER_CFLAGS) -nostdinc -c app/snake.c -o app/snake.o
-	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) app/snake.o -L./sdk/lib -lc /usr/lib/gcc/x86_64-elf/15.2.0/libgcc.a -o $(ISO_ROOT)/snake.elf
+	$(CC) $(USER_CFLAGS) -c app/snake.c -o app/snake.o
+	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) app/snake.o -o $(ISO_ROOT)/snake.elf
 	
-	$(CC) $(USER_CFLAGS) -nostdinc -c app/bmpview.c -o app/bmpview.o
-	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) app/bmpview.o -L./sdk/lib -lc /usr/lib/gcc/x86_64-elf/15.2.0/libgcc.a -o $(ISO_ROOT)/bmpview.elf
-
-# --- СБОРКА MLIBC TEST ---
-compile_mlibc_test: $(MLIBC_CRT0)
-	$(CC) -o $(ISO_ROOT)/test.elf $(MLIBC_CRT0) test_mlibc.c $(MLIBC_CFLAGS) $(MLIBC_LDFLAGS)
+	$(CC) $(USER_CFLAGS) -c app/bmpview.c -o app/bmpview.o
+	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) app/bmpview.o -o $(ISO_ROOT)/bmpview.elf
 # --- ОЧИСТКА ---
 clean:
-	rm -rf $(OBJ_DIR)
-	rm -f app/snake.o app/bmpview.o
-	rm -f sdk/lib/*.o
-	rm -f kernel.elf
-	rm -f iso_root/kernel.elf
-	rm -f equos.iso
-	rm -f packets.pcap
+	@if exist $(OBJ_DIR) rmdir /s /q $(OBJ_DIR)
+	@if exist app\snake.o del /q app\snake.o
+	@if exist sdk\lib\*.o del /q sdk\lib\*.o
+	@if exist kernel.elf del /q kernel.elf
+	@if exist iso_root\app.elf del /q iso_root\app.elf
+	@if exist equos.iso del /q equos.iso
+	@if exist packets.pcap del /q packets.pcap
 
-cleanrun: clean all iso run
+cleanrun: clean all copykernel iso run
+
+copykernel:
+	copy /Y kernel.elf $(ISO_ROOT)\kernel.elf
 
 iso:
 	xorriso -as mkisofs -b limine-bios-cd.bin -no-emul-boot -boot-load-size 4 -boot-info-table --efi-boot limine-bios-cd.bin -efi-boot-part --efi-boot-image -o equos.iso $(ISO_ROOT)

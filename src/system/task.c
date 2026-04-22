@@ -25,7 +25,7 @@ static inline uint64_t rdmsr(uint32_t msr) {
     return ((uint64_t)high << 32) | low;
 }
 
-static task_t* current_task = NULL;
+task_t* current_task = NULL;
 static task_t* task_list = NULL;
 static uint64_t next_pid = 1;
 extern uint64_t hhdm_offset;
