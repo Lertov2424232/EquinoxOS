@@ -79,24 +79,22 @@ uint64_t schedule(uint64_t current_rsp) {
     tick++;
     if (!current_task) return current_rsp;
     
-    // Сохраняем состояние
     current_task->rsp = current_rsp;
-    
-    // ПЕРЕКЛЮЧАЕМСЯ НА СЛЕДУЮЩУЮ ЗАДАЧУ
     current_task = current_task->next;
 
-    // Сначала загружаем CR3
+    // Переключаем CR3 только если он отличается (экономит ресурсы TLB)
     uint64_t new_cr3 = (current_task->cr3 == 0) ? kernel_cr3 : current_task->cr3;
     
-    // КРИТИЧНО: Мы меняем CR3. С этого момента мы видим ТОЛЬКО то, 
-    // что промаплено в таблицах новой задачи.
-    __asm__ volatile("mov %0, %%cr3" : : "r"(new_cr3) : "memory");
+    uint64_t old_cr3;
+    __asm__ volatile("mov %%cr3, %0" : "=r"(old_cr3));
+    if (old_cr3 != new_cr3) {
+        __asm__ volatile("mov %0, %%cr3" : : "r"(new_cr3) : "memory");
+    }
 
-    // Теперь обновляем TSS (стек для прерываний из Ring 3)
     gdt_set_tss_stack(current_task->kstack_at_bottom);
-    
     return current_task->rsp;
 }
+
 void yield(void) {
     __asm__ volatile ("int $32"); // Вызываем обработчик таймера (IRQ0)
 }
