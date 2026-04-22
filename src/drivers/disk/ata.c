@@ -1,6 +1,8 @@
 #include "ata.h"
 #include "../../io/io.h"
 
+extern void term_print(const char* str);
+
 #define ATA_PRIMARY_DATA         0x1F0
 #define ATA_PRIMARY_ERR          0x1F1
 #define ATA_PRIMARY_SECCOUNT     0x1F2

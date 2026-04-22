@@ -1,4 +1,5 @@
 #include "../drivers/vga/vesa.h"
+#include "../drivers/serial/serial.h"
 #include <stdint.h>
 
 typedef struct {
@@ -25,6 +26,9 @@ void panic_handler(interrupt_frame_t* frame) {
     // 1. ЖЕСТКО ВЫКЛЮЧАЕМ ПРЕРЫВАНИЯ
     __asm__ volatile ("cli");
 
+    // Output panic to serial immediately
+    serial_puts(COM1, "\n!!! KERNEL PANIC !!!\n");
+
     // Вытягиваем Control Registers (CR2 содержит адрес, вызвавший Page Fault)
     uint64_t cr2, cr3;
     __asm__ volatile ("mov %%cr2, %0" : "=r" (cr2));
@@ -41,10 +45,90 @@ void panic_handler(interrupt_frame_t* frame) {
     // 5. Какая именно ошибка произошла?
     if (frame->int_no < 32) {
         vesa_draw_string_direct(exception_messages[frame->int_no], 30, 110, 0x00FFFF);
+        serial_puts(COM1, "Exception: ");
+        serial_puts(COM1, exception_messages[frame->int_no]);
+        serial_puts(COM1, "\n");
     } else {
         vesa_draw_string_direct("Unknown Interrupt", 30, 110, 0x00FFFF);
+        serial_puts(COM1, "Exception: Unknown Interrupt\n");
     }
     
+    // Serial: dump all critical info
+    serial_puts(COM1, "INT_NO: ");
+    static char hex_buf[20];
+    int pos = 18;
+    hex_buf[19] = '\0';
+    uint64_t val = frame->int_no;
+    for (int i = 0; i < 16; i++) { hex_buf[pos--] = "0123456789ABCDEF"[val & 0xF]; val >>= 4; }
+    hex_buf[pos] = 'x'; hex_buf[--pos] = '0';
+    serial_puts(COM1, &hex_buf[pos]);
+    serial_puts(COM1, "  ERR_CD: ");
+    pos = 18; val = frame->err_code;
+    for (int i = 0; i < 16; i++) { hex_buf[pos--] = "0123456789ABCDEF"[val & 0xF]; val >>= 4; }
+    hex_buf[pos] = 'x'; hex_buf[--pos] = '0';
+    serial_puts(COM1, &hex_buf[pos]);
+    serial_puts(COM1, "\n");
+
+    serial_puts(COM1, "CR2: ");
+    pos = 18; val = cr2;
+    for (int i = 0; i < 16; i++) { hex_buf[pos--] = "0123456789ABCDEF"[val & 0xF]; val >>= 4; }
+    hex_buf[pos] = 'x'; hex_buf[--pos] = '0';
+    serial_puts(COM1, &hex_buf[pos]);
+    serial_puts(COM1, "  CR3: ");
+    pos = 18; val = cr3;
+    for (int i = 0; i < 16; i++) { hex_buf[pos--] = "0123456789ABCDEF"[val & 0xF]; val >>= 4; }
+    hex_buf[pos] = 'x'; hex_buf[--pos] = '0';
+    serial_puts(COM1, &hex_buf[pos]);
+    serial_puts(COM1, "\n");
+
+    serial_puts(COM1, "RIP: ");
+    pos = 18; val = frame->rip;
+    for (int i = 0; i < 16; i++) { hex_buf[pos--] = "0123456789ABCDEF"[val & 0xF]; val >>= 4; }
+    hex_buf[pos] = 'x'; hex_buf[--pos] = '0';
+    serial_puts(COM1, &hex_buf[pos]);
+    serial_puts(COM1, "  RSP: ");
+    pos = 18; val = frame->rsp;
+    for (int i = 0; i < 16; i++) { hex_buf[pos--] = "0123456789ABCDEF"[val & 0xF]; val >>= 4; }
+    hex_buf[pos] = 'x'; hex_buf[--pos] = '0';
+    serial_puts(COM1, &hex_buf[pos]);
+    serial_puts(COM1, "\n");
+
+    serial_puts(COM1, "RAX: ");
+    pos = 18; val = frame->rax;
+    for (int i = 0; i < 16; i++) { hex_buf[pos--] = "0123456789ABCDEF"[val & 0xF]; val >>= 4; }
+    hex_buf[pos] = 'x'; hex_buf[--pos] = '0';
+    serial_puts(COM1, &hex_buf[pos]);
+    serial_puts(COM1, "  RBX: ");
+    pos = 18; val = frame->rbx;
+    for (int i = 0; i < 16; i++) { hex_buf[pos--] = "0123456789ABCDEF"[val & 0xF]; val >>= 4; }
+    hex_buf[pos] = 'x'; hex_buf[--pos] = '0';
+    serial_puts(COM1, &hex_buf[pos]);
+    serial_puts(COM1, "  RCX: ");
+    pos = 18; val = frame->rcx;
+    for (int i = 0; i < 16; i++) { hex_buf[pos--] = "0123456789ABCDEF"[val & 0xF]; val >>= 4; }
+    hex_buf[pos] = 'x'; hex_buf[--pos] = '0';
+    serial_puts(COM1, &hex_buf[pos]);
+    serial_puts(COM1, "\n");
+
+    serial_puts(COM1, "RDX: ");
+    pos = 18; val = frame->rdx;
+    for (int i = 0; i < 16; i++) { hex_buf[pos--] = "0123456789ABCDEF"[val & 0xF]; val >>= 4; }
+    hex_buf[pos] = 'x'; hex_buf[--pos] = '0';
+    serial_puts(COM1, &hex_buf[pos]);
+    serial_puts(COM1, "  RSI: ");
+    pos = 18; val = frame->rsi;
+    for (int i = 0; i < 16; i++) { hex_buf[pos--] = "0123456789ABCDEF"[val & 0xF]; val >>= 4; }
+    hex_buf[pos] = 'x'; hex_buf[--pos] = '0';
+    serial_puts(COM1, &hex_buf[pos]);
+    serial_puts(COM1, "  RDI: ");
+    pos = 18; val = frame->rdi;
+    for (int i = 0; i < 16; i++) { hex_buf[pos--] = "0123456789ABCDEF"[val & 0xF]; val >>= 4; }
+    hex_buf[pos] = 'x'; hex_buf[--pos] = '0';
+    serial_puts(COM1, &hex_buf[pos]);
+    serial_puts(COM1, "\n");
+
+    serial_puts(COM1, "!!! SYSTEM HALTED !!!\n");
+
     vesa_draw_string_hex_direct("INT_NO: ", 300, 110, frame->int_no, 0xFFFFFF);
     vesa_draw_string_hex_direct("ERR_CD: ", 500, 110, frame->err_code, 0xFFFFFF);
 

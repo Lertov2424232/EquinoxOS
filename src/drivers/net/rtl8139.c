@@ -1,5 +1,6 @@
 #include "rtl8139.h"
 #include "net.h"
+#include "../../system/memory.h"
 #include "../../io/io.h"
 #include "../../fs/vfs.h"
 #include "../../libc/string.h"

@@ -55,5 +55,10 @@ void fb_install_vfs(void);
 void put_pixel_alpha(int x, int y, uint32_t argb);
 void vesa_draw_psf_char(psf_t* font, char c, int x, int y, uint32_t fg);
 void vesa_set_font(void* font_addr);
+void put_pixel_direct(int x, int y, uint32_t color);
+void draw_rect_direct(int x, int y, int w, int h, uint32_t color);
+void vesa_draw_char_direct(char c, int x, int y, uint32_t fg);
+void vesa_draw_string_direct(const char* s, int x, int y, uint32_t fg);
+void vesa_draw_string_hex_direct(const char* prefix, int x, int y, uint64_t val, uint32_t fg);
 
 #endif
