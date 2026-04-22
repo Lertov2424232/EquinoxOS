@@ -1,11 +1,14 @@
 #include "shell.h"
 #include "../libc/string.h"
 #include "../libc/stdio.h"
-#include "../api.h" // Если нужно
+#include "../api.h" 
 #include "../fs/fat32.h"
+#include "../gui/gui.h"
+#include "../system/task.h"
+#include "../system/memory.h"
+#include "../drivers/vga/bmp.h"
 #include <stdbool.h>
 #include <stdint.h>
-#include "../gui/gui.h"
 
 extern void net_wget();
 extern void term_print(const char* str);
@@ -15,7 +18,6 @@ extern void list_files();
 extern void create_file(char* name, char* content);
 extern void read_file(char* name);
 extern void exec_module_elf();
-extern void* kmalloc(size_t size);
 extern bool should_run_app;
 extern void send_arp_request(uint32_t target_ip);
 extern void send_ntp_request();

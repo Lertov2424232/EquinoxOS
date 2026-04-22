@@ -3,6 +3,7 @@
 #include "../system/memory.h"
 #include "../libc/string.h"
 #include "../drivers/vga/vesa.h"
+extern void term_print(const char* str);
 
 static uint32_t part_lba = 0;
 static fat32_bpb_t* bpb = NULL;

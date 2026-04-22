@@ -5,6 +5,7 @@
 #include "../../libc/string.h"
 #include "../../libc/stdio.h"
 #include "../../api.h"
+#include "../../system/memory.h"
 
 uint32_t tcp_seq = 1000;
 uint32_t tcp_ack = 0;
