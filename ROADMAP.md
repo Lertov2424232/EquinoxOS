@@ -11,13 +11,13 @@
 - [x] **FAT32 Write Support:** Allow saving files from Notepad and creating directories.
 - [x] **Preemptive Multitasking:** Stable scheduler based on APIC/HPET timers.
 - [x] **User Mode (Ring 3):** Isolated address spaces for applications using Paging (ML4/PDP/PD/PT).
+- [x] **GDT/TSS Refactoring:** Proper implementation of Task State Segments for user-mode switching.
 ---
 
 ## 🛠 Phase 1: Architectural Integrity (HAL & Rings)
 *Goal: Moving away from "everything in Ring 0" and creating a hardware abstraction layer.*
 
 - [ ] **Hardware Abstraction Layer (HAL):** Abstract display and input drivers to support multiple backends (VGA/VESA/VirtIO).
-- [ ] **GDT/TSS Refactoring:** Proper implementation of Task State Segments for user-mode switching.
 
 ## 📁 Phase 2: Advanced Storage & VFS
 *Goal: Making the system truly data-driven.*

@@ -147,7 +147,9 @@ x86_64-elf-addr2line -e kernel.elf <RIP_ADDRESS>
 
 ### Contributors
 * **@ewasion137** — Lead Developer
-* **@oxtiskz** — Special Thanks
+* **@oxtiskz** — Special Thanks (Deleted account)
+* **@gobgolaxi** - Special thanks (Contributor)
+* **@Offihito** - Special thanks (Contributor)
 
 <img width="1278" height="801" alt="image" src="https://github.com/user-attachments/assets/5c9ab047-cd60-42a9-904e-8b5c63db58eb" />
 <img width="464" height="581" alt="image" src="https://github.com/user-attachments/assets/52dd9b4d-a635-423a-b7bc-64052a4fc246" />
