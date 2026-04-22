@@ -180,8 +180,12 @@ bool gui_check_close_button(int mx, int my) {
 }
 
 void window_bring_to_front(window_t* win) {
-    if (!win || !window_list_head) return;
-    if (window_list_head == win && !win->next) return;
+    if (!win || !window_list_head || win->next == NULL && window_list_head != win) {
+        // Если окно уже в конце или единственное - ничего не делаем
+        // Но есть нюанс: если оно единственное в голове, tail тоже совпадет
+    }
+    
+    // Вырезаем из списка
     if (window_list_head == win) {
         window_list_head = win->next;
     } else {
@@ -189,11 +193,16 @@ void window_bring_to_front(window_t* win) {
         while (prev && prev->next != win) prev = prev->next;
         if (prev) prev->next = win->next;
     }
+
+    // Вставляем в конец (хвост списка = топ Z-Order)
     win->next = NULL;
-    window_t* tail = window_list_head;
-    if (!tail) { window_list_head = win; return; }
-    while (tail->next) tail = tail->next;
-    tail->next = win;
+    if (!window_list_head) {
+        window_list_head = win;
+    } else {
+        window_t* tail = window_list_head;
+        while (tail->next) tail = tail->next;
+        tail->next = win;
+    }
 }
 
 // Рисует градиентную тень вокруг прямоугольника
@@ -219,30 +228,35 @@ static void draw_shadow(int wx, int wy, int ww, int wh) {
 }
 
 static void handle_mouse_drag(window_t* win) {
-    if (!win->active) return;
-    
-    if (mouse_left_button) {
-        // Если мы еще не тащим, проверяем: попала ли мышь ВНУТРЬ заголовка?
-        // Заголовок находится от win->y - 25 до win->y
-        if (!win->dragging && 
-            mouse_x >= win->x && mouse_x <= win->x + win->w - 25 &&
-            mouse_y >= win->y - 25 && mouse_y <= win->y) {
-            
-            win->dragging = true;
-            win->drag_off_x = mouse_x - win->x;
-            win->drag_off_y = mouse_y - win->y;
-            
-            // Опционально: выносим окно на передний план (если захочешь)
-            // window_bring_to_front(win); 
+    static bool was_pressed = false;
+    bool pressed = mouse_left_button;
+
+    if (pressed && !was_pressed) {
+        // 1. Проверяем кнопку закрытия (Сверху Вниз!)
+        window_t* top_win = gui_find_window_at(mouse_x, mouse_y);
+        
+        if (top_win) {
+            // Если кликнули по окну - сразу в фокус
+            window_bring_to_front(top_win);
+
+            // Проверяем кнопку закрытия [X]
+            int bx = top_win->x + top_win->w - 25;
+            int by = top_win->y - 25;
+            if (mouse_x >= bx && mouse_x < bx + 25 && mouse_y >= by && mouse_y < by + 25) {
+                top_win->active = false;
+                top_win->dragging = false;
+                return;
+            }
+        } else {
+            // Клик по рабочему столу
+            int icon = gui_check_icon_click(mouse_x, mouse_y);
+            if (icon != -1) {
+                // Запуск приложения или открытие окна
+                // (твоя логика из update_gui переезжает сюда)
+            }
         }
-    } else {
-        win->dragging = false;
     }
-    
-    if (win->dragging) {
-        win->x = mouse_x - win->drag_off_x;
-        win->y = mouse_y - win->drag_off_y;
-    }
+    was_pressed = pressed;
 }
 
 // Рисует пиксель внутри буфера окна
@@ -327,6 +341,23 @@ static void draw_titlebar_gradient(int x, int y, int w, int h, uint32_t color, b
     }
 }
 
+window_t* gui_find_window_at(int mx, int my) {
+    // В нашем списке хвост (tail) - это самый верх. 
+    // Нам нужно пройти список с конца или просто найти последнее подходящее.
+    window_t* found = NULL;
+    window_t* curr = window_list_head;
+    while (curr) {
+        if (curr->active) {
+            // Проверяем область окна (включая заголовок -25px)
+            if (mx >= curr->x && mx < curr->x + curr->w &&
+                my >= curr->y - 25 && my < curr->y + curr->h) {
+                found = curr; // Запоминаем, но идем дальше, вдруг есть кто выше
+            }
+        }
+        curr = curr->next;
+    }
+    return found;
+}
 void gui_compositor_render() {
     // 1. Сначала рисуем фон и иконки (нижний слой)
     draw_background();
@@ -336,9 +367,24 @@ void gui_compositor_render() {
     window_t* curr = window_list_head;
     while (curr) {
         if (curr->active) {
-            // Обработка перетаскивания (обновляет curr->x и curr->y)
-            handle_mouse_drag(curr);
+            // Логика Dragging (перемещения)
+            if (mouse_left_button && !curr->dragging) {
+                // Начинаем тащить только если мышь в заголовке И это окно в фокусе (последнее в списке)
+                if (curr->next == NULL && 
+                    mouse_x >= curr->x && mouse_x <= curr->x + curr->w - 30 &&
+                    mouse_y >= curr->y - 25 && mouse_y <= curr->y) {
+                    curr->dragging = true;
+                    curr->drag_off_x = mouse_x - curr->x;
+                    curr->drag_off_y = mouse_y - curr->y;
+                }
+            } else if (!mouse_left_button) {
+                curr->dragging = false;
+            }
 
+            if (curr->dragging) {
+                curr->x = mouse_x - curr->drag_off_x;
+                curr->y = mouse_y - curr->drag_off_y;
+            }
             // --- РЕНДЕРИНГ РАМКИ ОКНА (План 1.5) ---
             
             // Темная внешняя обводка (1 пиксель)
@@ -398,3 +444,4 @@ void gui_compositor_render() {
     // 4. Курсор (самый верхний слой)
     draw_cursor(mouse_x, mouse_y);
 }
+
