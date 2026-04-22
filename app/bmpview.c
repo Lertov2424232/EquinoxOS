@@ -97,9 +97,7 @@ int main(int argc, char** argv) {
     while(1) {
         uint8_t key = (uint8_t)_syscall(SYS_GET_SCANCODE, 0, 0, 0, 0, 0);
         if (key == 0x01) break; // ESC
-        
-        // КРИТИЧНО: Спим 10мс (1 кадр таймера), чтобы не жрать 100% CPU
-        sleep(10); 
+        _syscall(SYS_YIELD, 0, 0, 0, 0, 0); // ДАЙ ДЫШАТЬ СИСТЕМЕ!
     }
 
     _syscall(SYS_EXIT, 0, 0, 0, 0, 0);

@@ -110,7 +110,8 @@ void syscall_handler(syscall_regs_t* regs) {
             extern bool is_app_running;
             is_app_running = false;
             break;
-        case 11: // SYS_YIELD (Уступить процессор)
+        case 11: // SYS_YIELD
+            yield(); 
             break;
         case 12: { // SYS_GET_FONT
             extern void* vesa_get_font();
@@ -122,21 +123,6 @@ void syscall_handler(syscall_regs_t* regs) {
             }
             
             regs->rax = copy_to_user((void*)font_addr, 4096);
-            break;
-        }
-        case 13: { // SYS_SLEEP
-            uint32_t ms = regs->rdi;
-            uint32_t start = tick * 10;
-            
-            __asm__ volatile("sti"); // Включаем аппаратные прерывания!
-            
-            // Спим, пока не пройдет нужное время. 
-            // hlt усыпляет процессор до следующего тика таймера (экономим 100% CPU)
-            while ((tick * 10) < start + ms) {
-                __asm__ volatile("hlt"); 
-            }
-            
-            __asm__ volatile("cli"); // Выключаем обратно перед выходом
             break;
         }
 
