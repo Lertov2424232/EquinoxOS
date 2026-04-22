@@ -52,7 +52,7 @@ int current_state = STATE_MENU;
 int menu_selection = 0;
 
 unsigned int seed = 123;
-int rand() { seed = seed * 1103515245 + 12345; return (seed / 65536) % 32768; }
+int snake_rand() { seed = seed * 1103515245 + 12345; return (seed / 65536) % 32768; }
 
 // --- ЛОГИКА СОХРАНЕНИЙ ---
 void load_high_score() {
@@ -92,7 +92,7 @@ void update_game() {
 
     if (snake[0].x == apple.x && snake[0].y == apple.y) {
         score += 10; snake_len++;
-        apple.x = (rand() % GAME_W); apple.y = (rand() % GAME_H);
+        apple.x = (snake_rand() % GAME_W); apple.y = (snake_rand() % GAME_H);
     }
 
     if (game_over && score > high_score) {

@@ -2,6 +2,7 @@
 #include "vesa.h"
 #include "../../gui/gui.h" // Нужно для доступа к window_t и gui_window_put_pixel
 #include "../../system/memory.h"
+#include "../../libc/string.h"
 
 void draw_bmp(const uint8_t* data, int start_x, int start_y) {
     bmp_file_header_t* file_header = (bmp_file_header_t*)data;
