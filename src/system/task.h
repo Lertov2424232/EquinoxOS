@@ -20,8 +20,10 @@ typedef struct task {
     struct task* next;
     uint64_t id;
     bool running;
+    uint64_t sleep_until;
 } task_t;
 
+extern task_t* current_task; 
 void task_init();
 uint64_t schedule(uint64_t current_rsp); // Вызывается из ассемблера
 void yield(void);

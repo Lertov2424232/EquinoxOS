@@ -170,7 +170,6 @@ int main() {
                 while(get_key() != 0); 
             }
             if (key == 0x01) _syscall(SYS_EXIT, 0, 0, 0, 0, 0);
-            sleep(30);
         } 
         else if (current_state == STATE_GAME) {
             if (key == 0x48 && dir_y == 0) { dir_x = 0; dir_y = -1; }
@@ -187,8 +186,9 @@ int main() {
             
             uint32_t delay_ms = 100 - (snake_len);
             if (delay_ms < 30) delay_ms = 30;
+            uint32_t start_time = get_time(); 
 
-            sleep(delay_ms);
+            sys_sleep(delay_ms);
         }
         else if (current_state == STATE_GAMEOVER) {
             eid_draw_rect(screen_buffer, 400, 80, 100, 240, 100, EID_CLR_SURFACE);
@@ -207,7 +207,6 @@ int main() {
                 current_state = STATE_MENU;
                 while(get_key() != 0);
             }
-            sleep(30);
         }
     }
     return 0;

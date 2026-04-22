@@ -9,7 +9,7 @@ ISO_ROOT = iso_root
 APP_BINARY = $(ISO_ROOT)/app.elf
 
 # --- ФЛАГИ ЯДРА ---
-CFLAGS = -ffreestanding -O0 -Wall -Wextra -fno-exceptions -std=c11 \
+CFLAGS = -ffreestanding -O2 -Wall -Wextra -fno-exceptions -std=c11 \
          -Isrc -Isrc/drivers -Isrc/shell -Isrc/boot/limine \
          -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 \
          -fno-stack-protector -fno-pic -g
