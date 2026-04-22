@@ -32,8 +32,8 @@ MLIBC_CRT0 = $(SDK_LIB_DIR)/crt0.o
 OBJ = $(OBJ_DIR)/kernel.o $(OBJ_DIR)/io.o $(OBJ_DIR)/keyboard.o $(OBJ_DIR)/rtl8139.o $(OBJ_DIR)/vfs.o $(OBJ_DIR)/gui.o $(OBJ_DIR)/syscall.o \
       $(OBJ_DIR)/gdt_flush.o $(OBJ_DIR)/idt.o $(OBJ_DIR)/stdio.o $(OBJ_DIR)/pci.o $(OBJ_DIR)/pmm.o $(OBJ_DIR)/shell.o $(OBJ_DIR)/eqstart.o \
       $(OBJ_DIR)/pic.o $(OBJ_DIR)/interrupt.o $(OBJ_DIR)/timer.o $(OBJ_DIR)/ata.o $(OBJ_DIR)/bmp.o $(OBJ_DIR)/task.o $(OBJ_DIR)/fat32.o \
-      $(OBJ_DIR)/memory.o $(OBJ_DIR)/fs.o $(OBJ_DIR)/vesa.o $(OBJ_DIR)/mouse.o $(OBJ_DIR)/string.o $(OBJ_DIR)/panic.o $(OBJ_DIR)/vmm.o $(OBJ_DIR)/gdt.o \
-      $(OBJ_DIR)/serial.o
+      $(OBJ_DIR)/serial.o $(OBJ_DIR)/memory.o $(OBJ_DIR)/fs.o $(OBJ_DIR)/vesa.o $(OBJ_DIR)/mouse.o $(OBJ_DIR)/string.o $(OBJ_DIR)/panic.o \
+      $(OBJ_DIR)/vmm.o $(OBJ_DIR)/gdt.o
 
 all: setup kernel.elf compile_app compile_mlibc_test copykernel
 
@@ -63,6 +63,8 @@ $(OBJ_DIR)/%.o: src/fs/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 $(OBJ_DIR)/%.o: src/drivers/vga/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
+$(OBJ_DIR)/%.o: src/drivers/serial/%.c
+	$(CC) $(CFLAGS) -c $< -o $@
 $(OBJ_DIR)/%.o: src/libc/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 $(OBJ_DIR)/%.o: src/io/%.c
@@ -74,8 +76,6 @@ $(OBJ_DIR)/%.o: src/drivers/mouse/%.c
 $(OBJ_DIR)/%.o: src/drivers/pci/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 $(OBJ_DIR)/%.o: src/drivers/net/%.c
-	$(CC) $(CFLAGS) -c $< -o $@
-$(OBJ_DIR)/%.o: src/drivers/serial/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 $(OBJ_DIR)/gdt_flush.o: src/system/gdt_flush.asm
 	$(ASM) $(ASMFLAGS) $< -o $@

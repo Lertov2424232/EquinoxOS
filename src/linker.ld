@@ -57,4 +57,10 @@ SECTIONS {
         *(.eh_frame)
         *(.note .note.*)
     }
+    .init_array : {
+    __init_array_start = .;
+    *(.init_array)
+    *(.ctors)
+    __init_array_end = .;
+}
 }
