@@ -49,4 +49,8 @@ static inline void sys_sleep(uint32_t ms) {
     _syscall(SYS_SLEEP, ms, 0, 0, 0, 0);
 }
 
+static inline void sleep(uint32_t ms) {
+    sys_sleep(ms);
+}
+
 #endif

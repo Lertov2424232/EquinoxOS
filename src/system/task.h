@@ -16,6 +16,7 @@ typedef struct task {
     uint64_t rsp;
     uint64_t kstack_at_bottom; // <--- ДОБАВЬ ЭТО (Верхушка стека ядра)
     uint64_t cr3;
+    uint64_t fs_base;          // FS base for TLS (Thread Local Storage)
     struct task* next;
     uint64_t id;
     bool running;
@@ -27,5 +28,6 @@ void task_init();
 uint64_t schedule(uint64_t current_rsp); // Вызывается из ассемблера
 void yield(void);
 void task_create(void (*entry)(), uint64_t arg1, uint64_t arg2, uint64_t cr3);
+bool task_exec(char* full_command);
 
 #endif

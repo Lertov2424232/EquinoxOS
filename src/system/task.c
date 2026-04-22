@@ -1,10 +1,29 @@
 #include "task.h"
+#include "gdt.h"
 #include "pmm.h"
+
+extern void term_print(const char* str);
 #include "memory.h"
 #include "../libc/string.h"
 #include "../fs/elf.h"
 #include "../fs/fat32.h"
 #include "vmm.h"
+
+// MSR addresses for FS/GS base
+#define IA32_FS_BASE_MSR 0xC0000100
+#define IA32_GS_BASE_MSR 0xC0000101
+
+static inline void wrmsr(uint32_t msr, uint64_t value) {
+    uint32_t low = value & 0xFFFFFFFF;
+    uint32_t high = value >> 32;
+    __asm__ volatile("wrmsr" : : "c"(msr), "a"(low), "d"(high));
+}
+
+static inline uint64_t rdmsr(uint32_t msr) {
+    uint32_t low, high;
+    __asm__ volatile("rdmsr" : "=a"(low), "=d"(high) : "c"(msr));
+    return ((uint64_t)high << 32) | low;
+}
 
 task_t* current_task = NULL;
 static task_t* task_list = NULL;
@@ -32,8 +51,9 @@ void task_create(void (*entry)(), uint64_t arg1, uint64_t arg2, uint64_t cr3) {
     new_task->id = next_pid++;
     new_task->running = true;
     new_task->cr3 = cr3;
+    new_task->fs_base = 0; // Initialize FS base
 
-    // Стек ядра
+    // Kernel stack
     void* kstack_phys = pmm_alloc_continuous(4); 
     uint64_t kstack_virt = (uint64_t)kstack_phys + hhdm_offset;
     memset((void*)kstack_virt, 0, 16384);
@@ -41,7 +61,7 @@ void task_create(void (*entry)(), uint64_t arg1, uint64_t arg2, uint64_t cr3) {
 
     uint64_t user_stack_virt = 0x70000000000;
     if (cr3 != 0) {
-        // Мапим 8 страниц стека (32КБ) для надежности
+        // Map 8 pages of stack (32KB) for reliability
         void* ustack_phys = pmm_alloc_continuous(8);
         for (int i = 0; i < 8; i++) {
             vmm_map((page_table_t*)VIRT(cr3), 
@@ -49,6 +69,24 @@ void task_create(void (*entry)(), uint64_t arg1, uint64_t arg2, uint64_t cr3) {
                     (uint64_t)ustack_phys + (i * 4096), 
                     PTE_USER | PTE_WRITABLE | PTE_PRESENT);
         }
+        
+        // Allocate TLS (Thread Local Storage) for mlibc
+        // mlibc expects fs:0 to contain a pointer to thread data
+        // Layout: [TCB struct][thread data]
+        // fs:0 should point to thread_data (after TCB)
+        uint64_t tls_virt = 0x60000000000;
+        void* tls_phys = pmm_alloc();
+        vmm_map((page_table_t*)VIRT(cr3), tls_virt, (uint64_t)tls_phys, 
+                PTE_USER | PTE_WRITABLE | PTE_PRESENT);
+        memset((void*)VIRT(tls_phys), 0, 4096);
+        
+        // Set up TCB: first 8 bytes of TLS area contain pointer to thread_data
+        // TCB is typically small, thread_data follows
+        // fs:0 = &thread_data = tls_virt + sizeof(TCB)
+        // For now, assume TCB size is 64 bytes (typical for mlibc)
+        uint64_t* tcb = (uint64_t*)VIRT(tls_phys);
+        tcb[0] = tls_virt + 64;  // fs:0 points to thread_data area
+        new_task->fs_base = tls_virt;
     }
 
     stack_frame_t* frame = (stack_frame_t*)(new_task->kstack_at_bottom - sizeof(stack_frame_t));
@@ -65,8 +103,10 @@ void task_create(void (*entry)(), uint64_t arg1, uint64_t arg2, uint64_t cr3) {
     } else {
         frame->cs = 0x23; // User Code
         frame->ss = 0x1B; // User Data
-        // Стек должен быть выровнен по 16 байт - 8 (для соответствия ABI)
-        frame->rsp = user_stack_virt + (8 * 4096) - 16; 
+        // x86_64 ABI: RSP must be 8 mod 16 at function entry
+        // (CALL pushes 8-byte return addr, making RSP 0 mod 16 before push rbp)
+        // IRETQ doesn't push return addr, so we pre-align to 8 mod 16
+        frame->rsp = ((user_stack_virt + (8 * 4096)) & ~0xF) - 8;
     }
     
     new_task->rsp = (uint64_t)frame;
@@ -76,36 +116,34 @@ void task_create(void (*entry)(), uint64_t arg1, uint64_t arg2, uint64_t cr3) {
 
 // task.c
 uint64_t schedule(uint64_t current_rsp) {
+    tick++;
     if (!current_task) return current_rsp;
-    current_task->rsp = current_rsp;
-    task_t* next = current_task->next;
-    while (next != current_task) {
-        if (next->sleep_until <= tick) {
-            next->running = true;
-            next->sleep_until = 0;
-        }
-        
-        if (next->running) break;
-        next = next->next;
-    }
     
-    current_task = next;
+    // Save state
+    current_task->rsp = current_rsp;
+    
+    // SWITCH TO NEXT TASK
+    current_task = current_task->next;
 
-    // Переключаем CR3 только если он отличается (экономит ресурсы TLB)
+    // First load CR3
     uint64_t new_cr3 = (current_task->cr3 == 0) ? kernel_cr3 : current_task->cr3;
     
-    uint64_t old_cr3;
-    __asm__ volatile("mov %%cr3, %0" : "=r"(old_cr3));
-    if (old_cr3 != new_cr3) {
-        __asm__ volatile("mov %0, %%cr3" : : "r"(new_cr3) : "memory");
-    }
+    // CRITICAL: We change CR3. From now on we see ONLY what
+    // is mapped in the new task's tables.
+    __asm__ volatile("mov %0, %%cr3" : : "r"(new_cr3) : "memory");
 
+    // Now update TSS (stack for interrupts from Ring 3)
     gdt_set_tss_stack(current_task->kstack_at_bottom);
+    
+    // Set FS base for TLS (Thread Local Storage) - needed for mlibc
+    if (current_task->fs_base != 0) {
+        wrmsr(IA32_FS_BASE_MSR, current_task->fs_base);
+    }
+    
     return current_task->rsp;
 }
-
 void yield(void) {
-    __asm__ volatile ("sti; hlt");  // Вызываем обработчик таймера (IRQ0)
+    __asm__ volatile ("int $32"); // Вызываем обработчик таймера (IRQ0)
 }
 
 bool task_exec(char* full_command) {
@@ -160,15 +198,33 @@ bool task_exec(char* full_command) {
             uint64_t pages = (phdr[i].p_memsz + 4095) / 4096;
             void* phys_mem = pmm_alloc_continuous(pages);
             
-            // Мапим каждую страницу сегмента как USER
+            term_print("EXEC: Mapping segment ");
+            // Simple number printing
+            char num_buf[4] = { '0' + i, 0 };
+            term_print(num_buf);
+            term_print(" vaddr=");
+            // Print vaddr in hex (simplified)
+            static char hex_tmp[20];
+            uint64_t v = phdr[i].p_vaddr;
+            int pos = 18;
+            hex_tmp[19] = 0;
+            for (int j = 0; j < 16; j++) { hex_tmp[pos--] = "0123456789ABCDEF"[v & 0xF]; v >>= 4; }
+            hex_tmp[pos] = 'x'; hex_tmp[--pos] = '0';
+            term_print(&hex_tmp[pos]);
+            term_print(" pages=");
+            num_buf[0] = '0' + (pages / 100); num_buf[1] = '0' + ((pages / 10) % 10); num_buf[2] = '0' + (pages % 10); num_buf[3] = 0;
+            term_print(num_buf);
+            term_print("\n");
+            
+            // Map each page of segment as USER with PRESENT flag
             for (uint64_t p = 0; p < pages; p++) {
                 vmm_map(proc_pml4, 
                         phdr[i].p_vaddr + (p * 4096), 
                         (uint64_t)phys_mem + (p * 4096), 
-                        PTE_USER | PTE_WRITABLE);
+                        PTE_PRESENT | PTE_USER | PTE_WRITABLE);
             }
             
-            // Копируем данные из ELF в выделенную физическую память через HHDM
+            // Copy data from ELF to allocated physical memory via HHDM
             memset((void*)VIRT(phys_mem), 0, phdr[i].p_memsz);
             memcpy((void*)VIRT(phys_mem), elf_raw + phdr[i].p_offset, phdr[i].p_filesz);
         }
@@ -205,10 +261,20 @@ bool task_exec(char* full_command) {
 
     term_print("EXEC: Starting Ring 3 process with arguments...\n");
     
-    // Передаем argc в RDI (arg1), и адрес МАССИВА в RSI (arg2)
+    // Pass argc in RDI (arg1), and address of ARRAY in RSI (arg2)
     task_create((void(*)())header->e_entry, (uint64_t)argc, user_argv_page, phys_pml4);
     
-    // 7. Очистка временных буферов
+    // Set FS base for TLS immediately - needed before user code runs
+    // Find the newly created task (it's at task_list->next)
+    task_t* new_task = task_list->next;
+    if (new_task && new_task->fs_base != 0) {
+        // Load FS segment selector (0x1B = User Data segment with RPL=3)
+        __asm__ volatile("mov $0x1B, %%ax; mov %%ax, %%fs" ::: "ax");
+        wrmsr(IA32_FS_BASE_MSR, new_task->fs_base);
+        term_print("EXEC: FS base set for TLS\n");
+    }
+    
+    // 7. Cleanup temporary buffers
     kfree(elf_raw);
     kfree(cmd_copy);
     return true;
