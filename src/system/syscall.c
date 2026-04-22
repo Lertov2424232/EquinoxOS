@@ -6,6 +6,7 @@
 #include "vmm.h"
 #include "pmm.h"
 #include "../fs/fat32.h"
+#include "task.h" 
 #include "memory.h"
 
 extern volatile uint32_t tick;
@@ -98,7 +99,7 @@ void syscall_handler(syscall_regs_t* regs) {
             break;
 
         case 6: // SYS_GET_TIME
-            regs->rax = tick * 10; // Возвращаем время в RAX
+            regs->rax = tick; // Возвращаем время в RAX
             break;
 
         case 9: // SYS_GET_SCANCODE
@@ -125,6 +126,11 @@ void syscall_handler(syscall_regs_t* regs) {
             regs->rax = copy_to_user((void*)font_addr, 4096);
             break;
         }
+        case 13: // SYS_SLEEP (ms в RDI)
+            current_task->sleep_until = tick + (regs->rdi / 10);
+            current_task->running = false; // Приостанавливаем задачу
+            yield(); 
+            break;
 
         default:
             break;

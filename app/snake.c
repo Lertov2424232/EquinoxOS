@@ -188,14 +188,7 @@ int main() {
             if (delay_ms < 30) delay_ms = 30;
             uint32_t start_time = get_time(); 
 
-            while (get_time() < start_time + delay_ms) {
-                // КРИТИЧНО: Отдаем процессор ядру, чтобы оно могло 
-                // отрисовать кадр и обработать мышку!
-                _syscall(SYS_YIELD, 0, 0, 0, 0, 0);
-                
-                // Маленькая пауза для процессора
-                __asm__("pause");
-            }
+            sys_sleep(delay_ms);
         }
         else if (current_state == STATE_GAMEOVER) {
             eid_draw_rect(screen_buffer, 400, 80, 100, 240, 100, EID_CLR_SURFACE);
