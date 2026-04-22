@@ -6,5 +6,6 @@
 // Чтение одного сектора (512 байт) с диска
 void read_sectors_ata_pio(uintptr_t target_address, uint64_t LBA, uint32_t sector_count);
 void write_sectors_ata_pio(uint64_t LBA, uint32_t sector_count, uint16_t* buffer);
+void ata_identify();
 
 #endif
