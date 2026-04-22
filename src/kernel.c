@@ -681,8 +681,13 @@ void kmain(void) {
   uint64_t font_size = 0;
   void* font_ptr = sys_get_file("font.psf", &font_size);
   vesa_set_font(font_ptr);
+  uint32_t last_render_tick = 0;
   while (1) {
     update_gui();
+    if (tick > last_render_tick + 1) {
+        gui_compositor_render();
+        last_render_tick = tick;
+    }
     if (should_run_app) {
       should_run_app = false;
       exec_module();

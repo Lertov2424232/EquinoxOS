@@ -27,6 +27,10 @@ typedef struct {
 #define WIN_H 350
 uint32_t app_buffer[WIN_W * WIN_H];
 
+uint8_t get_key() { 
+    return (uint8_t)_syscall(SYS_GET_SCANCODE, 0, 0, 0, 0, 0); 
+}
+
 int main(int argc, char** argv) {
     eid_init();
 
@@ -95,9 +99,9 @@ int main(int argc, char** argv) {
     _syscall(SYS_DRAW_BUFFER, 150, 150, WIN_W, WIN_H, (uint64_t)app_buffer);
 
     while(1) {
-        uint8_t key = (uint8_t)_syscall(SYS_GET_SCANCODE, 0, 0, 0, 0, 0);
-        if (key == 0x01) break; // ESC
-        _syscall(SYS_YIELD, 0, 0, 0, 0, 0); // ДАЙ ДЫШАТЬ СИСТЕМЕ!
+        uint8_t key = get_key();
+        if (key == 0x01) break;
+        sys_sleep(50); // Не проверяй кнопку 1000000 раз в секунду! 20 раз хватит.
     }
 
     _syscall(SYS_EXIT, 0, 0, 0, 0, 0);

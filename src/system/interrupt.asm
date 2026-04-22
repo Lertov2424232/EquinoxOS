@@ -133,51 +133,26 @@ mouse_handler:
 
 [global irq0_handler_asm]
 irq0_handler_asm:
-    push qword 0      ; fake error code
-    push qword 32     ; interrupt number
+    push qword 0      
+    push qword 32     
     
-    push rax
-    push rbx
-    push rcx
-    push rdx
-    push rsi
-    push rdi
-    push rbp
-    push r8
-    push r9
-    push r10
-    push r11
-    push r12
-    push r13
-    push r14
-    push r15
+    SAVE_REGS         ; Используй свой макрос SAVE_REGS
 
-    mov rdi, rsp      ; Передаем текущий RSP как аргумент
-    call schedule     ; schedule вернет новый RSP в RAX
+    ; --- ВОТ ОНО, РЕШЕНИЕ ---
+    call timer_callback  ; Теперь тик прибавляется СТРОГО 100 раз в секунду (от железа)
+    ; ------------------------
+
+    mov rdi, rsp      
+    call schedule     ; Вызываем планировщик (он больше НЕ должен трогать tick)
     
-    mov rsp, rax      ; Переключаем стек
+    mov rsp, rax      
 
-    ; Сигнал контроллеру прерываний (EOI)
     mov al, 0x20
     out 0x20, al
 
-    pop r15
-    pop r14
-    pop r13
-    pop r12
-    pop r11
-    pop r10
-    pop r9
-    pop r8
-    pop rbp
-    pop rdi
-    pop rsi
-    pop rdx
-    pop rcx
-    pop rbx
-    pop rax
+    RESTORE_REGS      ; Используй свой макрос RESTORE_REGS
     
-    add rsp, 16       ; Чистим fake error и int num
+    add rsp, 16       
     iretq
 
 [extern syscall_handler]

@@ -12,6 +12,7 @@
 #define SYS_EXIT          10
 #define SYS_YIELD         11
 #define SYS_GET_FONT      12
+#define SYS_SLEEP      13
 
 // Переименовали в _syscall и всегда принимаем 5 аргументов + номер
 static inline uint64_t _syscall(uint64_t num, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5) {
@@ -42,6 +43,10 @@ static inline void write_file(const char* name, void* buf, uint32_t size) {
 
 static inline void sys_yield() {
     _syscall(SYS_YIELD, 0, 0, 0, 0, 0);
+}
+
+static inline void sys_sleep(uint32_t ms) {
+    _syscall(SYS_SLEEP, ms, 0, 0, 0, 0);
 }
 
 #endif

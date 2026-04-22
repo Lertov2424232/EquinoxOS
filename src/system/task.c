@@ -6,7 +6,7 @@
 #include "../fs/fat32.h"
 #include "vmm.h"
 
-static task_t* current_task = NULL;
+task_t* current_task = NULL;
 static task_t* task_list = NULL;
 static uint64_t next_pid = 1;
 extern uint64_t hhdm_offset;
@@ -76,11 +76,20 @@ void task_create(void (*entry)(), uint64_t arg1, uint64_t arg2, uint64_t cr3) {
 
 // task.c
 uint64_t schedule(uint64_t current_rsp) {
-    tick++;
     if (!current_task) return current_rsp;
-    
     current_task->rsp = current_rsp;
-    current_task = current_task->next;
+    task_t* next = current_task->next;
+    while (next != current_task) {
+        if (next->sleep_until <= tick) {
+            next->running = true;
+            next->sleep_until = 0;
+        }
+        
+        if (next->running) break;
+        next = next->next;
+    }
+    
+    current_task = next;
 
     // Переключаем CR3 только если он отличается (экономит ресурсы TLB)
     uint64_t new_cr3 = (current_task->cr3 == 0) ? kernel_cr3 : current_task->cr3;
@@ -96,7 +105,7 @@ uint64_t schedule(uint64_t current_rsp) {
 }
 
 void yield(void) {
-    __asm__ volatile ("int $32"); // Вызываем обработчик таймера (IRQ0)
+    __asm__ volatile ("sti; hlt");  // Вызываем обработчик таймера (IRQ0)
 }
 
 bool task_exec(char* full_command) {

@@ -1,4 +1,5 @@
 #include "string.h"
+// sdk/lib/string.c // NOT A STRING INSIDE SRC OF THE SYSTEM
 
 // Копирует блок памяти из src в dest
 void* memcpy(void* dest, const void* src, size_t n) {
