@@ -28,3 +28,4 @@ char serial_getchar(uint16_t port);
 int serial_received(uint16_t port);
 
 #endif // SERIAL_H
+

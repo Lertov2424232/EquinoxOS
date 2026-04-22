@@ -1,8 +1,12 @@
-#include "drivers/vga/vesa.h"
-#include "drivers/vga/font8x8.h" // Убедись, что путь правильный для твоего проекта
-#include "fs/vfs.h"
-#include "libc/string.h"
-#include "system/memory.h"
+#include "../../libc/string.h"
+#include "../../system/memory.h"
+#include "vesa.h"
+#include "font8x8.h" // Убедись, что путь правильный для твоего проекта
+#include "../../libc/string.h"
+#include "../../system/memory.h"
+#include "../../fs/vfs.h"
+
+#include <stdint.h>
 
 // --- ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ЭКРАНА ---
 uintptr_t fb_base_addr;
