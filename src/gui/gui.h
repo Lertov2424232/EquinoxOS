@@ -49,10 +49,15 @@ void gui_render_taskbar(void);
 int gui_check_icon_click(int mx, int my);
 bool gui_check_close_button(int mx, int my);
 window_t* gui_find_window_at(int mx, int my);
+window_t* gui_get_window_at(int mx, int my);
+window_t* gui_find_window_at(int mx, int my);
+
 // Bresenham line in window buffer
 void gui_window_draw_line(window_t* win, int x0, int y0, int x1, int y1, int thickness, uint32_t color);
 
 // System windows
+extern bool is_app_running;
+extern window_t *focused_window;
 extern window_t* term_win;
 extern window_t* main_win;
 extern window_t* app_win;
