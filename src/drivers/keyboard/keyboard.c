@@ -54,18 +54,19 @@ uint8_t keyboard_pop() {
 void keyboard_callback() {
     uint8_t scancode = inb(0x60);
     
-    // 1. Всегда кладём в буфер (для змейки)
+    // 1. Всегда кладем в буфер (для змейки и системных нужд)
     keyboard_push(scancode);
     
-    // 2. Для GUI/Shell (текстовый ввод)
     char c = get_ascii_char(scancode);
     if (c > 0) {
-        if (!is_app_running) {
-            if (notepad_win && notepad_win->active) {
-                notepad_handle_char(c);
-            } else {
-                shell_handle_char(c);
-            }
+        // 2. МАРШРУТИЗАЦИЯ ПО ФОКУСУ
+        if (focused_window == notepad_win) {
+            notepad_handle_char(c);
+        } 
+        else if (focused_window == term_win) {
+            shell_handle_char(c);
         }
+        // Если фокус на другом окне или приложении — 
+        // текстовый ввод просто игнорируется (или обрабатывается там)
     }
 }

@@ -168,45 +168,65 @@ static char explorer_files[16][13]; // FAT32 8.3 names
 static int explorer_file_count = 0;
 static bool explorer_scanned = false;
 static int explorer_scroll = 0;
+window_t *focused_window = NULL;
 
 void update_gui() {
-  // Handle mouse clicks (rising edge detection)
   uint8_t mouse_just_pressed = (mouse_left_button && !prev_mouse_left);
 
+  // --- ОБРАБОТКА КЛИКА (Только в момент нажатия!) ---
   if (mouse_just_pressed) {
-    // Close button has priority
-    if (!gui_check_close_button(mouse_x, mouse_y)) {
-      // Then check desktop icons
+    window_t* clicked_win = gui_find_window_at(mouse_x, mouse_y);
+    
+    if (clicked_win) {
+      // 1. Меняем фокус и выносим на передний план
+      focused_window = clicked_win;
+      window_bring_to_front(clicked_win);
+
+      // 2. Проверяем кнопку закрытия (уже внутри окна)
+      if (gui_check_close_button(mouse_x, mouse_y)) {
+         // Окно закрылось, сбрасываем фокус если надо
+         if (focused_window == clicked_win) focused_window = NULL;
+      }
+    } else {
+      // Кликнули мимо всех окон
+      focused_window = NULL;
+
+      // 3. Проверяем иконки десктопа
       int icon = gui_check_icon_click(mouse_x, mouse_y);
       switch (icon) {
-      case ICON_TERMINAL:
-        term_win->active = true;
-        window_bring_to_front(term_win);
-        break;
-      case ICON_SYSMONITOR:
-        main_win->active = true;
-        window_bring_to_front(main_win);
-        break;
-      case ICON_PAINT:
-        paint_win->active = true;
-        window_bring_to_front(paint_win);
-        break;
-      case ICON_EXPLORER:
-        explorer_win->active = true;
-        explorer_scanned = false;
-        window_bring_to_front(explorer_win);
-        break;
-      case ICON_NOTEPAD:
-        notepad_win->active = true;
-        if (!notepad_inited) {
-          for (int i = 0; i < NOTEPAD_MAX_LINES; i++)
-            memset(notepad_buf[i], 0, NOTEPAD_LINE_LEN);
-          notepad_line = 0;
-          notepad_col = 0;
-          notepad_inited = true;
-        }
-        window_bring_to_front(notepad_win);
-        break;
+        case ICON_TERMINAL:
+          term_win->active = true;
+          window_bring_to_front(term_win);
+          focused_window = term_win; // Сразу даем фокус
+          break;
+        case ICON_SYSMONITOR:
+          main_win->active = true;
+          window_bring_to_front(main_win);
+          focused_window = main_win;
+          break;
+        case ICON_PAINT:
+          paint_win->active = true;
+          window_bring_to_front(paint_win);
+          focused_window = paint_win;
+          break;
+        case ICON_EXPLORER:
+          explorer_win->active = true;
+          explorer_scanned = false;
+          window_bring_to_front(explorer_win);
+          focused_window = explorer_win;
+          break;
+        case ICON_NOTEPAD:
+          notepad_win->active = true;
+          if (!notepad_inited) {
+            for (int i = 0; i < NOTEPAD_MAX_LINES; i++)
+              memset(notepad_buf[i], 0, NOTEPAD_LINE_LEN);
+            notepad_line = 0;
+            notepad_col = 0;
+            notepad_inited = true;
+          }
+          window_bring_to_front(notepad_win);
+          focused_window = notepad_win;
+          break;
       }
     }
   }
