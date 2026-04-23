@@ -3,6 +3,7 @@
 #include "../gui/gui.h"
 #include "../libc/stdio.h"
 #include "../libc/string.h"
+#include "task.h"
 #include "memory.h"
 #include "pmm.h"
 #include "vmm.h"
@@ -104,14 +105,32 @@ void syscall_handler(syscall_regs_t *regs) {
     regs->rax = tick * 10; // Возвращаем время в RAX
     break;
 
-  case 9:                       // SYS_GET_SCANCODE
-    regs->rax = keyboard_pop(); // Вызываем функцию, получаем сканкод
+  case 9: // SYS_GET_SCANCODE
+    // Если змейка (app_win) не в фокусе, притворяемся, что клавиш нет
+    if (focused_window == app_win) {
+        regs->rax = keyboard_pop();
+    } else {
+        regs->rax = 0; 
+    }
     break;
 
   case 10: // SYS_EXIT
     term_print("[SYS] Killing process...\n");
+    
+    // 1. Помечаем задачу как неактивную
+    current_task->running = false; 
+    
+    // 2. Убираем окно приложения
+    if (app_win) app_win->active = false;
+    if (focused_window == app_win) focused_window = NULL;
+    
+    // 3. Сбрасываем глобальный флаг (чтобы можно было запустить снова)
     extern bool is_app_running;
     is_app_running = false;
+
+    // 4. Срочно переключаем контекст на другую задачу (ядро), 
+    // чтобы этот процесс больше не выполнил ни одной инструкции
+    yield(); 
     break;
   case 11: // SYS_YIELD (Уступить процессор)
     break;

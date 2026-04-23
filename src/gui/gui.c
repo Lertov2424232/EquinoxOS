@@ -3,6 +3,9 @@
 #include "../drivers/vga/vesa.h"
 #include "../libc/string.h"
 #include "../system/memory.h"
+#include "../system/task.h"
+
+#include <stdbool.h>
 
 window_t *window_list_head = NULL;
 
@@ -183,15 +186,29 @@ int gui_check_icon_click(int mx, int my) {
   return -1;
 }
 
+// В gui.c, функция gui_check_close_button
 bool gui_check_close_button(int mx, int my) {
   window_t *curr = window_list_head;
   while (curr) {
     if (curr->active) {
-      int bx = curr->x + curr->w - 25;
-      int by = curr->y - 25;
-      if (mx >= bx && mx < bx + 25 && my >= by && my < by + 25) {
+      int bx = curr->x + curr->w - 32; // Уточни координаты по своему рендеру
+      int by = curr->y - 22;
+      if (mx >= bx && mx < bx + 28 && my >= by && my < by + 19) {
         curr->active = false;
-        curr->dragging = false;
+        
+        // --- НОВОЕ: Если закрыли окно приложения ---
+        if (curr == app_win) {
+            is_app_running = false;
+            // Находим задачу змейки и убиваем её
+            // Для простоты: можно просто помечать все задачи кроме ядра 
+            // как running = false, если у тебя только одна программа.
+            // Но лучше в будущем хранить pid в window_t.
+            task_t* t = current_task->next;
+            while(t != current_task) {
+                if (t->cr3 != 0) t->running = false; // Убиваем все Ring 3 задачи
+                t = t->next;
+            }
+        }
         return true;
       }
     }
@@ -248,32 +265,76 @@ static void draw_shadow(int wx, int wy, int ww, int wh) {
   }
 }
 
-static void handle_mouse_drag(window_t *win) {
-  if (!win->active)
-    return;
-
-  if (mouse_left_button) {
-    // Если мы еще не тащим, проверяем: попала ли мышь ВНУТРЬ заголовка?
-    // Заголовок находится от win->y - 25 до win->y
-    if (!win->dragging && mouse_x >= win->x &&
-        mouse_x <= win->x + win->w - 25 && mouse_y >= win->y - 25 &&
-        mouse_y <= win->y) {
-
-      win->dragging = true;
-      win->drag_off_x = mouse_x - win->x;
-      win->drag_off_y = mouse_y - win->y;
-
-      // Опционально: выносим окно на передний план (если захочешь)
-      // window_bring_to_front(win);
+window_t* gui_get_window_at(int mx, int my) {
+    // В твоей реализации tail списка - это верх экрана. 
+    // Значит, нужно найти последнее окно в списке, в которое попал клик.
+    window_t* found = NULL;
+    window_t* curr = window_list_head;
+    while (curr) {
+        if (curr->active) {
+            // Проверяем границы (включая заголовок y-25)
+            if (mx >= curr->x && mx <= curr->x + curr->w &&
+                my >= curr->y - 25 && my <= curr->y + curr->h) {
+                found = curr; 
+            }
+        }
+        curr = curr->next;
     }
-  } else {
-    win->dragging = false;
-  }
+    return found; // Вернет самое "позднее" в списке окно (верхнее)
+}
 
-  if (win->dragging) {
-    win->x = mouse_x - win->drag_off_x;
-    win->y = mouse_y - win->drag_off_y;
-  }
+window_t* gui_find_window_at(int mx, int my) {
+    // ТАК КАК window_bring_to_front кидает окно в КОНЕЦ списка (tail),
+    // то верхнее окно — это последнее окно в списке.
+    // Проходим список с начала до конца, и запоминаем последнее подошедшее.
+    window_t* found = NULL;
+    window_t* curr = window_list_head;
+    while (curr) {
+        if (curr->active) {
+            // Проверка: попали ли в заголовок ИЛИ в тело окна
+            if (mx >= curr->x && mx < curr->x + curr->w &&
+                my >= curr->y - 25 && my < curr->y + curr->h) {
+                found = curr;
+            }
+        }
+        curr = curr->next;
+    }
+    return found; 
+}
+
+window_t* dragging_window = NULL;
+
+static void handle_mouse_drag(window_t *win) {
+    static bool last_mouse_btn = false;
+
+    if (mouse_left_button && !last_mouse_btn) {
+        // МОМЕНТ КЛИКА
+        window_t* win = gui_find_window_at(mouse_x, mouse_y);
+        if (win) {
+            window_bring_to_front(win);
+            focused_window = win; // Нужно добавить эту глобальную переменную
+
+            // Проверка на заголовок для перетаскивания
+            if (mouse_y < win->y) { 
+                dragging_window = win;
+                win->drag_off_x = mouse_x - win->x;
+                win->drag_off_y = mouse_y - win->y;
+            }
+        } else {
+            focused_window = NULL;
+        }
+    }
+
+    if (!mouse_left_button) {
+        dragging_window = NULL;
+    }
+
+    if (dragging_window) {
+        dragging_window->x = mouse_x - dragging_window->drag_off_x;
+        dragging_window->y = mouse_y - dragging_window->drag_off_y;
+    }
+
+    last_mouse_btn = mouse_left_button;
 }
 
 // Рисует пиксель внутри буфера окна
@@ -378,6 +439,7 @@ static void draw_titlebar_gradient(int x, int y, int w, int h, uint32_t color,
 
 void gui_compositor_render() {
   // 1. Сначала рисуем фон и иконки (нижний слой)
+  handle_mouse_drag(NULL);
   draw_background();
   gui_render_desktop_icons();
 
@@ -385,9 +447,6 @@ void gui_compositor_render() {
   window_t *curr = window_list_head;
   while (curr) {
     if (curr->active) {
-      // Обработка перетаскивания (обновляет curr->x и curr->y)
-      handle_mouse_drag(curr);
-
       // --- РЕНДЕРИНГ РАМКИ ОКНА (План 1.5) ---
 
       // Темная внешняя обводка (1 пиксель)
