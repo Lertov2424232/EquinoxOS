@@ -24,6 +24,7 @@
 #include "drivers/mouse/mouse.h"
 #include "drivers/net/rtl8139.h"
 #include "drivers/pci/pci.h"
+#include "drivers/pcspeaker/pcspeaker.h"
 #include "drivers/serial/serial.h"
 #include "drivers/vga/bmp.h"
 #include "drivers/vga/vesa.h"
@@ -731,6 +732,8 @@ void kmain(void) {
   serial_puts(COM1, "FAT32 initialized\n");
   pci_init();
   serial_puts(COM1, "PCI initialized\n");
+  pcspeaker_init();
+  serial_puts(COM1, "PC Speaker initialized\n");
   init_mouse();
   serial_puts(COM1, "Mouse initialized\n");
   gui_init();
