@@ -7,6 +7,7 @@
 #include "../system/task.h"
 #include "../system/memory.h"
 #include "../drivers/vga/bmp.h"
+#include "../drivers/pcspeaker/pcspeaker.h"
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -83,6 +84,54 @@ void shell_handle_char(char c) {
         }
         else if (strcmp(shell_buffer, "gettime") == 0) {
             send_ntp_request();
+        }
+        else if (strcmp(shell_buffer, "beep") == 0) {
+            term_print("Playing beep (1000Hz, 1sec)...\n");
+            pcspeaker_beep(1000, 1000); // 1000 Hz for 1 second
+            term_print("Done!\n");
+        }
+        else if (strcmp(shell_buffer, "speakeron") == 0) {
+            pcspeaker_play(1000);
+            term_print("Speaker ON (1000Hz). Type 'speakeroff' to stop.\n");
+        }
+        else if (strcmp(shell_buffer, "speakeroff") == 0) {
+            pcspeaker_stop();
+            term_print("Speaker OFF.\n");
+        }
+        else if (strcmp(shell_buffer, "melody") == 0) {
+            term_print("Playing melody...\n");
+            pcspeaker_test_melody();
+            term_print("Done!\n");
+        }
+        else if (memcmp(shell_buffer, "tone ", 5) == 0) {
+            // Usage: tone <frequency> [duration_ms]
+            char* freq_str = shell_buffer + 5;
+            uint32_t freq = 0;
+            uint32_t duration = 500; // default 500ms
+            
+            // Parse frequency
+            int i = 0;
+            while (freq_str[i] >= '0' && freq_str[i] <= '9') {
+                freq = freq * 10 + (freq_str[i] - '0');
+                i++;
+            }
+            
+            // Check for optional duration
+            if (freq_str[i] == ' ') {
+                i++;
+                duration = 0;
+                while (freq_str[i] >= '0' && freq_str[i] <= '9') {
+                    duration = duration * 10 + (freq_str[i] - '0');
+                    i++;
+                }
+            }
+            
+            if (freq > 0 && freq < 20000) {
+                pcspeaker_beep(freq, duration);
+                term_print("Played tone.\n");
+            } else {
+                term_print("Invalid frequency (1-19999 Hz)\n");
+            }
         }
         else if (memcmp(shell_buffer, "show ", 5) == 0) {
             if (strlen(shell_buffer) <= 5) {
