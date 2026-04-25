@@ -660,27 +660,29 @@ void exec_module() {
   term_print("Error: app.elf not found in modules!\n");
 }
 
+// Загрузка и запуск ELF-файла прямо с FAT32
 void exec_from_disk(const char* filename) {
     uint32_t size = 0;
-    term_print("FS: Loading ");
-    term_print(filename);
-    term_print("...\n");
-
-    // Используем твою функцию из fat32.c
+    // 1. Читаем файл с диска через твой драйвер ATA + FAT32
     uint8_t* elf_data = fat32_read_file(filename, &size);
 
-    if (elf_data) {
-        term_print("FS: File loaded, size: ");
-        // (Тут можно вывести размер через itoa)
-        term_print(" bytes. Executing...\n");
-        
-        run_elf(elf_data); // Твоя функция парсинга ELF и перехода в Ring 3
-        
-        // ВАЖНО: run_elf создаст задачу, но данные ELF нам больше не нужны в ядре
-        // kfree(elf_data); // Аккуратно с этим, если run_elf не копирует сегменты
-    } else {
-        term_print("FS: Error - Could not read file from disk!\n");
+    if (!elf_data) {
+        term_print("EXEC: File not found or disk error: ");
+        term_print(filename);
+        term_print("\n");
+        return;
     }
+
+    term_print("EXEC: Loaded ");
+    term_print(filename);
+    term_print(" from disk. Starting...\n");
+
+    // 2. Используем уже готовую у тебя функцию run_elf
+    run_elf(elf_data);
+
+    // 3. После того как run_elf создал задачу и скопировал сегменты,
+    // данные из кучи ядра можно (и нужно) освободить.
+    kfree(elf_data); 
 }
 
 void kmain(void) {
