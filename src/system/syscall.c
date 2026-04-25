@@ -47,7 +47,7 @@ uint64_t copy_to_user(void *kernel_buf, uint64_t size) {
 
   for (uint64_t i = 0; i < pages; i++) {
     vmm_map((page_table_t *)VIRT(cr3), target_virt + (i * 4096),
-            (uint64_t)phys + (i * 4096), PTE_USER | PTE_WRITABLE);
+            (uint64_t)phys + (i * 4096), PTE_PRESENT | PTE_USER | PTE_WRITABLE);
   }
 
   // 4. Копируем данные из ядра в эти новые страницы юзера
@@ -179,37 +179,56 @@ void syscall_handler(syscall_regs_t *regs) {
     regs->rax = virt;
     break;
   }
-  case 15: { // SYS_BRK - Изменение размера кучи процесса
-    uint64_t new_brk = regs->rdi;
+  case 15: { // SYS_BRK: Управление кучей процесса
+    // Начальный адрес кучи в виртуальной памяти приложения
     static uint64_t current_brk = 0;
-
-    // Если это первый вызов, инициализируем начало кучи
     if (current_brk == 0) {
-        current_brk = 0x90000000; // Начало кучи в вирт. памяти юзера
+        current_brk = 0x90000000; 
     }
 
-    if (new_brk == 0) {
-        regs->rax = current_brk; // Возвращаем текущий конец кучи
+    uint64_t requested_brk = regs->rdi;
+
+    // Если приложение передало 0, оно просто хочет узнать текущий адрес кучи
+    if (requested_brk == 0) {
+        regs->rax = current_brk;
         break;
     }
 
-    if (new_brk > current_brk) {
-        // Выделяем страницы, если куча растет
-        uint64_t diff = new_brk - current_brk;
-        uint64_t pages = (diff + 4095) / 4096;
+    // Если приложение просит расширить кучу
+    if (requested_brk > current_brk) {
+        // Вычисляем границы: от текущего конца до нового
+        // Выравниваем по страницам (4096 байт)
+        uint64_t start_page = (current_brk + 4095) & ~4095;
+        uint64_t end_page = (requested_brk + 4095) & ~4095;
         
-        void* phys = pmm_alloc_continuous(pages);
-        uint64_t cr3;
-        __asm__ volatile("mov %%cr3, %0" : "=r"(cr3));
-        
-        for (uint64_t i = 0; i < pages; i++) {
-            vmm_map((page_table_t*)VIRT(cr3), 
-                    (current_brk & ~0xFFF) + (i * 4096), 
-                    (uint64_t)phys + (i * 4096), 
-                    PTE_USER | PTE_WRITABLE | PTE_PRESENT);
+        if (end_page > start_page) {
+            uint64_t pages_needed = (end_page - start_page) / 4096;
+
+            // Получаем текущую таблицу страниц (CR3) процесса
+            uint64_t cr3_val;
+            __asm__ volatile("mov %%cr3, %0" : "=r"(cr3_val));
+            page_table_t* pml4 = (page_table_t*)VIRT(cr3_val);
+
+            for (uint64_t i = 0; i < pages_needed; i++) {
+                void* phys = pmm_alloc(); // Выделяем одну физическую страницу
+                if (!phys) {
+                    // Если память кончилась — возвращаем старый brk как ошибку
+                    regs->rax = current_brk;
+                    break;
+                }
+                
+                // МАПИНГ: Самый важный момент!
+                vmm_map(pml4, 
+                        start_page + (i * 4096), 
+                        (uint64_t)phys, 
+                        PTE_PRESENT | PTE_USER | PTE_WRITABLE);
+            }
         }
-        current_brk = new_brk;
     }
+
+    // Обновляем текущий указатель и возвращаем его приложению
+    current_task->brk = requested_brk; // Если в task_t есть поле brk, лучше хранить там
+    current_brk = requested_brk;
     regs->rax = current_brk;
     break;
 }

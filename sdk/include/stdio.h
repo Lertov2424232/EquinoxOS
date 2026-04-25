@@ -27,6 +27,7 @@ long ftell(FILE* stream);
 int fclose(FILE* stream);
 int printf(const char* format, ...);
 int sprintf(char* str, const char* format, ...);
+int vsprintf(char* buffer, const char* format, va_list args);
 
 // Версия для списка аргументов (нужна внутри sprintf)
 int vsprintf(char* buffer, const char* format, va_list args);

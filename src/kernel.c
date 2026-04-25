@@ -621,7 +621,7 @@ void run_elf(uint8_t *elf_data) {
       // Мапим их в виртуальное пространство процесса с флагом USER
       for (uint64_t p = 0; p < pages; p++) {
         vmm_map(proc_pml4, phdr[i].p_vaddr + (p * 4096),
-                (uint64_t)phys_mem + (p * 4096), PTE_USER | PTE_WRITABLE);
+                (uint64_t)phys_mem + (p * 4096), PTE_PRESENT | PTE_USER | PTE_WRITABLE);
       }
 
       // Копируем данные из ELF в эти физические страницы через HHDM

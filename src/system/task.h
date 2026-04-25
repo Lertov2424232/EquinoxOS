@@ -21,6 +21,7 @@ typedef struct task {
     uint64_t id;
     bool running;
     uint64_t sleep_until;
+    uint64_t brk;
 } task_t;
 
 extern task_t* current_task; 
