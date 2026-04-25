@@ -98,7 +98,7 @@ clean:
 	@if exist equos.iso del /q equos.iso
 	@if exist packets.pcap del /q packets.pcap
 
-cleanrun: clean all copykernel compile_app doom.elf iso run
+cleanrun: clean all copykernel compile_app iso run
 
 copykernel:
 	copy /Y kernel.elf $(ISO_ROOT)\kernel.elf

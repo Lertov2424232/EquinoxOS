@@ -23,3 +23,24 @@ void free(void* ptr) {
     // В простейшем варианте ничего не делаем (память не возвращаем)
     // Для Doom на первое время хватит
 }
+
+void* calloc(size_t nmemb, size_t size) {
+    size_t total = nmemb * size;
+    void* p = malloc(total);
+    if (p) memset(p, 0, total);
+    return p;
+}
+
+void* realloc(void* ptr, size_t size) {
+    if (!ptr) return malloc(size);
+    if (size == 0) { free(ptr); return (void*)0; }
+    
+    void* new_ptr = malloc(size);
+    if (new_ptr) {
+        // Мы не знаем старый размер, поэтому копируем 'size' байт. 
+        // Это костыль, но для DoomGeneric часто срабатывает.
+        memcpy(new_ptr, ptr, size); 
+        free(ptr);
+    }
+    return new_ptr;
+}

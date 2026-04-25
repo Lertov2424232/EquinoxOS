@@ -1,43 +1,59 @@
 #include "doomgeneric.h"
+#include "doomkeys.h" // Подключаем оригинальные клавиши Doom
 #include "../../sdk/include/equos.h"
 
-// 1. Инициализация: создаем окно или готовим буфер
+extern void doomgeneric_Create(int argc, char **argv);
+
 void DG_Init() {
-    // Тут можно ничего не делать, так как окно мы создадим при старте
+    // Вызывается 1 раз при старте
 }
 
-// 2. Отрисовка кадра
 void DG_DrawFrame() {
-    // DG_ScreenBuffer - это массив пикселей (uint32_t), который дает Doom
-    // Мы просто кидаем его в наше окно через системный вызов
+    // Кидаем кадр в наше окно
     _syscall(SYS_DRAW_BUFFER, 0, 0, DOOMGENERIC_RESX, DOOMGENERIC_RESY, (uint64_t)DG_ScreenBuffer);
 }
 
-// 3. Сон (для ограничения FPS)
 void DG_SleepMs(uint32_t ms) {
     sys_sleep(ms);
 }
 
-// 4. Время в миллисекундах
 uint32_t DG_GetTicksMs() {
     return (uint32_t)_syscall(6, 0, 0, 0, 0, 0); // Твой SYS_GET_TIME
 }
 
-// 5. Ввод клавиатуры
 int DG_GetKey(int* pressed, unsigned char* key) {
-    uint8_t scancode = (uint8_t)_syscall(9, 0, 0, 0, 0, 0); // Твой SYS_GET_SCANCODE
+    uint8_t scancode = (uint8_t)_syscall(9, 0, 0, 0, 0, 0); // SYS_GET_SCANCODE
     if (scancode == 0) return 0;
 
-    *pressed = !(scancode & 0x80); // Нажата или отпущена
+    *pressed = !(scancode & 0x80); // Если 8-й бит равен 0 — кнопка нажата
     uint8_t clean_scancode = scancode & 0x7F;
 
-    // Мапим твои сканкоды на константы Doom
-    if (clean_scancode == 0x11) { *key = DG_KEY_W; return 1; }
-    if (clean_scancode == 0x1E) { *key = DG_KEY_A; return 1; }
-    if (clean_scancode == 0x1F) { *key = DG_KEY_S; return 1; }
-    if (clean_scancode == 0x20) { *key = DG_KEY_D; return 1; }
-    if (clean_scancode == 0x1C) { *key = DG_KEY_ENTER; return 1; }
-    if (clean_scancode == 0x01) { *key = DG_KEY_ESCAPE; return 1; }
+    // --- БУКВЫ ---
+    if (clean_scancode == 0x11) { *key = 'w'; return 1; }
+    if (clean_scancode == 0x1E) { *key = 'a'; return 1; }
+    if (clean_scancode == 0x1F) { *key = 's'; return 1; }
+    if (clean_scancode == 0x20) { *key = 'd'; return 1; }
+    if (clean_scancode == 0x12) { *key = 'e'; return 1; } // E - открыть дверь
+
+    // --- СПЕЦКЛАВИШИ ---
+    if (clean_scancode == 0x1C) { *key = KEY_ENTER; return 1; }
+    if (clean_scancode == 0x01) { *key = KEY_ESCAPE; return 1; }
+    if (clean_scancode == 0x39) { *key = ' '; return 1; } // Пробел
+    if (clean_scancode == 0x1D) { *key = KEY_RCTRL; return 1; } // Правый CTRL
+
+    // --- СТРЕЛОЧКИ ---
+    if (clean_scancode == 0x48) { *key = KEY_UPARROW; return 1; }
+    if (clean_scancode == 0x50) { *key = KEY_DOWNARROW; return 1; }
+    if (clean_scancode == 0x4B) { *key = KEY_LEFTARROW; return 1; }
+    if (clean_scancode == 0x4D) { *key = KEY_RIGHTARROW; return 1; }
     
+    return 0;
+}
+
+int main(int argc, char **argv) {
+    // Вызываем правильную функцию инициализации порта
+    doomgeneric_Create(argc, argv);
+    
+    // После этого управление перейдет в движок Дума
     return 0;
 }

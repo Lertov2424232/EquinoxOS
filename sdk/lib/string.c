@@ -69,9 +69,10 @@ char* strstr(const char* haystack, const char* needle) {
 // --- СИСТЕМНАЯ МАГИЯ: ПРЕВРАЩАЕМ ЧИСЛА В ТЕКСТ ---
 
 // Перевод обычного числа (base=10) в строку
+// Перевод обычного числа (base=10) в строку
 void itoa(int64_t num, int base, char* buffer) {
     int i = 0;
-    bool is_negative = false;
+    int is_negative = 0; // БЫЛО: bool is_negative = false;
 
     if (num == 0) {
         buffer[i++] = '0';
@@ -80,7 +81,7 @@ void itoa(int64_t num, int base, char* buffer) {
     }
 
     if (num < 0 && base == 10) {
-        is_negative = true;
+        is_negative = 1; // БЫЛО: is_negative = true;
         num = -num; // Делаем положительным для алгоритма
     }
 
@@ -173,4 +174,48 @@ int strncasecmp(const char *s1, const char *s2, size_t n) {
     // Если прошли весь цикл n раз, строки равны на длине n
     if (n == (size_t)-1) return 0; 
     return tolower((unsigned char)*s1) - tolower((unsigned char)*s2);
+}
+
+void* memmove(void* dest, const void* src, size_t n) {
+    unsigned char* d = dest;
+    const unsigned char* s = src;
+    if (d < s) {
+        while (n--) *d++ = *s++;
+    } else {
+        d += n;
+        s += n;
+        while (n--) *--d = *--s;
+    }
+    return dest;
+}
+
+char* strchr(const char* s, int c) {
+    while (*s) {
+        if (*s == (char)c) return (char*)s;
+        s++;
+    }
+    return (char*)0;
+}
+
+char* strrchr(const char* s, int c) {
+    char* last = (char*)0;
+    do {
+        if (*s == (char)c) last = (char*)s;
+    } while (*s++);
+    return last;
+}
+
+char* strncpy(char* dest, const char* src, size_t n) {
+    size_t i;
+    for (i = 0; i < n && src[i] != '\0'; i++) dest[i] = src[i];
+    for ( ; i < n; i++) dest[i] = '\0';
+    return dest;
+}
+
+int strncmp(const char* s1, const char* s2, size_t n) {
+    while (n--) {
+        if (*s1 != *s2++) return *(unsigned char*)s1 - *(unsigned char*)--s2;
+        if (*s1++ == 0) break;
+    }
+    return 0;
 }
