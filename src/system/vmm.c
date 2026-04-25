@@ -17,7 +17,7 @@ static page_table_t* get_next_level(page_table_t* table, uint64_t index, bool al
     if (table[index] & PTE_PRESENT) {
         // КРИТИЧНО: Если мы мапим что-то для юзера, 
         // промежуточные таблицы ТОЖЕ должны иметь флаг PTE_USER
-        table[index] |= (PTE_USER | PTE_WRITABLE); 
+        table[index] |= (PTE_PRESENT | PTE_USER | PTE_WRITABLE); 
         return (page_table_t*)VIRT(table[index] & ~0xFFFULL);
     }
     

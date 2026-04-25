@@ -43,7 +43,7 @@ bool eqstart_perform_tests() {
     page_table_t* test_pml4 = vmm_create_address_space();
     uint64_t test_virt = 0x1000000;
     void* test_phys = pmm_alloc();
-    vmm_map(test_pml4, test_virt, (uint64_t)test_phys, PTE_USER | PTE_WRITABLE);
+    vmm_map(test_pml4, test_virt, (uint64_t)test_phys, PTE_PRESENT | PTE_USER | PTE_WRITABLE);
     
     // Ручной обход таблиц - Цербер лезет в кишки
     uint64_t* pml4 = (uint64_t*)test_pml4;

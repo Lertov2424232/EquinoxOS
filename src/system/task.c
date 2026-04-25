@@ -58,8 +58,12 @@ void task_create(void (*entry)(), uint64_t arg1, uint64_t arg2, uint64_t cr3) {
 
     uint64_t user_stack_virt = 0x70000000000;
     if (cr3 != 0) {
-        void* ustack_phys = pmm_alloc_continuous(8);
-        for (int i = 0; i < 8; i++) {
+        // Выделяем 512 страниц для стека (2 МБ)
+        int stack_pages = 512; 
+        void* ustack_phys = pmm_alloc_continuous(stack_pages);
+        
+        // Мапим ВСЕ страницы, которые выделили
+        for (int i = 0; i < stack_pages; i++) { 
             vmm_map((page_table_t*)VIRT(cr3), 
                     user_stack_virt + (i * 4096), 
                     (uint64_t)ustack_phys + (i * 4096), 
@@ -85,13 +89,14 @@ void task_create(void (*entry)(), uint64_t arg1, uint64_t arg2, uint64_t cr3) {
     frame->rsi = arg2;
     frame->rflags = 0x202;
     
+    
     if (cr3 == 0) {
         frame->cs = 0x08; frame->ss = 0x10;
         frame->rsp = kstack_virt + 16000;
     } else {
         frame->cs = 0x23;
         frame->ss = 0x1B;
-        frame->rsp = ((user_stack_virt + (8 * 4096)) & ~0xF) - 8;
+        frame->rsp = ((user_stack_virt + (512 * 4096)) & ~0xF) - 16;
     }
     
     new_task->rsp = (uint64_t)frame;
@@ -201,7 +206,7 @@ bool task_exec(char* full_command) {
     term_print("EXEC: Starting Ring 3 process...\n");
     uint64_t user_argv_page = 0x80000000; 
     void* phys_argv = pmm_alloc();
-    vmm_map(proc_pml4, user_argv_page, (uint64_t)phys_argv, PTE_USER | PTE_WRITABLE);
+    vmm_map(proc_pml4, user_argv_page, (uint64_t)phys_argv, PTE_PRESENT | PTE_USER | PTE_WRITABLE);
     
     uint64_t* user_argv_array = (uint64_t*)VIRT(phys_argv); 
     char* user_string_area = (char*)VIRT(phys_argv) + 128; 

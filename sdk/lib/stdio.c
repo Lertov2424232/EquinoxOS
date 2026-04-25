@@ -1,11 +1,14 @@
-#include <stdio.h>
-#include <string.h>
+#include "../include/stdio.h"
+#include "../include/string.h"
+#include "../include/equos.h"
 #include <stdarg.h>
-#include <equos.h>
+
+// Глобальные потоки (заглушки)
 FILE* stdin = (FILE*)0;
 FILE* stdout = (FILE*)1;
 FILE* stderr = (FILE*)2;
 
+// Базовый движок форматирования строк
 int vsprintf(char* buffer, const char* format, va_list args) {
     char* ptr = buffer;
     const char* f = format;
@@ -16,9 +19,7 @@ int vsprintf(char* buffer, const char* format, va_list args) {
             *ptr++ = *f++;
             continue;
         }
-
         f++; // Пропускаем '%'
-
         switch (*f) {
             case 'c': {
                 char c = (char)va_arg(args, int);
@@ -56,7 +57,22 @@ int vsprintf(char* buffer, const char* format, va_list args) {
     return ptr - buffer;
 }
 
-// ВОТ ЭТОГО НЕ ХВАТАЛО:
+// РЕАЛИЗАЦИЯ SPRINTF (для Змейки)
+int sprintf(char* buffer, const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    int len = vsprintf(buffer, format, args);
+    va_end(args);
+    return len;
+}
+
+// РЕАЛИЗАЦИЯ VSNPRINTF (для Doom)
+int vsnprintf(char* str, size_t size, const char* format, va_list ap) {
+    // В идеале тут нужна проверка на size, но для начала хватит и этого
+    return vsprintf(str, format, ap);
+}
+
+// РЕАЛИЗАЦИЯ SNPRINTF
 int snprintf(char* str, size_t size, const char* format, ...) {
     va_list args;
     va_start(args, format);
@@ -65,34 +81,25 @@ int snprintf(char* str, size_t size, const char* format, ...) {
     return res;
 }
 
+// ПЕЧАТЬ В ТЕРМИНАЛ (Ring 3 -> Syscall)
 int printf(const char* format, ...) {
     char buffer[1024];
     va_list args;
     va_start(args, format);
-    vsprintf(buffer, format, args);
+    int len = vsprintf(buffer, format, args);
     va_end(args);
-
-    // ВМЕСТО term_print(buffer) вызываем системный вызов печати строки
-    // Номер 1 у тебя — это SYS_PRINT
     _syscall(1, (uint64_t)buffer, 0, 0, 0, 0); 
-    
-    return 0;
+    return len;
 }
+
 int fprintf(FILE* stream, const char* format, ...) {
     char buffer[1024];
     va_list args;
     va_start(args, format);
-    vsprintf(buffer, format, args);
+    int len = vsprintf(buffer, format, args);
     va_end(args);
-
     _syscall(1, (uint64_t)buffer, 0, 0, 0, 0);
-    return 0;
-}
-
-int vsnprintf(char* str, size_t size, const char* format, va_list ap) {
-    // Для простоты — просто вызываем vsprintf (без проверки лимита size)
-    // Это опасно в реальных ОС, но для запуска Дума пойдет
-    return vsprintf(str, format, ap);
+    return len;
 }
 
 int puts(const char* s) {
@@ -102,12 +109,11 @@ int puts(const char* s) {
 
 int putchar(int c) {
     char buf[2] = {(char)c, 0};
-    printf("%s", buf);
+    _syscall(1, (uint64_t)buf, 0, 0, 0, 0);
     return c;
 }
 
 size_t fwrite(const void* ptr, size_t size, size_t nmemb, FILE* stream) {
-    // Doom пишет сейвы или логи. Пока просто имитируем успех.
     return nmemb;
 }
 

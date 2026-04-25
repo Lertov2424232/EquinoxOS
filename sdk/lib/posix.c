@@ -95,8 +95,35 @@ int vfprintf(FILE* stream, const char* format, va_list ap) {
     return 0;
 }
 
-int sscanf(const char* str, const char* format, ...) { return 0; }
+int sscanf(const char* str, const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    int count = 0;
 
+    while (*format) {
+        if (*format == '%') {
+            format++;
+            if (*format == 'd') {
+                int* val = va_arg(args, int*);
+                *val = atoi(str);
+                while (*str >= '0' && *str <= '9') str++;
+                count++;
+            } else if (*format == 's') {
+                char* val = va_arg(args, char*);
+                while (*str && *str != ' ' && *str != '\n') {
+                    *val++ = *str++;
+                }
+                *val = '\0';
+                count++;
+            }
+        } else {
+            if (*str == *format) str++;
+        }
+        format++;
+    }
+    va_end(args);
+    return count;
+}
 void exit(int status) {
     // 10 = SYS_EXIT
     _syscall(10, (uint64_t)status, 0, 0, 0, 0);

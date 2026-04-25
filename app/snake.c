@@ -4,6 +4,7 @@
 #include <equos.h>   
 #include <eid.h>
 
+
 // --- ЦВЕТА ---
 #define COL_BG      0x111111
 #define COL_SNAKE   0x00FF00
