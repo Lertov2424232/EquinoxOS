@@ -1,4 +1,5 @@
 #include "string.h"
+#include "../include/ctype.h"
 // sdk/lib/string.c // NOT A STRING INSIDE SRC OF THE SYSTEM
 
 // Копирует блок памяти из src в dest
@@ -149,4 +150,27 @@ char* strcat(char* dest, const char* src) {
     }
     *ptr = '\0';
     return dest;
+}
+
+int strcasecmp(const char *s1, const char *s2) {
+    while (*s1 && *s2) {
+        int diff = tolower((unsigned char)*s1) - tolower((unsigned char)*s2);
+        if (diff != 0) return diff;
+        s1++;
+        s2++;
+    }
+    return tolower((unsigned char)*s1) - tolower((unsigned char)*s2);
+}
+
+int strncasecmp(const char *s1, const char *s2, size_t n) {
+    if (n == 0) return 0;
+    while (n-- > 0 && *s1 && *s2) {
+        int diff = tolower((unsigned char)*s1) - tolower((unsigned char)*s2);
+        if (diff != 0) return diff;
+        s1++;
+        s2++;
+    }
+    // Если прошли весь цикл n раз, строки равны на длине n
+    if (n == (size_t)-1) return 0; 
+    return tolower((unsigned char)*s1) - tolower((unsigned char)*s2);
 }

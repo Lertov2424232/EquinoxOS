@@ -20,7 +20,6 @@ ASMFLAGS = -f elf64
 # --- ФЛАГИ SDK (ПРИЛОЖЕНИЯ) ---
 SDK_INC = -I./sdk/include
 USER_CFLAGS = -ffreestanding -mcmodel=small -mno-red-zone -fno-stack-protector -fno-pic $(SDK_INC)
-
 # Объекты SDK и Ядра
 SDK_OBJS = $(SDK_LIB_DIR)/crt0.o $(SDK_LIB_DIR)/stdio.o $(SDK_LIB_DIR)/string.o $(SDK_LIB_DIR)/eid.o  $(SDK_LIB_DIR)/posix.o $(SDK_LIB_DIR)/malloc.o
 OBJ = $(OBJ_DIR)/kernel.o $(OBJ_DIR)/io.o $(OBJ_DIR)/keyboard.o $(OBJ_DIR)/rtl8139.o $(OBJ_DIR)/vfs.o $(OBJ_DIR)/gui.o $(OBJ_DIR)/syscall.o \
@@ -99,7 +98,7 @@ clean:
 	@if exist equos.iso del /q equos.iso
 	@if exist packets.pcap del /q packets.pcap
 
-cleanrun: clean all copykernel iso run
+cleanrun: clean all copykernel compile_app doom.elf iso run
 
 copykernel:
 	copy /Y kernel.elf $(ISO_ROOT)\kernel.elf
@@ -109,3 +108,19 @@ iso:
 
 run:
 	qemu-system-x86_64 -m 128M -boot d -drive file=hdd.img,format=raw,index=0,media=disk -cdrom equos.iso -serial stdio -netdev user,id=n0,hostfwd=tcp::2222-:22 -device rtl8139,netdev=n0 -audiodev sdl,id=audio0 -machine pcspk-audiodev=audio0 -d int,guest_errors,mmu -D qemu.log
+
+DOOM_DIR = app/doom
+DOOM_SRCS = $(wildcard $(DOOM_DIR)/*.c)
+DOOM_OBJS = $(patsubst $(DOOM_DIR)/%.c, $(OBJ_DIR)/doom/%.o, $(DOOM_SRCS))
+
+# Создаем папку для объектников дума
+setup_doom:
+	@if not exist $(OBJ_DIR)\doom mkdir $(OBJ_DIR)\doom
+
+# Правило компиляции каждого файла Дума
+$(OBJ_DIR)/doom/%.o: $(DOOM_DIR)/%.c
+	$(CC) $(USER_CFLAGS) -DDOOMGENERIC_RESX=640 -DDOOMGENERIC_RESY=400 -c $< -o $@
+
+# Линковка Doom
+doom.elf: setup_doom $(SDK_OBJS) $(DOOM_OBJS)
+	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) $(DOOM_OBJS) -o $(ISO_ROOT)/doom.elf
