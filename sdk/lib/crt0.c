@@ -17,13 +17,14 @@ void _start(void) {
     }
     
     /* Call main with argc/argv - OS-specific setup needed */
-    extern int main(void);
-    int ret = main();
+    int argc = 0;
+    char** argv = (void*)0;
+
+    extern int main(int argc, char** argv);
+    int ret = main(argc, argv);
     
-    /* Call global destructors */
-    for (ctor_func *dtor = __fini_array_start; dtor < __fini_array_end; dtor++) {
-        (*dtor)();
-    }
+    extern void exit(int status);
+    exit(ret);
     
-    for(;;); /* Never return */
+    for(;;); 
 }

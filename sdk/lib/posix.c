@@ -1,12 +1,21 @@
 // sdk/lib/posix.c
 #include <stdint.h>
 #include "../include/equos.h"
+#include <string.h>
+#include <sys/types.h>
+#include <stdarg.h>
+#include <stdlib.h>
 
+int errno = 0;
 typedef struct {
     uint8_t* data;
     uint32_t size;
     uint32_t pos;
 } FILE;
+
+int access(const char *pathname, int mode) {
+    return 0; // Притворяемся, что доступ ко всем файлам всегда есть
+}
 
 FILE* fopen(const char* filename, const char* mode) {
     uint32_t size = 0;
@@ -47,3 +56,52 @@ int fseek(FILE* stream, long offset, int whence) {
 
 long ftell(FILE* stream) { return stream->pos; }
 int fclose(FILE* stream) { return 0; }
+
+
+int abs(int n) { return (n < 0) ? -n : n; }
+double fabs(double x) { return (x < 0) ? -x : x; }
+
+// Конвертация
+int atoi(const char* s) {
+    int res = 0;
+    while (*s >= '0' && *s <= '9') res = res * 10 + (*s++ - '0');
+    return res;
+}
+
+double atof(const char* s) { return (double)atoi(s); } // Очень грубо
+
+// Строки
+char* strdup(const char* s) {
+    size_t len = strlen(s) + 1;
+    void* new = malloc(len);
+    if (new) memcpy(new, s, len);
+    return new;
+}
+
+// Файловая система (Заглушки)
+int remove(const char* path) { return 0; }
+int rename(const char* old, const char* new) { return 0; }
+int mkdir(const char* path, mode_t mode) { return 0; }
+int system(const char* command) { return -1; }
+
+// Специфика DoomGeneric
+void DG_SetWindowTitle(const char* title) { }
+
+// И для i_system.c:
+int vfprintf(FILE* stream, const char* format, va_list ap) {
+    char buf[512];
+    vsprintf(buf, format, ap);
+    printf("%s", buf);
+    return 0;
+}
+
+int sscanf(const char* str, const char* format, ...) { return 0; }
+
+void exit(int status) {
+    // 10 = SYS_EXIT
+    _syscall(10, (uint64_t)status, 0, 0, 0, 0);
+    
+    // На случай, если ядро не сразу убило процесс, 
+    // уходим в бесконечный цикл, чтобы не вернуться в crt0.c
+    while(1); 
+}

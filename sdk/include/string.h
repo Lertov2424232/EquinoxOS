@@ -3,7 +3,6 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include <stdbool.h>
 
 // Базовые функции памяти
 void* memcpy(void* dest, const void* src, size_t n);
@@ -18,7 +17,6 @@ char* strstr(const char* haystack, const char* needle);
 char* strcat(char* dest, const char* src);
 
 // Конвертация чисел в строки (супер-важно для будущего printf!)
-void itoa(int64_t num, int base, char* buffer);
 void itoa_hex(uint64_t num, char* buffer);
 
 #endif

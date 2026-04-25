@@ -15,6 +15,11 @@ typedef struct {
 #define SEEK_CUR 1
 #define SEEK_END 2
 
+extern FILE* stdin;
+extern FILE* stdout;
+extern FILE* stderr;
+
+int fprintf(FILE* stream, const char* format, ...);
 FILE* fopen(const char* filename, const char* mode);
 size_t fread(void* ptr, size_t size, size_t nmemb, FILE* stream);
 int fseek(FILE* stream, long offset, int whence);
