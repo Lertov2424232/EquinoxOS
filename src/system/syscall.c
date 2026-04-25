@@ -179,6 +179,40 @@ void syscall_handler(syscall_regs_t *regs) {
     regs->rax = virt;
     break;
   }
+  case 15: { // SYS_BRK - Изменение размера кучи процесса
+    uint64_t new_brk = regs->rdi;
+    static uint64_t current_brk = 0;
+
+    // Если это первый вызов, инициализируем начало кучи
+    if (current_brk == 0) {
+        current_brk = 0x90000000; // Начало кучи в вирт. памяти юзера
+    }
+
+    if (new_brk == 0) {
+        regs->rax = current_brk; // Возвращаем текущий конец кучи
+        break;
+    }
+
+    if (new_brk > current_brk) {
+        // Выделяем страницы, если куча растет
+        uint64_t diff = new_brk - current_brk;
+        uint64_t pages = (diff + 4095) / 4096;
+        
+        void* phys = pmm_alloc_continuous(pages);
+        uint64_t cr3;
+        __asm__ volatile("mov %%cr3, %0" : "=r"(cr3));
+        
+        for (uint64_t i = 0; i < pages; i++) {
+            vmm_map((page_table_t*)VIRT(cr3), 
+                    (current_brk & ~0xFFF) + (i * 4096), 
+                    (uint64_t)phys + (i * 4096), 
+                    PTE_USER | PTE_WRITABLE | PTE_PRESENT);
+        }
+        current_brk = new_brk;
+    }
+    regs->rax = current_brk;
+    break;
+}
   case 16: {
     if (regs->rdi == 1 || regs->rdi == 2) {
       term_print((const char *)regs->rsi);
