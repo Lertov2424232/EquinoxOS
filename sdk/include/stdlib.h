@@ -1,0 +1,14 @@
+#ifndef _STDLIB_H
+#define _STDLIB_H
+#include <stddef.h>
+#include <stdint.h>
+
+void* malloc(size_t size);
+void free(void* ptr);
+void exit(int status);
+int abs(int j);
+char* itoa(int value, char* str, int base);
+
+#define EXIT_SUCCESS 0
+#define EXIT_FAILURE 1
+#endif

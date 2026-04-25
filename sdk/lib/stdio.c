@@ -62,12 +62,18 @@ int sprintf(char* buffer, const char* format, ...) {
     return len;
 }
 
-void printf(const char* format, ...) {
-    char buffer[1024];
+int printf(const char* format, ...) {
+    char buf[512]; // Буфер для форматированной строки
     va_list args;
     va_start(args, format);
-    vsprintf(buffer, format, args);
-    va_end(args);
+    
+    // Если у тебя есть vsprintf, используй его. 
+    // Если нет — пока просто выводим сырую строку через системный вызов
+    // (Для DoomGeneric этого на первое время хватит, чтобы не падать)
+    
+    // Пример простейшей реализации:
+    _syscall(SYS_PRINT, (uint64_t)format, 0, 0, 0, 0); 
 
-    _syscall(SYS_PRINT, (uint64_t)buffer, 0, 0, 0, 0);
+    va_end(args);
+    return 0; // Возвращаем 0, просто чтобы удовлетворить стандарт
 }

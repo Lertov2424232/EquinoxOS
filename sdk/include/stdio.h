@@ -1,13 +1,27 @@
-#ifndef LIBC_STDIO_H
-#define LIBC_STDIO_H
+#ifndef _STDIO_H
+#define _STDIO_H
+#include <stddef.h>
+#include <stdint.h>
+#include <stdarg.h>
 
-#include <stdarg.h> // Встроенная магия компилятора для "..."
+typedef struct {
+    int fd;
+    uint8_t* buffer;
+    uint32_t size;
+    uint32_t pos;
+} FILE;
 
-// Печатает форматированный текст в буфер (строку)
-int sprintf(char* buffer, const char* format, ...);
+#define SEEK_SET 0
+#define SEEK_CUR 1
+#define SEEK_END 2
 
-// Печатает форматированный текст сразу в терминал ОС
-void printf(const char* format, ...);
+FILE* fopen(const char* filename, const char* mode);
+size_t fread(void* ptr, size_t size, size_t nmemb, FILE* stream);
+int fseek(FILE* stream, long offset, int whence);
+long ftell(FILE* stream);
+int fclose(FILE* stream);
+int printf(const char* format, ...);
+int sprintf(char* str, const char* format, ...);
 
 // Версия для списка аргументов (нужна внутри sprintf)
 int vsprintf(char* buffer, const char* format, va_list args);
