@@ -81,34 +81,50 @@ uint32_t fat32_get_next_cluster(uint32_t cluster) {
 
 uint8_t* fat32_read_file(const char* name, uint32_t* out_size) {
     char fat_name[11];
-    fat32_to_83(name, fat_name); // Превращаем "NOTES.TXT" в "NOTES   TXT"
+    fat32_to_83(name, fat_name);
 
     uint32_t current_cluster = bpb->root_cluster;
-    uint8_t* cluster_buf = kmalloc(bpb->sectors_per_cluster * 512);
+    uint32_t cluster_size = bpb->sectors_per_cluster * 512; // ОБЪЯВЛЯЕМ ТУТ
+    uint8_t* cluster_buf = kmalloc(cluster_size);
 
     while (current_cluster >= 2 && current_cluster < 0x0FFFFFF8) {
         uint32_t lba = first_data_sector + (current_cluster - 2) * bpb->sectors_per_cluster;
         read_sectors_ata_pio((uintptr_t)cluster_buf, lba, bpb->sectors_per_cluster);
 
         fat32_entry_t* entries = (fat32_entry_t*)cluster_buf;
-        for (int e = 0; e < (int)(bpb->sectors_per_cluster * 512 / 32); e++) {
-            if (entries[e].name[0] == 0x00) break;    // Конец списка
-            if (entries[e].name[0] == 0xE5) continue; // Файл удален - ИГНОРИРУЕМ
+        for (int e = 0; e < (int)(cluster_size / 32); e++) {
+            if (entries[e].name[0] == 0x00) break;
+            
+            // ФИКС ВОРНИНГА: кастим к uint8_t
+            if ((uint8_t)entries[e].name[0] == 0xE5) continue; 
             if (entries[e].attr == 0x0F) continue; 
-            // СРАВНИВАЕМ С ПОДГОТОВЛЕННЫМ ИМЕНЕМ!
+
             if (memcmp(entries[e].name, fat_name, 11) == 0) {
                 uint32_t size = entries[e].file_size;
                 *out_size = size;
                 
-                uint8_t* file_data = kmalloc(size + 512); // Запас под сектор
+                uint8_t* file_data = kmalloc(size + 512); 
                 uint32_t f_cluster = (entries[e].cluster_high << 16) | entries[e].cluster_low;
                 uint32_t copied = 0;
                 
                 while (f_cluster >= 2 && f_cluster < 0x0FFFFFF8 && copied < size) {
                     uint32_t f_lba = first_data_sector + (f_cluster - 2) * bpb->sectors_per_cluster;
-                    // Читаем целый кластер
-                    read_sectors_ata_pio((uintptr_t)(file_data + copied), f_lba, bpb->sectors_per_cluster);
-                    copied += (bpb->sectors_per_cluster * 512);
+                    
+                    // ФИКС ОШИБКИ: теперь cluster_size определен
+                    uint32_t remaining = size - copied;
+                    uint32_t to_read_now = (remaining > cluster_size) ? cluster_size : remaining;
+
+                    if (to_read_now == cluster_size) {
+                        read_sectors_ata_pio((uintptr_t)(file_data + copied), f_lba, bpb->sectors_per_cluster);
+                    } else {
+                        // Для последнего куска используем временный буфер на куче
+                        uint8_t* tmp_cluster = kmalloc(cluster_size);
+                        read_sectors_ata_pio((uintptr_t)tmp_cluster, f_lba, bpb->sectors_per_cluster);
+                        memcpy(file_data + copied, tmp_cluster, to_read_now);
+                        kfree(tmp_cluster);
+                    }
+
+                    copied += to_read_now;
                     f_cluster = fat32_get_next_cluster(f_cluster);
                 }
                 kfree(cluster_buf);
@@ -119,7 +135,6 @@ uint8_t* fat32_read_file(const char* name, uint32_t* out_size) {
     }
 
     kfree(cluster_buf);
-    term_print("FAT32: File not found during read.\n");
     return NULL;
 }
 

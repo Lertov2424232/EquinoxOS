@@ -660,6 +660,29 @@ void exec_module() {
   term_print("Error: app.elf not found in modules!\n");
 }
 
+void exec_from_disk(const char* filename) {
+    uint32_t size = 0;
+    term_print("FS: Loading ");
+    term_print(filename);
+    term_print("...\n");
+
+    // Используем твою функцию из fat32.c
+    uint8_t* elf_data = fat32_read_file(filename, &size);
+
+    if (elf_data) {
+        term_print("FS: File loaded, size: ");
+        // (Тут можно вывести размер через itoa)
+        term_print(" bytes. Executing...\n");
+        
+        run_elf(elf_data); // Твоя функция парсинга ELF и перехода в Ring 3
+        
+        // ВАЖНО: run_elf создаст задачу, но данные ELF нам больше не нужны в ядре
+        // kfree(elf_data); // Аккуратно с этим, если run_elf не копирует сегменты
+    } else {
+        term_print("FS: Error - Could not read file from disk!\n");
+    }
+}
+
 void kmain(void) {
   // Initialize serial port first for early debugging
   serial_init(COM1);
