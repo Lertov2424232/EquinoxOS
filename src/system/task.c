@@ -48,7 +48,7 @@ void task_init() {
 void task_create(void (*entry)(), uint64_t arg1, uint64_t arg2, uint64_t cr3) {
     task_t* new_task = (task_t*)kmalloc(sizeof(task_t));
     memset(new_task, 0, sizeof(task_t)); // ОБЯЗАТЕЛЬНО!
-    new_task->brk = 0x90000000;
+    new_task->brk = 0x40000000;
     new_task->id = next_pid++;
     new_task->running = true;
     new_task->cr3 = cr3;
