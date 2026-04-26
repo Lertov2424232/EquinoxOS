@@ -37,7 +37,7 @@ uint64_t copy_to_user(void *kernel_buf, uint64_t size) {
 
   // 2. Придумываем виртуальный адрес в пространстве юзера (например, в районе
   // 0x80000000) В идеале тут должен быть полноценный user_heap_alloc
-  static uint64_t user_dynamic_ptr = 0xC0000000;
+  static uint64_t user_dynamic_ptr = 0x60000000;
   uint64_t target_virt = user_dynamic_ptr;
   user_dynamic_ptr += (pages * 4096);
 
@@ -181,7 +181,7 @@ void syscall_handler(syscall_regs_t *regs) {
   }
   case 15: { // SYS_BRK
     if (current_task->brk == 0) {
-        current_task->brk = 0x90000000; 
+        current_task->brk = 0x40000000; 
     }
 
     uint64_t requested_brk = regs->rdi;

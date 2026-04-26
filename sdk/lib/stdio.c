@@ -3,10 +3,13 @@
 #include "../include/equos.h"
 #include <stdarg.h>
 
-// Глобальные потоки (заглушки)
-FILE* stdin = (FILE*)0;
-FILE* stdout = (FILE*)1;
-FILE* stderr = (FILE*)2;
+static FILE _stdin = {0};
+static FILE _stdout = {0};
+static FILE _stderr = {0};
+
+FILE* stdin = &_stdin;
+FILE* stdout = &_stdout;
+FILE* stderr = &_stderr;
 
 // Базовый движок форматирования строк
 int vsprintf(char* buffer, const char* format, va_list args) {
@@ -20,6 +23,10 @@ int vsprintf(char* buffer, const char* format, va_list args) {
             continue;
         }
         f++;
+        
+        // Обработка ширины поля (пропускаем числа после %)
+        while (*f >= '0' && *f <= '9') f++;
+
         switch (*f) {
             case 'c': *ptr++ = (char)va_arg(args, int); break;
             case 's': {
@@ -29,24 +36,23 @@ int vsprintf(char* buffer, const char* format, va_list args) {
                 break;
             }
             case 'd':
-            case 'i': {
+            case 'i': { // Объединяем d и i, они одинаковые
                 int val = va_arg(args, int);
-                itoa(val, 10, temp_buf);
+                itoa(val, temp_buf, 10); // Исправлено: порядок (число, буфер, база)
                 char* t = temp_buf;
                 while (*t) *ptr++ = *t++;
                 break;
             }
             case 'u': {
                 unsigned int val = va_arg(args, unsigned int);
-                // Тут нужна unsigned itoa, но пока сойдет и обычная для небольших чисел
-                itoa(val, 10, temp_buf);
+                itoa((int)val, temp_buf, 10); // Исправлено: порядок
                 char* t = temp_buf;
                 while (*t) *ptr++ = *t++;
                 break;
             }
             case 'x':
             case 'p': {
-                unsigned long long val = va_arg(args, unsigned long long);
+                unsigned long long val = (uint64_t)va_arg(args, void*);
                 itoa_hex(val, temp_buf);
                 char* t = temp_buf;
                 while (*t) *ptr++ = *t++;
@@ -57,7 +63,7 @@ int vsprintf(char* buffer, const char* format, va_list args) {
         f++;
     }
     *ptr = '\0';
-    return ptr - buffer;
+    return (int)(ptr - buffer);
 }
 // РЕАЛИЗАЦИЯ SPRINTF (для Змейки)
 int sprintf(char* buffer, const char* format, ...) {
@@ -69,11 +75,14 @@ int sprintf(char* buffer, const char* format, ...) {
 }
 
 // РЕАЛИЗАЦИЯ VSNPRINTF (для Doom)
+// sdk/lib/stdio.c
+
 int vsnprintf(char* str, size_t size, const char* format, va_list ap) {
-    // В идеале тут нужна проверка на size, но для начала хватит и этого
+    if (str == NULL || size == 0) return 0; // Защита
+    // В идеале тут нужно ограничивать запись в str длиной size, 
+    // но пока просто пофиксим вылет
     return vsprintf(str, format, ap);
 }
-
 // РЕАЛИЗАЦИЯ SNPRINTF
 int snprintf(char* str, size_t size, const char* format, ...) {
     va_list args;

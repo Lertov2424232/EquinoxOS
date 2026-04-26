@@ -73,23 +73,21 @@ char* strstr(const char* haystack, const char* needle) {
 char* itoa(int num, char* buffer, int base) {
     int i = 0;
     int is_negative = 0;
-    long n = num; // Используем long для обработки отрицательных чисел без переполнения
+    long n = num; // Работаем с long, чтобы не было проблем с -2147483648
 
-    if (num == 0) {
+    if (n == 0) {
         buffer[i++] = '0';
         buffer[i] = '\0';
-        return;
+        return buffer; // ДОБАВЛЕНО: return
     }
 
-    if (num < 0 && base == 10) {
-        is_negative = 1; // БЫЛО: is_negative = true;
-        num = -num; // Делаем положительным для алгоритма
+    if (n < 0 && base == 10) {
+        is_negative = 1;
+        n = -n; // Теперь это безопасно
     }
 
-    // Получаем цифры в обратном порядке
     while (n != 0) {
         int rem = n % base;
-        if (rem < 0) rem = -rem; // Обработка отрицательных остатков
         buffer[i++] = (rem > 9) ? (rem - 10) + 'a' : rem + '0';
         n = n / base;
     }
@@ -97,7 +95,7 @@ char* itoa(int num, char* buffer, int base) {
     if (is_negative) buffer[i++] = '-';
     buffer[i] = '\0';
 
-    // Разворачиваем строку
+    // Разворот строки
     int start = 0;
     int end = i - 1;
     while (start < end) {
