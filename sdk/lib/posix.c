@@ -54,7 +54,10 @@ int fseek(FILE* stream, long offset, int whence) {
     return 0;
 }
 
-long ftell(FILE* stream) { return stream->pos; }
+long ftell(FILE* stream) { 
+    if (!stream || (uint64_t)stream < 4096) return 0;
+    return (long)stream->pos; 
+}
 int fclose(FILE* stream) { return 0; }
 
 
