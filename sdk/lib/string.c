@@ -70,9 +70,10 @@ char* strstr(const char* haystack, const char* needle) {
 
 // Перевод обычного числа (base=10) в строку
 // Перевод обычного числа (base=10) в строку
-void itoa(int64_t num, int base, char* buffer) {
+char* itoa(int num, char* buffer, int base) {
     int i = 0;
-    int is_negative = 0; // БЫЛО: bool is_negative = false;
+    int is_negative = 0;
+    long n = num; // Используем long для обработки отрицательных чисел без переполнения
 
     if (num == 0) {
         buffer[i++] = '0';
@@ -86,10 +87,11 @@ void itoa(int64_t num, int base, char* buffer) {
     }
 
     // Получаем цифры в обратном порядке
-    while (num != 0) {
-        int rem = num % base;
+    while (n != 0) {
+        int rem = n % base;
+        if (rem < 0) rem = -rem; // Обработка отрицательных остатков
         buffer[i++] = (rem > 9) ? (rem - 10) + 'a' : rem + '0';
-        num = num / base;
+        n = n / base;
     }
 
     if (is_negative) buffer[i++] = '-';
@@ -105,6 +107,7 @@ void itoa(int64_t num, int base, char* buffer) {
         start++;
         end--;
     }
+    return buffer;
 }
 
 // Перевод адресов памяти в 16-ричный формат (для дебага и паник-скрина)
