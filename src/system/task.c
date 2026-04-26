@@ -8,6 +8,7 @@ extern void term_print(const char* str);
 #include "../fs/elf.h"
 #include "../fs/fat32.h"
 #include "vmm.h"
+#include "libc/stdio.h"
 
 #define IA32_FS_BASE_MSR 0xC0000100
 #define IA32_GS_BASE_MSR 0xC0000101
@@ -46,6 +47,8 @@ void task_init() {
 
 void task_create(void (*entry)(), uint64_t arg1, uint64_t arg2, uint64_t cr3) {
     task_t* new_task = (task_t*)kmalloc(sizeof(task_t));
+    memset(new_task, 0, sizeof(task_t)); // ОБЯЗАТЕЛЬНО!
+    new_task->brk = 0x90000000;
     new_task->id = next_pid++;
     new_task->running = true;
     new_task->cr3 = cr3;
@@ -69,6 +72,7 @@ void task_create(void (*entry)(), uint64_t arg1, uint64_t arg2, uint64_t cr3) {
                     (uint64_t)ustack_phys + (i * 4096), 
                     PTE_USER | PTE_WRITABLE | PTE_PRESENT);
         }
+        memset((void*)VIRT(ustack_phys), 0, stack_pages * 4096);
 
         uint64_t tls_virt = 0x60000000000;
         void* tls_phys = pmm_alloc();
@@ -89,14 +93,15 @@ void task_create(void (*entry)(), uint64_t arg1, uint64_t arg2, uint64_t cr3) {
     frame->rsi = arg2;
     frame->rflags = 0x202;
     
-    
     if (cr3 == 0) {
-        frame->cs = 0x08; frame->ss = 0x10;
-        frame->rsp = kstack_virt + 16000;
+        frame->cs = 0x08; 
+        frame->ss = 0x10;
+        frame->rsp = (uint64_t)kmalloc(16000) + 16000; // Просто пример для ядерных задач
     } else {
         frame->cs = 0x23;
         frame->ss = 0x1B;
-        frame->rsp = ((user_stack_virt + (512 * 4096)) & ~0xF) - 16;
+        // RSP должен быть выровнен по 16 байт для System V ABI
+        frame->rsp = (user_stack_virt + (512 * 4096)) - 16;
     }
     
     new_task->rsp = (uint64_t)frame;
@@ -167,47 +172,74 @@ bool task_exec(char* full_command) {
         kfree(cmd_copy);
         return false;
     }
+
+    // DEBUG: Dump first 16 bytes of ELF
+    term_print("EXEC: ELF Header bytes: ");
+    for(int i=0; i<16; i++) {
+        char h[4];
+        sprintf(h, "%x ", elf_raw[i]);
+        term_print(h);
+    }
+    term_print("\n");
     page_table_t* proc_pml4 = vmm_create_address_space();
     uint64_t phys_pml4 = PHYS(proc_pml4);
     Elf64_Phdr* phdr = (Elf64_Phdr*)(elf_raw + header->e_phoff);
     for (int i = 0; i < header->e_phnum; i++) {
         if (phdr[i].p_type == 1) { // PT_LOAD
-            uint64_t pages = (phdr[i].p_memsz + 4095) / 4096;
-            void* phys_mem = pmm_alloc_continuous(pages);
+            uint64_t vaddr = phdr[i].p_vaddr;
+            uint64_t memsz = phdr[i].p_memsz;
+            uint64_t filesz = phdr[i].p_filesz;
+            uint64_t offset = phdr[i].p_offset;
+
+            // DEBUG: Segment details
+            char log[128];
+            sprintf(log, "EXEC: Segment %d: vaddr=%x, filesz=%x, memsz=%x, offset=%x\n", i, (uint32_t)vaddr, (uint32_t)filesz, (uint32_t)memsz, (uint32_t)offset);
+            term_print(log);
+
+            if (offset + filesz > elf_size) {
+                term_print("EXEC: Segment offset/size out of bounds!\n");
+                filesz = (offset < elf_size) ? (elf_size - offset) : 0;
+            }
+
+            // --- РАСЧЕТ СМЕЩЕНИЙ ---
+            uint64_t page_offset = vaddr & 0xFFF;
+            uint64_t base_vaddr = vaddr & ~0xFFF;
+            uint64_t total_memsz = memsz + page_offset;
+            uint64_t num_pages = (total_memsz + 4095) / 4096;
+
+            // 1. Выделяем физическую память под нужной количество страниц
+            void* phys_mem = pmm_alloc_continuous(num_pages);
             
-            term_print("EXEC: Mapping segment ");
-            char num_buf[4] = { '0' + i, 0 };
-            term_print(num_buf);
-            term_print(" vaddr=");
-            static char hex_tmp[20];
-            uint64_t v = phdr[i].p_vaddr;
-            int pos = 18;
-            hex_tmp[19] = 0;
-            for (int j = 0; j < 16; j++) { hex_tmp[pos--] = "0123456789ABCDEF"[v & 0xF]; v >>= 4; }
-            hex_tmp[pos] = 'x'; hex_tmp[--pos] = '0';
-            term_print(&hex_tmp[pos]);
-            term_print(" pages=");
-            num_buf[0] = '0' + (pages / 100); num_buf[1] = '0' + ((pages / 10) % 10); num_buf[2] = '0' + (pages % 10); num_buf[3] = 0;
-            term_print(num_buf);
-            term_print("\n");
-            
-            for (uint64_t p = 0; p < pages; p++) {
+            // 2. Мапим страницы в пространство процесса
+            for (uint64_t p = 0; p < num_pages; p++) {
                 vmm_map(proc_pml4, 
-                        phdr[i].p_vaddr + (p * 4096), 
+                        base_vaddr + (p * 4096), 
                         (uint64_t)phys_mem + (p * 4096), 
                         PTE_PRESENT | PTE_USER | PTE_WRITABLE);
             }
+
+            // 3. Очищаем ВСЮ выделенную физическую память (HHDM)
+            // Это обнуляет .bss автоматически
+            memset((void*)(VIRT(phys_mem)), 0, num_pages * 4096);
+
+            // 4. КОПИРУЕМ ДАННЫЕ С УЧЕТОМ СМЕЩЕНИЯ (КРИТИЧНО!)
+            // Данные должны лечь по адресу VIRT(phys_mem) + 0x9E0
+            memcpy((void*)(VIRT(phys_mem) + page_offset), 
+                   elf_raw + offset, 
+                   filesz);
             
-            memset((void*)VIRT(phys_mem), 0, phdr[i].p_memsz);
-            memcpy((void*)VIRT(phys_mem), elf_raw + phdr[i].p_offset, phdr[i].p_filesz);
+            term_print("EXEC: Segment loaded correctly.\n");
         }
     }
 
     term_print("EXEC: Starting Ring 3 process...\n");
-    uint64_t user_argv_page = 0x80000000; 
+    uint64_t user_argv_page = 0xB0000000; 
     void* phys_argv = pmm_alloc();
     vmm_map(proc_pml4, user_argv_page, (uint64_t)phys_argv, PTE_PRESENT | PTE_USER | PTE_WRITABLE);
     
+    // ВАЖНО: Обнуляем страницу аргументов!
+    memset((void*)VIRT(phys_argv), 0, 4096);
+
     uint64_t* user_argv_array = (uint64_t*)VIRT(phys_argv); 
     char* user_string_area = (char*)VIRT(phys_argv) + 128; 
     uint64_t current_string_offset = 128;
@@ -226,12 +258,7 @@ bool task_exec(char* full_command) {
     
     task_create((void(*)())header->e_entry, (uint64_t)argc, user_argv_page, phys_pml4);
     
-    task_t* new_task = task_list->next;
-    if (new_task && new_task->fs_base != 0) {
-        __asm__ volatile("mov $0x1B, %%ax; mov %%ax, %%fs" ::: "ax");
-        wrmsr(IA32_FS_BASE_MSR, new_task->fs_base);
-        term_print("EXEC: FS base set for TLS\n");
-    }
+    // FS base will be set by the scheduler when it switches to this task
     
     kfree(elf_raw);
     kfree(cmd_copy);

@@ -19,44 +19,46 @@ int vsprintf(char* buffer, const char* format, va_list args) {
             *ptr++ = *f++;
             continue;
         }
-        f++; // Пропускаем '%'
+        f++;
         switch (*f) {
-            case 'c': {
-                char c = (char)va_arg(args, int);
-                *ptr++ = c;
-                break;
-            }
+            case 'c': *ptr++ = (char)va_arg(args, int); break;
             case 's': {
                 char* s = va_arg(args, char*);
                 if (!s) s = "(null)";
                 while (*s) *ptr++ = *s++;
                 break;
             }
-            case 'd': {
+            case 'd':
+            case 'i': {
                 int val = va_arg(args, int);
                 itoa(val, 10, temp_buf);
                 char* t = temp_buf;
                 while (*t) *ptr++ = *t++;
                 break;
             }
-            case 'x': {
+            case 'u': {
+                unsigned int val = va_arg(args, unsigned int);
+                // Тут нужна unsigned itoa, но пока сойдет и обычная для небольших чисел
+                itoa(val, 10, temp_buf);
+                char* t = temp_buf;
+                while (*t) *ptr++ = *t++;
+                break;
+            }
+            case 'x':
+            case 'p': {
                 unsigned long long val = va_arg(args, unsigned long long);
                 itoa_hex(val, temp_buf);
                 char* t = temp_buf;
                 while (*t) *ptr++ = *t++;
                 break;
             }
-            case '%': {
-                *ptr++ = '%';
-                break;
-            }
+            case '%': *ptr++ = '%'; break;
         }
         f++;
     }
     *ptr = '\0';
     return ptr - buffer;
 }
-
 // РЕАЛИЗАЦИЯ SPRINTF (для Змейки)
 int sprintf(char* buffer, const char* format, ...) {
     va_list args;
@@ -83,7 +85,7 @@ int snprintf(char* str, size_t size, const char* format, ...) {
 
 // ПЕЧАТЬ В ТЕРМИНАЛ (Ring 3 -> Syscall)
 int printf(const char* format, ...) {
-    char buffer[1024];
+    char buffer[2048]; // Увеличили буфер
     va_list args;
     va_start(args, format);
     int len = vsprintf(buffer, format, args);
@@ -115,6 +117,13 @@ int putchar(int c) {
 
 size_t fwrite(const void* ptr, size_t size, size_t nmemb, FILE* stream) {
     return nmemb;
+}
+
+int vfprintf(FILE* stream, const char* format, va_list ap) {
+    char buffer[2048]; // Был 512, стал 2048
+    int len = vsprintf(buffer, format, ap);
+    _syscall(1, (uint64_t)buffer, 0, 0, 0, 0);
+    return len;
 }
 
 int fflush(FILE* stream) { return 0; }

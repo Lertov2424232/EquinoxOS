@@ -74,9 +74,11 @@ uint32_t fat32_get_next_cluster(uint32_t cluster) {
     uint32_t fat_sector = fat_start_sector + (fat_offset / 512);
     uint32_t ent_offset = fat_offset % 512;
 
-    uint8_t buf[512];
+    uint8_t* buf = kmalloc(512);
     read_sectors_ata_pio((uintptr_t)buf, fat_sector, 1);
-    return (*(uint32_t*)&buf[ent_offset]) & 0x0FFFFFFF;
+    uint32_t next = (*(uint32_t*)&buf[ent_offset]) & 0x0FFFFFFF;
+    kfree(buf);
+    return next;
 }
 
 uint8_t* fat32_read_file(const char* name, uint32_t* out_size) {

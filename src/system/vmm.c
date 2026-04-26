@@ -1,9 +1,11 @@
 #include "vmm.h"
+#include "libc/stdio.h"
 #include "pmm.h"
 #include "../libc/string.h"
 #include "../drivers/vga/vesa.h"
 
 static page_table_t* kernel_pml4;
+uint64_t kernel_cr3;
 
 // Вспомогательная функция для паники внутри VMM
 static void vmm_panic(const char* msg) {
@@ -58,8 +60,9 @@ void vmm_map(page_table_t* pml4, uint64_t virt, uint64_t phys, uint64_t flags) {
 void vmm_init() {
     uint64_t cr3_val;
     __asm__ volatile("mov %%cr3, %0" : "=r"(cr3_val));
+    kernel_cr3 = cr3_val & ~0xFFFULL;
     // Сохраняем виртуальный адрес текущей (Limine) таблицы PML4
-    kernel_pml4 = (page_table_t*)VIRT(cr3_val & ~0xFFFULL);
+    kernel_pml4 = (page_table_t*)VIRT(kernel_cr3);
 }
 
 page_table_t* vmm_create_address_space() {

@@ -49,7 +49,7 @@ void pmm_init() {
     uint64_t bitmap_pages = (bitmap_size + PAGE_SIZE - 1) / PAGE_SIZE;
     uint64_t bitmap_size_aligned = bitmap_pages * PAGE_SIZE;
 
-    // Ищем место под битмап
+    // 2. Ищем место под битмап
     for (uint64_t i = 0; i < map->entry_count; i++) {
         if (map->entries[i]->type == LIMINE_MEMMAP_USABLE && map->entries[i]->length >= bitmap_size_aligned) {
             bitmap = (uint8_t*)VIRT(map->entries[i]->base); 
@@ -62,6 +62,7 @@ void pmm_init() {
         }
     }
 
+
     // 3. Сканируем карту памяти Limine и помечаем реально доступные страницы как 0 (свободно)
     for (uint64_t i = 0; i < map->entry_count; i++) {
         if (map->entries[i]->type == LIMINE_MEMMAP_USABLE) {
@@ -70,10 +71,16 @@ void pmm_init() {
             
             for (uint64_t addr = base; addr < base + length; addr += PAGE_SIZE) {
                 uint64_t page = addr / PAGE_SIZE;
+
                 BITMAP_CLEAR(page);
                 free_memory += PAGE_SIZE;
             }
         }
+    }
+
+    // --- ЗАЩИТА: Помечаем первый 1 МБ как занятый (ПОСЛЕ сканирования карты!) ---
+    for (uint32_t i = 0; i < 256; i++) {
+        BITMAP_SET(i);
     }
 }
 
