@@ -8,6 +8,7 @@
 [extern tasks]
 [extern schedule]
 
+; Макросы должны быть симметричны!
 %macro SAVE_REGS 0
     push rax
     push rbx
@@ -133,26 +134,38 @@ mouse_handler:
 
 [global irq0_handler_asm]
 irq0_handler_asm:
+    ; 1. Процессор при входе уже запушил: SS, RSP, RFLAGS, CS, RIP
+    ; 2. Пушим фейковый код ошибки и номер прерывания для симметрии с исключениями
     push qword 0      
     push qword 32     
     
-    SAVE_REGS         ; Используй свой макрос SAVE_REGS
+    ; 3. Сохраняем все регистры (15 штук)
+    SAVE_REGS         
 
-    ; --- ВОТ ОНО, РЕШЕНИЕ ---
-    call timer_callback  ; Теперь тик прибавляется СТРОГО 100 раз в секунду (от железа)
-    ; ------------------------
+    ; Стек сейчас: 5 (CPU) + 2 (Fake) + 15 (SAVE_REGS) = 22 квода.
+    ; 22 * 8 = 176 байт. 176 делятся на 16. Стек выровнен!
 
-    mov rdi, rsp      
-    call schedule     ; Вызываем планировщик (он больше НЕ должен трогать tick)
+    ; 4. Инкремент системного тика
+    call timer_callback  
+
+    ; 5. Подготовка к переключению контекста
+    mov rdi, rsp      ; Текущий стек передаем как первый аргумент в schedule()
+    call schedule     ; schedule вернет RSP следующей задачи в RAX
     
-    mov rsp, rax      
+    ; 6. ПЕРЕКЛЮЧЕНИЕ СТЕКА
+    mov rsp, rax      ; Теперь RSP указывает на стек новой задачи
 
+    ; 7. Сигнал контроллеру прерываний (EOI)
     mov al, 0x20
     out 0x20, al
 
-    RESTORE_REGS      ; Используй свой макрос RESTORE_REGS
+    ; 8. Восстанавливаем регистры НОВОЙ задачи
+    RESTORE_REGS      
     
+    ; 9. Убираем фейковый код ошибки и номер прерывания
     add rsp, 16       
+    
+    ; 10. Возвращаемся в код новой задачи
     iretq
 
 [extern syscall_handler]
