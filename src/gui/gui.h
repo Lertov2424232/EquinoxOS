@@ -46,6 +46,7 @@ void gui_window_draw_string(window_t* win, const char* s, int x, int y, uint32_t
 void gui_desktop_init(void);
 void gui_render_desktop_icons(void);
 void gui_render_taskbar(void);
+void window_resize(window_t* win, int new_w, int new_h);
 int gui_check_icon_click(int mx, int my);
 bool gui_check_close_button(int mx, int my);
 window_t* gui_find_window_at(int mx, int my);

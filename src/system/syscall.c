@@ -105,13 +105,25 @@ void syscall_handler(syscall_regs_t *regs) {
     break;
 
   case 9: // SYS_GET_SCANCODE
-    // Если змейка (app_win) не в фокусе, притворяемся, что клавиш нет
+{
+    static window_t* last_focus = NULL;
+    
     if (focused_window == app_win) {
+        // Если мы только что переключились на окно Дума
+        if (last_focus != app_win) {
+            // Вычищаем буфер полностью, чтобы старые Enter-ы не срабатывали
+            while(keyboard_pop() != 0); 
+            last_focus = app_win;
+            regs->rax = 0;
+            break;
+        }
         regs->rax = keyboard_pop();
     } else {
+        last_focus = focused_window;
         regs->rax = 0; 
     }
     break;
+}
 
   case 10: // SYS_EXIT
     term_print("[SYS] Killing process...\n");

@@ -8,7 +8,7 @@
 extern volatile uint8_t last_scancode;
 extern bool is_app_running;
 extern void notepad_handle_char(char c);
-static uint8_t key_buffer[16];
+static uint8_t key_buffer[128];
 static int key_head = 0;
 static int key_tail = 0;
 
@@ -37,7 +37,7 @@ char get_ascii_char(uint8_t scancode) {
 }
 
 void keyboard_push(uint8_t scancode) {
-    int next = (key_head + 1) % 16;
+    int next = (key_head + 1) % 128;
     if (next != key_tail) {
         key_buffer[key_head] = scancode;
         key_head = next;
@@ -47,7 +47,7 @@ void keyboard_push(uint8_t scancode) {
 uint8_t keyboard_pop() {
     if (key_head == key_tail) return 0;
     uint8_t sc = key_buffer[key_tail];
-    key_tail = (key_tail + 1) % 16;
+    key_tail = (key_tail + 1) % 128;
     return sc;
 }
 

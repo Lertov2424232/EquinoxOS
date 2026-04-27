@@ -70,6 +70,24 @@ void gui_init() {
   gui_desktop_init();
 }
 
+void window_resize(window_t* win, int new_w, int new_h) {
+    if (!win || (win->w == new_w && win->h == new_h)) return;
+
+    // 1. Освобождаем старый буфер
+    if (win->buffer) kfree(win->buffer);
+
+    // 2. Выделяем новый
+    win->w = new_w;
+    win->h = new_h;
+    win->buffer = (uint32_t*)kmalloc(new_w * new_h * 4);
+    
+    // Заполняем черным на всякий случай
+    memset(win->buffer, 0, new_w * new_h * 4);
+    
+    term_print("GUI: Window resized to ");
+    // Тут можно добавить вывод чисел, если есть sprintf
+}
+
 window_t *window_create(int x, int y, int w, int h, const char *title) {
   window_t *win = (window_t *)kmalloc(sizeof(window_t));
   win->x = x;
