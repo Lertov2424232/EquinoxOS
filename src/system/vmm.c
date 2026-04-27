@@ -50,7 +50,10 @@ void vmm_map(page_table_t* pml4, uint64_t virt, uint64_t phys, uint64_t flags) {
     page_table_t* pdpt = get_next_level(pml4, pml4_idx, true);
     page_table_t* pd   = get_next_level(pdpt, pdpt_idx, true);
     page_table_t* pt   = get_next_level(pd,   pd_idx,   true);
-
+    if (pt[pt_idx] & PTE_PRESENT) {
+        // Страница уже замаплена! Просто выходим, чтобы не убить данные!
+        return; 
+    }
     pt[pt_idx] = phys | flags | PTE_PRESENT;
 
     // Полная инвалидация страницы

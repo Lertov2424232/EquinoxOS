@@ -224,9 +224,7 @@ bool task_exec(char* full_command) {
 
             // 4. КОПИРУЕМ ДАННЫЕ С УЧЕТОМ СМЕЩЕНИЯ (КРИТИЧНО!)
             // Данные должны лечь по адресу VIRT(phys_mem) + 0x9E0
-            memcpy((void*)(VIRT(phys_mem) + page_offset), 
-                   elf_raw + offset, 
-                   filesz);
+            memcpy((void*)(VIRT(phys_mem) + page_offset), elf_raw + offset, filesz);
             
             term_print("EXEC: Segment loaded correctly.\n");
         }

@@ -80,13 +80,14 @@ int sprintf(char* buffer, const char* format, ...) {
 int vsnprintf(char* str, size_t size, const char* format, va_list ap) {
     if (str == NULL || size == 0) return 0;
     
-    // Пока у нас нет полноценного snprintf, мы просто 
-    // гарантируем, что хотя бы не упадем на NULL.
-    // ВАЖНО: убедись, что vsprintf не пишет слишком много.
-    int res = vsprintf(str, format, ap);
+    // Создаем временный буфер, чтобы не повредить память приложения, 
+    // если форматная строка окажется слишком длинной
+    char tmp[1024]; 
+    int res = vsprintf(tmp, format, ap);
     
-    // Гарантируем терминатор в конце, если вдруг vsprintf промахнулся
-    if ((size_t)res >= size) str[size - 1] = '\0';
+    size_t copy_len = (res >= (int)size) ? (size - 1) : (size_t)res;
+    memcpy(str, tmp, copy_len);
+    str[copy_len] = '\0';
     
     return res;
 }
