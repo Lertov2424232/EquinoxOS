@@ -190,9 +190,9 @@ void syscall_handler(syscall_regs_t *regs) {
     }
 
     if (requested_brk > current_task->brk) {
-        // Вычисляем начало: ПЕРВАЯ страница кучи должна быть включена
-        // Используем выравнивание вниз для начала и вверх для конца
-        uint64_t start_page = current_task->brk & ~4095;
+        // ИСПРАВЛЕНИЕ ВЕКА: Добавляем 4095 перед маскированием!
+        // Это гарантирует, что мы не перепишем уже замапленную страницу.
+        uint64_t start_page = (current_task->brk + 4095) & ~4095;
         uint64_t end_page = (requested_brk + 4095) & ~4095;
         
         uint64_t cr3_val;
@@ -200,12 +200,9 @@ void syscall_handler(syscall_regs_t *regs) {
         page_table_t* pml4 = (page_table_t*)VIRT(cr3_val);
 
         for (uint64_t addr = start_page; addr < end_page; addr += 4096) {
-            // Проверяем, не замаплена ли страница уже (чтобы не мапить дважды)
-            // Если твой vmm_map не умеет проверять, можно просто мапить — обычно это не страшно
             void* phys = pmm_alloc();
             if (phys) {
-                vmm_map(pml4, addr, (uint64_t)phys, 
-                        PTE_PRESENT | PTE_USER | PTE_WRITABLE);
+                vmm_map(pml4, addr, (uint64_t)phys, PTE_PRESENT | PTE_USER | PTE_WRITABLE);
             }
         }
     }
