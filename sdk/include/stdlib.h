@@ -5,9 +5,14 @@
 
 void* malloc(size_t size);
 void free(void* ptr);
+void* calloc(size_t nmemb, size_t size);
+void* realloc(void* ptr, size_t size);
 void exit(int status);
 int abs(int j);
 char* itoa(int value, char* str, int base);
+int atoi(const char* s);
+double atof(const char* s);
+int system(const char* command);
 
 #define EXIT_SUCCESS 0
 #define EXIT_FAILURE 1

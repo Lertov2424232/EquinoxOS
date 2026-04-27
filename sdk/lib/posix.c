@@ -34,16 +34,19 @@ FILE* fopen(const char* filename, const char* mode) {
 size_t fread(void* ptr, size_t size, size_t nmemb, FILE* stream) {
     if (!stream || !ptr || !stream->buffer) return 0;
     
-    size_t requested = size * nmemb;
+    size_t total_to_read = size * nmemb;
     if (stream->pos >= stream->size) return 0;
 
-    size_t available = stream->size - stream->pos;
-    size_t actually_read = (requested > available) ? available : requested;
+    if (stream->pos + total_to_read > stream->size) {
+        total_to_read = stream->size - stream->pos;
+    }
 
-    memcpy(ptr, stream->buffer + stream->pos, actually_read);
-    stream->pos += actually_read;
+    memcpy(ptr, stream->buffer + stream->pos, total_to_read);
+    stream->pos += total_to_read;
 
-    return actually_read / size; // Должно быть деление на размер элемента
+    // Возвращаем количество прочитанных объектов. 
+    // Если прочитали неполный объект, это всё равно должно учитываться в байтах для Дума
+    return total_to_read / size;
 }
 int fseek(FILE* stream, long offset, int whence) {
     if (!stream) return -1;
@@ -89,7 +92,7 @@ char* strdup(const char* s) {
 
 // Файловая система (Заглушки)
 int remove(const char* path) { return 0; }
-int rename(const char* old, const char* new) { return 0; }
+int rename(const char* old_name, const char* new_name) { return 0; }
 int mkdir(const char* path, mode_t mode) { return 0; }
 int system(const char* command) { return -1; }
 
