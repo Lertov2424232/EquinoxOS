@@ -544,23 +544,20 @@ uint8_t sys_get_scancode() {
 
 // Вызывается приложением для отрисовки
 void sys_draw_app_buffer(int x, int y, int w, int h, uint32_t *buffer) {
-  if (!app_win)
-    return;
+    if (!app_win) return;
 
-  // 1. АВТОМАТИЧЕСКИ ДЕЛАЕМ ОКНО ВИДИМЫМ!
-  if (!app_win->active) {
-    app_win->active = true;
-    window_bring_to_front(app_win);
-  }
+    // Автоматически подстраиваем размер окна под приложение!
+    if (app_win->w != w || app_win->h != h) {
+        window_resize(app_win, w, h);
+    }
 
-  // 2. ЗАЩИТА ОТ КРАША (обрезаем картинку, если она больше окна)
-  int copy_w = (w > app_win->w) ? app_win->w : w;
-  int copy_h = (h > app_win->h) ? app_win->h : h;
+    if (!app_win->active) {
+        app_win->active = true;
+        window_bring_to_front(app_win);
+    }
 
-  // 3. КОПИРУЕМ ПИКСЕЛИ
-  for (int i = 0; i < copy_h; i++) {
-    memcpy(&app_win->buffer[i * app_win->w], &buffer[i * w], copy_w * 4);
-  }
+    // Копируем кадр целиком (теперь размеры точно совпадают)
+    memcpy(app_win->buffer, buffer, w * h * 4);
 }
 // =========================================================================
 //                              MAIN LOOPS & INIT

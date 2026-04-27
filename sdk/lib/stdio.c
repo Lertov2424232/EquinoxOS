@@ -12,55 +12,96 @@ FILE* stdout = &_stdout;
 FILE* stderr = &_stderr;
 
 // Базовый движок форматирования строк
+// sdk/lib/stdio.c
+
 int vsprintf(char* buffer, const char* format, va_list args) {
     char* ptr = buffer;
     const char* f = format;
-    char temp_buf[64];
 
     while (*f) {
         if (*f != '%') {
             *ptr++ = *f++;
             continue;
         }
-        f++;
-        
-        // Обработка ширины поля (пропускаем числа после %)
-        while (*f >= '0' && *f <= '9') f++;
+        f++; // Пропускаем '%'
 
-        switch (*f) {
-            case 'c': *ptr++ = (char)va_arg(args, int); break;
-            case 's': {
-                char* s = va_arg(args, char*);
-                if (!s) s = "(null)";
-                while (*s) *ptr++ = *s++;
-                break;
-            }
-            case 'd':
-            case 'i': { // Объединяем d и i, они одинаковые
-                int val = va_arg(args, int);
-                itoa(val, temp_buf, 10); // Исправлено: порядок (число, буфер, база)
-                char* t = temp_buf;
-                while (*t) *ptr++ = *t++;
-                break;
-            }
-            case 'u': {
-                unsigned int val = va_arg(args, unsigned int);
-                itoa((int)val, temp_buf, 10); // Исправлено: порядок
-                char* t = temp_buf;
-                while (*t) *ptr++ = *t++;
-                break;
-            }
-            case 'x':
-            case 'p': {
-                unsigned long long val = (uint64_t)va_arg(args, void*);
-                itoa_hex(val, temp_buf);
-                char* t = temp_buf;
-                while (*t) *ptr++ = *t++;
-                break;
-            }
-            case '%': *ptr++ = '%'; break;
+        int width = 0;
+        int precision = 0;
+        int has_precision = 0;
+        char pad_char = ' ';
+
+        // 1. Обработка флага '0' (набивка нулями)
+        if (*f == '0') {
+            pad_char = '0';
+            f++;
         }
-        f++;
+
+        // 2. Читаем ширину поля (например, %5d)
+        while (*f >= '0' && *f <= '9') {
+            width = width * 10 + (*f - '0');
+            f++;
+        }
+
+        // 3. Читаем точность (тот самый случай %.3d)
+        if (*f == '.') {
+            f++;
+            has_precision = 1;
+            while (*f >= '0' && *f <= '9') {
+                precision = precision * 10 + (*f - '0');
+                f++;
+            }
+        }
+
+        // 4. Пропускаем модификаторы длины (l, ll, h, z)
+        while (*f == 'l' || *f == 'h' || *f == 'z') f++;
+
+        // 5. Обработка спецификаторов
+        if (*f == 'd' || *f == 'i' || *f == 'u') {
+            char temp_buf[64];
+            if (*f == 'u') {
+                unsigned int val = va_arg(args, unsigned int);
+                itoa((int)val, temp_buf, 10);
+            } else {
+                int val = va_arg(args, int);
+                itoa(val, temp_buf, 10);
+            }
+
+            int len = strlen(temp_buf);
+            int sign = (temp_buf[0] == '-') ? 1 : 0;
+            int digits_len = len - sign;
+
+            // Определяем, сколько нулей нужно добавить
+            int pad_count = 0;
+            if (has_precision) {
+                // Если есть точка, она имеет приоритет над флагом '0'
+                if (precision > digits_len) pad_count = precision - digits_len;
+            } else if (pad_char == '0' && width > len) {
+                pad_count = width - len;
+            }
+
+            // Печатаем знак, потом нули, потом само число
+            if (sign) *ptr++ = '-';
+            while (pad_count-- > 0) *ptr++ = '0';
+            
+            char* t = temp_buf + sign;
+            while (*t) *ptr++ = *t++;
+
+        } else if (*f == 's') {
+            char* s = va_arg(args, char*);
+            if (!s) s = "(null)";
+            while (*s) *ptr++ = *s++;
+        } else if (*f == 'x' || *f == 'X' || *f == 'p') {
+            char temp_buf[64];
+            uint64_t val = (uint64_t)va_arg(args, void*);
+            itoa_hex(val, temp_buf);
+            char* t = temp_buf;
+            while (*t) *ptr++ = *t++;
+        } else {
+            // Если символ неизвестен (или это %), просто выводим его
+            *ptr++ = *f;
+        }
+
+        if (*f) f++; // Переходим к следующему символу формата
     }
     *ptr = '\0';
     return (int)(ptr - buffer);
