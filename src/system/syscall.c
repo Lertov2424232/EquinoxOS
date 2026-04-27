@@ -28,32 +28,32 @@ typedef struct {
 } syscall_regs_t;
 
 uint64_t copy_to_user(void *kernel_buf, uint64_t size) {
-  if (!kernel_buf || size == 0)
-    return 0;
+    if (!kernel_buf || size == 0) return 0;
 
-  uint64_t pages = (size + 4095) / 4096;
-  // 1. Находим свободные физические страницы
-  void *phys = pmm_alloc_continuous(pages);
+    uint64_t pages = (size + 4095) / 4096;
+    static uint64_t user_dynamic_ptr = 0x60000000;
+    uint64_t target_virt = user_dynamic_ptr;
+    user_dynamic_ptr += (pages * 4096);
 
-  // 2. Придумываем виртуальный адрес в пространстве юзера (например, в районе
-  // 0x80000000) В идеале тут должен быть полноценный user_heap_alloc
-  static uint64_t user_dynamic_ptr = 0x60000000;
-  uint64_t target_virt = user_dynamic_ptr;
-  user_dynamic_ptr += (pages * 4096);
+    uint64_t cr3;
+    __asm__ volatile("mov %%cr3, %0" : "=r"(cr3));
+    page_table_t* pml4 = (page_table_t *)VIRT(cr3);
 
-  // 3. Мапим их в текущий CR3 (который принадлежит процессу)
-  uint64_t cr3;
-  __asm__ volatile("mov %%cr3, %0" : "=r"(cr3));
+    for (uint64_t i = 0; i < pages; i++) {
+        // Берем ЛЮБУЮ свободную страницу, не обязательно подряд!
+        void *phys = pmm_alloc(); 
+        if (!phys) return 0;
 
-  for (uint64_t i = 0; i < pages; i++) {
-    vmm_map((page_table_t *)VIRT(cr3), target_virt + (i * 4096),
-            (uint64_t)phys + (i * 4096), PTE_PRESENT | PTE_USER | PTE_WRITABLE);
-  }
+        vmm_map(pml4, target_virt + (i * 4096), (uint64_t)phys, 
+                PTE_PRESENT | PTE_USER | PTE_WRITABLE);
+        
+        // Копируем по кусочкам
+        uint64_t to_copy = (size > 4096) ? 4096 : size;
+        memcpy((void *)(target_virt + (i * 4096)), (uint8_t*)kernel_buf + (i * 4096), to_copy);
+        size -= to_copy;
+    }
 
-  // 4. Копируем данные из ядра в эти новые страницы юзера
-  memcpy((void *)target_virt, kernel_buf, size);
-
-  return target_virt;
+    return target_virt;
 }
 
 void syscall_handler(syscall_regs_t *regs) {
@@ -65,35 +65,34 @@ void syscall_handler(syscall_regs_t *regs) {
     break;
   case 2: { // SYS_READ_FILE
     uint32_t size = 0;
+    // 1. Читаем файл в буфер ядра
     uint8_t *kdata = fat32_read_file((const char *)regs->rdi, &size);
-    if (kdata) {
-      // АНТИ-КРАШ: Если драйвер FAT32 вернул физический адрес (ниже HHDM),
-      // мы ОБЯЗАНЫ перевести его в виртуальный через HHDM!
-      // Потому что в таблицах пользователя (где мы сейчас находимся)
-      // нет маппинга физической памяти 1:1.
-      uint64_t kdata_addr = (uint64_t)kdata;
-      if (kdata_addr < hhdm_offset) {
-        kdata_addr = VIRT(kdata_addr);
-      }
-
-      // Копируем данные файла в память, доступную Ring 3
-      regs->rax = copy_to_user((void *)kdata_addr, size);
-
-      // Записываем размер (RSI — адрес в памяти юзера)
-      if (regs->rsi)
-        *(uint32_t *)regs->rsi = size;
-
-      // ВНИМАНИЕ: Если fat32_read_file использует pmm_alloc,
-      // то тут нужно pmm_free. Если kmalloc - то kfree.
-      kfree(kdata);
-    } else {
-      regs->rax = 0;
+    
+    if (!kdata) {
+        regs->rax = 0; // Возвращаем NULL если файл не найден
+        break;
     }
+
+    // 2. Если пользователь передал указатель в RSI, записываем туда размер файла
+    if (regs->rsi) {
+        uint32_t *user_size_ptr = (uint32_t*)regs->rsi;
+        *user_size_ptr = size;
+    }
+
+    // 3. Копируем данные из ядра в пространство процесса
+    // copy_to_user сама выделит страницы и замапит их
+    uint64_t user_ptr = copy_to_user(kdata, size);
+
+    // 4. Освобождаем временный буфер в ядре (данные уже скопированы юзеру)
+    kfree(kdata);
+
+    // 5. Возвращаем указатель на данные процесса в RAX
+    regs->rax = user_ptr;
     break;
   }
   case 3: // SYS_WRITE_FILE (name: rdi, buf: rsi, size: rdx)
-    fat32_save_file((const char *)regs->rdi, (const char *)regs->rsi,
-                    (uint32_t)regs->rdx);
+    // fat32_save_file((const char *)regs->rdi, (const char *)regs->rsi,
+    //                 (uint32_t)regs->rdx);
     break;
 
   case 5: // SYS_DRAW_BUFFER

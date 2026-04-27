@@ -155,9 +155,9 @@ char* strcat(char* dest, const char* src) {
 }
 
 int strcasecmp(const char *s1, const char *s2) {
-    while (*s1 && *s2) {
-        int diff = tolower((unsigned char)*s1) - tolower((unsigned char)*s2);
-        if (diff != 0) return diff;
+    while (*s1) {
+        int d = tolower((unsigned char)*s1) - tolower((unsigned char)*s2);
+        if (d != 0 || !*s2) return d;
         s1++;
         s2++;
     }
@@ -165,18 +165,20 @@ int strcasecmp(const char *s1, const char *s2) {
 }
 
 int strncasecmp(const char *s1, const char *s2, size_t n) {
-    if (n == 0) return 0;
-    while (n-- > 0 && *s1 && *s2) {
-        int diff = tolower((unsigned char)*s1) - tolower((unsigned char)*s2);
-        if (diff != 0) return diff;
+    while (n > 0) {
+        unsigned char c1 = (unsigned char)*s1;
+        unsigned char c2 = (unsigned char)*s2;
+        if (c1 >= 'A' && c1 <= 'Z') c1 += 32;
+        if (c2 >= 'A' && c2 <= 'Z') c2 += 32;
+
+        if (c1 != c2) return (int)c1 - (int)c2;
+        if (c1 == 0) return 0; // Обе закончились
         s1++;
         s2++;
+        n--;
     }
-    // Если прошли весь цикл n раз, строки равны на длине n
-    if (n == (size_t)-1) return 0; 
-    return tolower((unsigned char)*s1) - tolower((unsigned char)*s2);
+    return 0;
 }
-
 void* memmove(void* dest, const void* src, size_t n) {
     unsigned char* d = dest;
     const unsigned char* s = src;

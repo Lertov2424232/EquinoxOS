@@ -78,10 +78,17 @@ int sprintf(char* buffer, const char* format, ...) {
 // sdk/lib/stdio.c
 
 int vsnprintf(char* str, size_t size, const char* format, va_list ap) {
-    if (str == NULL || size == 0) return 0; // Защита
-    // В идеале тут нужно ограничивать запись в str длиной size, 
-    // но пока просто пофиксим вылет
-    return vsprintf(str, format, ap);
+    if (str == NULL || size == 0) return 0;
+    
+    // Пока у нас нет полноценного snprintf, мы просто 
+    // гарантируем, что хотя бы не упадем на NULL.
+    // ВАЖНО: убедись, что vsprintf не пишет слишком много.
+    int res = vsprintf(str, format, ap);
+    
+    // Гарантируем терминатор в конце, если вдруг vsprintf промахнулся
+    if ((size_t)res >= size) str[size - 1] = '\0';
+    
+    return res;
 }
 // РЕАЛИЗАЦИЯ SNPRINTF
 int snprintf(char* str, size_t size, const char* format, ...) {

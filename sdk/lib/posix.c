@@ -32,17 +32,19 @@ FILE* fopen(const char* filename, const char* mode) {
     return f;
 }
 size_t fread(void* ptr, size_t size, size_t nmemb, FILE* stream) {
-    if (!stream || !ptr) return 0;
-    size_t bytes_to_read = size * nmemb;
-    if (stream->pos + bytes_to_read > stream->size) {
-        bytes_to_read = stream->size - stream->pos;
-    }
+    if (!stream || !ptr || !stream->buffer) return 0;
     
-    memcpy(ptr, stream->buffer + stream->pos, bytes_to_read);
-    stream->pos += bytes_to_read;
-    return bytes_to_read / size;
-}
+    size_t requested = size * nmemb;
+    if (stream->pos >= stream->size) return 0;
 
+    size_t available = stream->size - stream->pos;
+    size_t actually_read = (requested > available) ? available : requested;
+
+    memcpy(ptr, stream->buffer + stream->pos, actually_read);
+    stream->pos += actually_read;
+
+    return actually_read / size; // Должно быть деление на размер элемента
+}
 int fseek(FILE* stream, long offset, int whence) {
     if (!stream) return -1;
     if (whence == 0) stream->pos = offset;      
@@ -75,9 +77,13 @@ double atof(const char* s) { return (double)atoi(s); } // Очень грубо
 
 // Строки
 char* strdup(const char* s) {
+    if (!s) return NULL;
     size_t len = strlen(s) + 1;
-    void* new = malloc(len);
-    if (new) memcpy(new, s, len);
+    char* new = malloc(len);
+    if (new) {
+        memcpy(new, s, len);
+        new[len-1] = '\0'; // Гарантируем ноль
+    }
     return new;
 }
 
@@ -94,18 +100,15 @@ int sscanf(const char *str, const char *format, ...) {
     va_list args;
     va_start(args, format);
     int count = 0;
-    
-    if (!str || !format) return 0;
-
     while (*format && *str) {
+        if (*format == ' ') { format++; continue; }
+        if (*str == ' ' || *str == '\t' || *str == '\n' || *str == '\r') { str++; continue; }
+
         if (*format == '%') {
             format++;
             if (*format == 's') {
                 char* val = va_arg(args, char*);
-                int limit = 255; // Защита: не читаем больше 255 символов
-                while (*str && *str > 32 && limit-- > 0) {
-                    *val++ = *str++;
-                }
+                while (*str && *str > 32) *val++ = *str++;
                 *val = '\0';
                 count++;
             } else if (*format == 'd') {

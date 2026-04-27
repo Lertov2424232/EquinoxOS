@@ -636,7 +636,19 @@ void run_elf(uint8_t *elf_data) {
   // 3. Создаем задачу с указанием её CR3 (phys_pml4)
   // Передаем адрес API (arg1) - только учти, что адрес app_api должен быть
   // доступен юзеру! Пока передадим просто 0, чтобы проверить сам прыжок.
-  task_create((void (*)())hdr->e_entry, 0, 0, phys_pml4);
+  uint64_t argv_virt = 0x50000000;
+  void* arg_phys = pmm_alloc(); // Выделяем страницу под аргументы
+  vmm_map(proc_pml4, argv_virt, (uint64_t)arg_phys, PTE_PRESENT | PTE_USER | PTE_WRITABLE);
+
+  char* k_arg_ptr = (char*)((uint64_t)arg_phys + hhdm_offset);
+  strcpy(k_arg_ptr, "doom.elf"); // argv[0]
+  
+  uint64_t* k_argv_array = (uint64_t*)(k_arg_ptr + 256);
+  k_argv_array[0] = argv_virt;    // Указатель на строку "doom.elf"
+  k_argv_array[1] = 0;           // Конец массива
+
+  // Передаем argc=1 и адрес массива argv
+  task_create((void (*)())hdr->e_entry, 1, argv_virt + 256, phys_pml4);
 
   is_app_running = true;
 }

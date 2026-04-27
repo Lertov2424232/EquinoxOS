@@ -6,13 +6,11 @@
 
 // Простейшая реализация malloc с хранением размера для realloc
 // sdk/lib/malloc.c
+// sdk/lib/malloc.c
 void* malloc(size_t size) {
     uint64_t current_brk = _syscall(15, 0, 0, 0, 0, 0);
     
-    // Если ядро вернуло адрес, который явно не похож на начало нашей кучи (0x90000000)
-    // значит в ядре беда с инициализацией структуры задачи.
     if (current_brk < 0x10000000 || current_brk > 0x100000000000) {
-        // Попробуем форсировать установку правильного brk
         current_brk = _syscall(15, 0x40000000, 0, 0, 0, 0);
     }
 
@@ -23,7 +21,12 @@ void* malloc(size_t size) {
     _syscall(15, new_brk, 0, 0, 0, 0);
     
     *(uint64_t*)header_addr = size;
-    return (void*)data_addr;
+    
+    void* ptr = (void*)data_addr;
+    // ОБЯЗАТЕЛЬНО ОБНУЛЯЕМ, чтобы f->pos был 0, а указатели в Думе не глючили
+    memset(ptr, 0, size); 
+    
+    return ptr;
 }
 void free(void* ptr) {
     // В простейшем варианте ничего не делаем
