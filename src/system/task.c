@@ -8,7 +8,7 @@ extern void term_print(const char* str);
 #include "../fs/elf.h"
 #include "../fs/fat32.h"
 #include "vmm.h"
-#include "libc/stdio.h"
+#include "../libc/stdio.h"
 
 #define IA32_FS_BASE_MSR 0xC0000100
 #define IA32_GS_BASE_MSR 0xC0000101
