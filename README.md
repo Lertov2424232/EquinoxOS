@@ -8,6 +8,7 @@
 [![Boot](https://img.shields.io/badge/Boot-Limine-black?style=for-the-badge)]()
 
 **EquinoxOS** is a hobby monolithic kernel operating system featuring a full graphical user interface, preemptive multitasking, and a custom API for user applications (ELF).
+**EquinosOS** is made to be minimally daily usable, and still is in active development.
 
 </div>
 
