@@ -1,6 +1,7 @@
 #include "../drivers/vga/vesa.h"
 #include "../drivers/serial/serial.h"
 #include <stdint.h>
+#include "../drivers/audio/ac97.h"
 
 typedef struct {
     uint64_t r15, r14, r13, r12, r11, r10, r9, r8;
@@ -24,6 +25,7 @@ static const char* exception_messages[32] = {
 
 void panic_handler(interrupt_frame_t* frame) {
     // 1. ЖЕСТКО ВЫКЛЮЧАЕМ ПРЕРЫВАНИЯ
+    ac97_stop();
     __asm__ volatile ("cli");
 
     // Output panic to serial immediately

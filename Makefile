@@ -22,7 +22,7 @@ SDK_INC = -I./sdk/include
 USER_CFLAGS = -ffreestanding -mcmodel=small -mno-red-zone -fno-stack-protector -fno-pic -g -fno-omit-frame-pointer $(SDK_INC)
 # Объекты SDK и Ядра
 SDK_OBJS = $(SDK_LIB_DIR)/crt0.o $(SDK_LIB_DIR)/stdio.o $(SDK_LIB_DIR)/string.o $(SDK_LIB_DIR)/eid.o  $(SDK_LIB_DIR)/posix.o $(SDK_LIB_DIR)/malloc.o
-OBJ = $(OBJ_DIR)/kernel.o $(OBJ_DIR)/io.o $(OBJ_DIR)/keyboard.o $(OBJ_DIR)/rtl8139.o $(OBJ_DIR)/vfs.o $(OBJ_DIR)/gui.o $(OBJ_DIR)/syscall.o \
+OBJ = $(OBJ_DIR)/kernel.o $(OBJ_DIR)/io.o $(OBJ_DIR)/keyboard.o $(OBJ_DIR)/rtl8139.o $(OBJ_DIR)/vfs.o $(OBJ_DIR)/gui.o $(OBJ_DIR)/syscall.o $(OBJ_DIR)/ac97.o \
       $(OBJ_DIR)/gdt_flush.o $(OBJ_DIR)/idt.o $(OBJ_DIR)/stdio.o $(OBJ_DIR)/pci.o $(OBJ_DIR)/pmm.o $(OBJ_DIR)/shell.o $(OBJ_DIR)/eqstart.o \
       $(OBJ_DIR)/pic.o $(OBJ_DIR)/interrupt.o $(OBJ_DIR)/timer.o $(OBJ_DIR)/ata.o $(OBJ_DIR)/bmp.o $(OBJ_DIR)/task.o $(OBJ_DIR)/fat32.o $(OBJ_DIR)/serial.o \
       $(OBJ_DIR)/memory.o $(OBJ_DIR)/fs.o $(OBJ_DIR)/vesa.o $(OBJ_DIR)/mouse.o $(OBJ_DIR)/string.o $(OBJ_DIR)/panic.o $(OBJ_DIR)/vmm.o $(OBJ_DIR)/gdt.o \
@@ -54,6 +54,8 @@ $(OBJ_DIR)/%.o: src/fs/%.c
 $(OBJ_DIR)/%.o: src/drivers/vga/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 $(OBJ_DIR)/%.o: src/drivers/serial/%.c
+	$(CC) $(CFLAGS) -c $< -o $@
+$(OBJ_DIR)/%.o: src/drivers/audio/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 $(OBJ_DIR)/%.o: src/libc/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -107,7 +109,7 @@ iso:
 	xorriso -as mkisofs -b limine-bios-cd.bin -no-emul-boot -boot-load-size 4 -boot-info-table --efi-boot limine-bios-cd.bin -efi-boot-part --efi-boot-image -o equos.iso $(ISO_ROOT)
 
 run:
-	qemu-system-x86_64 -m 128M -boot d -drive file=hdd.img,format=raw,index=0,media=disk -cdrom equos.iso -serial stdio -netdev user,id=n0,hostfwd=tcp::2222-:22 -device rtl8139,netdev=n0 -audiodev sdl,id=audio0 -machine pcspk-audiodev=audio0 -d int,guest_errors,mmu -D qemu.log
+	qemu-system-x86_64 -m 128M -boot d -drive file=hdd.img,format=raw,index=0,media=disk -cdrom equos.iso -serial stdio -netdev user,id=n0,hostfwd=tcp::2222-:22 -device rtl8139,netdev=n0 -device ac97,audiodev=snd0 -audiodev dsound,id=snd0,out.buffer-length=4000 -d int,guest_errors,mmu -D qemu.log
 
 DOOM_DIR = app/doom
 DOOM_SRCS = $(wildcard $(DOOM_DIR)/*.c)
@@ -119,7 +121,7 @@ setup_doom:
 
 # Правило компиляции каждого файла Дума
 $(OBJ_DIR)/doom/%.o: $(DOOM_DIR)/%.c
-	$(CC) $(USER_CFLAGS) -DDOOMGENERIC_RESX=640 -DDOOMGENERIC_RESY=400 -c $< -o $@
+	$(CC) $(USER_CFLAGS) -DDOOMGENERIC_RESX=640 -DDOOMGENERIC_RESY=400 -DFEATURE_SOUND -c $< -o $@
 
 # Линковка Doom
 doom.elf: setup_doom $(SDK_OBJS) $(DOOM_OBJS)

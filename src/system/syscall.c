@@ -8,6 +8,7 @@
 #include "pmm.h"
 #include "vmm.h"
 #include <stdint.h>
+#include "../drivers/audio/ac97.h"
 
 extern volatile uint32_t tick;
 extern void sys_draw_app_buffer(int x, int y, int w, int h, uint32_t *buffer);
@@ -136,6 +137,7 @@ void syscall_handler(syscall_regs_t *regs) {
     if (focused_window == app_win) focused_window = NULL;
     
     // 3. Сбрасываем глобальный флаг (чтобы можно было запустить снова)
+    ac97_stop(); 
     extern bool is_app_running;
     is_app_running = false;
 
@@ -232,6 +234,35 @@ void syscall_handler(syscall_regs_t *regs) {
   case 17: { regs->rax = 0; break; }
   case 18: { regs->rax = -1; break; }
   case 19: { regs->rax = 0; break; }
+  case 20: { // SYS_AUDIO_PLAY
+    uintptr_t user_ptr = regs->rdi;
+    uint32_t size = (uint32_t)regs->rsi;
+
+    static void* s_bufs_phys[32] = {NULL};
+    static void* s_bufs_virt[32] = {NULL};
+    static int ring_ptr = 0;
+
+    // Инициализируем 32 буфера, чтобы они точно совпадали со слотами AC97
+    if (!s_bufs_phys[0]) {
+        for(int i=0; i<32; i++) {
+            s_bufs_phys[i] = pmm_alloc_continuous(2); // 8KB на буфер
+            s_bufs_virt[i] = (void*)((uintptr_t)s_bufs_phys[i] + hhdm_offset);
+        }
+    }
+
+    uint32_t to_copy = (size > 8192) ? 8192 : size;
+    
+    // Копируем звук в текущий свободный буфер
+    memcpy(s_bufs_virt[ring_ptr], (void*)user_ptr, to_copy);
+    
+    // Передаем в драйвер конкретный индекс
+    extern void ac97_play_at_idx(int idx, void* phys_addr, uint32_t len);
+    ac97_play_at_idx(ring_ptr, s_bufs_phys[ring_ptr], to_copy);
+    
+    // Двигаем указатель по кольцу (0-31)
+    ring_ptr = (ring_ptr + 1) % 32;
+    break;
+  }
   default:
     break;
   }
