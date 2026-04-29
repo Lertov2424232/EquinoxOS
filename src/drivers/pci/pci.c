@@ -1,7 +1,9 @@
-#include "drivers/pci/pci.h"
-#include "io/io.h"
-#include "libc/stdio.h"
-#include "drivers/net/rtl8139.h"
+#include "../pci/pci.h"
+#include "../../io/io.h"
+#include "../../libc/stdio.h"
+#include "../net/rtl8139.h"
+#include "../audio/ac97.h"
+
 
 extern void term_print(const char* str); 
 
@@ -69,9 +71,20 @@ static void pci_check_device(uint8_t bus, uint8_t slot) {
         rtl8139_init(bar0);
         return;
     }
+    if (vendor == 0x8086 && (device == 0x2415 || device == 0x2425)) {
+    term_print("[PCI] Found Intel AC'97 Audio!\n");
     
-    // --- В БУДУЩЕМ ДОБАВЛЯТЬ ДРУГИЕ УСТРОЙСТВА СЮДА ---
-    // if (vendor == 0x8086 && device == 0x100E) { init_e1000_nic(); } // Пример (Intel NIC)
+    // Включаем Bus Mastering (ОБЯЗАТЕЛЬНО для DMA)
+    uint16_t command = pci_read_dword(bus, slot, 0, 0x04) & 0xFFFF;
+    command |= (1 << 0) | (1 << 2); // IO Space + Bus Master
+    pci_write_word(bus, slot, 0, 0x04, command);
+
+    uint32_t bar0 = pci_read_dword(bus, slot, 0, 0x10); // NAM
+    uint32_t bar1 = pci_read_dword(bus, slot, 0, 0x14); // NAB
+    
+    ac97_init(bar0, bar1);
+    return;
+}
 }
 
 void pci_init() {
