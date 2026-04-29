@@ -66,47 +66,43 @@ typedef struct {
 
 static sfx_channel_t channels[MAX_CHANNELS];
 
+#define TARGET_FREQ 44100
+#define DOOM_FREQ 11025
+#define MIX_BUFFER_SIZE 1260 // 44100 / 35 fps (идеально для Doom)
+
 static void I_Equos_UpdateSound(void) {
-    int frames = 1260; // Для 44100Гц при 35 кадрах в сек
-    static int16_t mixbuffer[1260 * 2];
-    
-    // Чистим буфер тишиной
-    memset(mixbuffer, 0, sizeof(mixbuffer));
+    static int16_t mixbuffer[MIX_BUFFER_SIZE * 2];
+    memset(mixbuffer, 0, MIX_BUFFER_SIZE * 4);
+
+    uint32_t step = (DOOM_FREQ << 16) / TARGET_FREQ;
 
     for(int i = 0; i < MAX_CHANNELS; i++) {
         if(!channels[i].in_use) continue;
         sfx_channel_t* ch = &channels[i];
         
-        for(int j = 0; j < frames; j++) {
-            uint32_t src_pos = ch->pos / 4; // 11025 -> 44100
-            if(src_pos >= ch->length) {
-                ch->in_use = 0;
-                break;
-            }
-            
-            // Превращаем 8-бит Doom в 16-бит Signed
-            int32_t sample = (int32_t)(ch->data[src_pos] - 128) << 8;
-            
-            // Расчет громкости с учетом панорамы
-            int left_v = (254 - ch->sep) * ch->vol / 127;
-            int right_v = ch->sep * ch->vol / 127;
-            
-            // Микшируем в 32 битах, чтобы избежать переполнения
+        int32_t left_v = (254 - ch->sep) * ch->vol / 127;
+        int32_t right_v = ch->sep * ch->vol / 127;
+
+        for(int j = 0; j < MIX_BUFFER_SIZE; j++) {
+            uint32_t src_idx = (ch->pos >> 16);
+            if(src_idx >= ch->length) { ch->in_use = 0; break; }
+
+            // Делим звук на 2 (сдвиг >> 9 вместо >> 8), чтобы не было "перегруза"
+            int32_t sample = ((int32_t)ch->data[src_idx] - 128) << 8;
             int32_t l = (int32_t)mixbuffer[j*2] + ((sample * left_v) >> 9);
             int32_t r = (int32_t)mixbuffer[j*2+1] + ((sample * right_v) >> 9);
             
-            // Мягкий клиппинг
-            if(l > 32767) l = 32767; else if(l < -32768) l = -32768;
-            if(r > 32767) r = 32767; else if(r < -32768) r = -32768;
+            // Клиппинг
+            if (l > 32767) l = 32767; else if (l < -32768) l = -32768;
+            if (r > 32767) r = 32767; else if (r < -32768) r = -32768;
 
             mixbuffer[j*2] = (int16_t)l;
             mixbuffer[j*2+1] = (int16_t)r;
-            ch->pos++;
+            ch->pos += step;
         }
     }
-    
-    // ОТПРАВЛЯЕМ ВСЕГДА (даже тишину), чтобы DMA не останавливался!
-    DG_SubmitSamples(mixbuffer, frames);
+    // Шлем РЕАЛЬНЫЙ размер (frames * 4 байта)
+    DG_SubmitSamples(mixbuffer, MIX_BUFFER_SIZE);
 }
 
 static void I_Equos_SubmitSamples(void) {}
