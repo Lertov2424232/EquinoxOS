@@ -13,6 +13,8 @@
 #define SYS_YIELD         11
 #define SYS_GET_FONT      12
 #define SYS_SLEEP      13
+#define SYS_AUDIO_PLAY    20
+
 
 // Переименовали в _syscall и всегда принимаем 5 аргументов + номер
 static inline uint64_t _syscall(uint64_t num, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5) {
@@ -51,6 +53,10 @@ static inline void sys_sleep(uint32_t ms) {
 
 static inline void sleep(uint32_t ms) {
     sys_sleep(ms);
+}
+
+static inline void sys_audio_submit(void* buffer, uint32_t size) {
+    _syscall(SYS_AUDIO_PLAY, (uint64_t)buffer, (uint64_t)size, 0, 0, 0);
 }
 
 #endif
