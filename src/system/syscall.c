@@ -234,35 +234,57 @@ void syscall_handler(syscall_regs_t *regs) {
   case 17: { regs->rax = 0; break; }
   case 18: { regs->rax = -1; break; }
   case 19: { regs->rax = 0; break; }
-  case 20: { // SYS_AUDIO_PLAY
+case 20: { // SYS_AUDIO_PLAY
     uintptr_t user_ptr = regs->rdi;
     uint32_t size = (uint32_t)regs->rsi;
 
     static void* s_bufs_phys[32] = {NULL};
     static void* s_bufs_virt[32] = {NULL};
-    static int ring_ptr = 0;
+    static int ring_ptr = -1;
 
-    // Инициализируем 32 буфера, чтобы они точно совпадали со слотами AC97
+    // Один раз выделяем 32 буфера
     if (!s_bufs_phys[0]) {
         for(int i=0; i<32; i++) {
-            s_bufs_phys[i] = pmm_alloc_continuous(2); // 8KB на буфер
+            s_bufs_phys[i] = pmm_alloc_continuous(2); 
             s_bufs_virt[i] = (void*)((uintptr_t)s_bufs_phys[i] + hhdm_offset);
+            memset(s_bufs_virt[i], 0, 8192);
         }
     }
 
-    uint32_t to_copy = (size > 8192) ? 8192 : size;
+    extern uint8_t ac97_get_civ();
     
-    // Копируем звук в текущий свободный буфер
+    // При самом первом звуке начинаем писать СРАЗУ ЗА текущим указателем карты
+    if (ring_ptr == -1) {
+        ring_ptr = (ac97_get_civ() + 1) % 32;
+    }
+
+    uint8_t civ = ac97_get_civ();
+    
+    // ВОТ ОН - ИДЕАЛЬНЫЙ ТОРМОЗ ДЛЯ ДУМА (Дистанция)
+    // Считаем, на сколько слотов мы убежали вперед от играющего сейчас
+    int dist = (ring_ptr - civ + 32) % 32;
+    
+    // Если мы оторвались больше чем на 3 буфера — Дум должен подождать!
+    // Это дает задержку всего 85мс и НАМЕРТВО защищает от "наслаивания"
+    while (dist > 3) {
+        __asm__ volatile("pause"); // Ждем, пока карта проиграет звук
+        civ = ac97_get_civ();
+        dist = (ring_ptr - civ + 32) % 32;
+    }
+
+    // Копируем звук
+    uint32_t to_copy = (size > 8192) ? 8192 : size;
+    memset(s_bufs_virt[ring_ptr], 0, 8192); 
     memcpy(s_bufs_virt[ring_ptr], (void*)user_ptr, to_copy);
     
-    // Передаем в драйвер конкретный индекс
+    // Передаем карте ИНДЕКС и РЕАЛЬНЫЙ размер (to_copy)
     extern void ac97_play_at_idx(int idx, void* phys_addr, uint32_t len);
     ac97_play_at_idx(ring_ptr, s_bufs_phys[ring_ptr], to_copy);
     
-    // Двигаем указатель по кольцу (0-31)
+    // Двигаем указатель дальше по кругу
     ring_ptr = (ring_ptr + 1) % 32;
     break;
-  }
+}
   default:
     break;
   }
