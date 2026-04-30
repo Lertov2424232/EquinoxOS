@@ -112,7 +112,7 @@ iso:
 	xorriso -as mkisofs -b limine-bios-cd.bin -no-emul-boot -boot-load-size 4 -boot-info-table --efi-boot limine-bios-cd.bin -efi-boot-part --efi-boot-image -o equos.iso $(ISO_ROOT)
 
 run:
-	qemu-system-x86_64 -m 256M -boot d -drive file=hdd.img,format=raw,index=0,media=disk -cdrom equos.iso -serial stdio -netdev user,id=n0,hostfwd=tcp::2222-:22 -device rtl8139,netdev=n0 -device ac97,audiodev=snd0 -audiodev dsound,id=snd0 -d int,guest_errors,mmu -D qemu.log 
+	qemu-system-x86_64 -m 512M -boot d -drive file=hdd.img,format=raw,index=0,media=disk -cdrom equos.iso -serial stdio -netdev user,id=n0,hostfwd=tcp::2222-:22 -device rtl8139,netdev=n0 -device ac97,audiodev=snd0 -audiodev dsound,id=snd0 -d int,guest_errors,mmu -D qemu.log 
 
 DOOM_DIR = app/doom
 DOOM_SRCS = $(wildcard $(DOOM_DIR)/*.c)
