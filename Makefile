@@ -87,9 +87,10 @@ $(SDK_LIB_DIR)/%.o: $(SDK_LIB_DIR)/%.asm
 compile_app: $(SDK_OBJS)
 	$(CC) $(USER_CFLAGS) -c app/snake.c -o app/snake.o
 	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) app/snake.o -o $(ISO_ROOT)/snake.elf
-	
 	$(CC) $(USER_CFLAGS) -c app/bmpview.c -o app/bmpview.o
 	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) app/bmpview.o -o $(ISO_ROOT)/bmpview.elf
+	$(CC) $(USER_CFLAGS) -c app/niplay.c -o app/niplay.o
+	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) app/niplay.o -o $(ISO_ROOT)/niplay.elf
 # --- ОЧИСТКА ---
 clean:
 	@if exist $(OBJ_DIR) rmdir /s /q $(OBJ_DIR)
@@ -99,6 +100,8 @@ clean:
 	@if exist iso_root\app.elf del /q iso_root\app.elf
 	@if exist equos.iso del /q equos.iso
 	@if exist packets.pcap del /q packets.pcap
+	@if exist app\niplay.o del /q app\niplay.o
+	@if exist app\bmpview.o del /q app\bmpview.o
 
 cleanrun: clean all copykernel compile_app iso run
 
