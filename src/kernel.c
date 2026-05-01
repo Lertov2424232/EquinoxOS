@@ -34,6 +34,7 @@
 #include "fs/fs.h"
 #include "fs/vfs.h"
 #include "shell/shell.h"
+#include "gui/terminal.h"
 
 // --- ВНЕШНИЕ ПЕРЕМЕННЫЕ И ФУНКЦИИ ---
 void term_print(const char *str);
@@ -47,7 +48,6 @@ uint64_t canary_safety = 0xDEADBEEFCAFEBABE;
 // --- ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ---
 bool is_app_running = false;
 bool should_run_app = false;
-char term_history[8][64] = {0};
 volatile uint8_t last_scancode = 0;
 static EquinoxAPI app_api;
 
@@ -231,16 +231,12 @@ void update_gui() {
       }
     }
   }
-
-  // 1. Terminal
-  if (term_win && term_win->active) {
-    gui_window_draw_rect(term_win, 0, 0, term_win->w, term_win->h, 0x000000);
-    for (int i = 0; i < 8; i++) {
-      gui_window_draw_string(term_win, term_history[i], 10, 10 + (i * 15),
-                             0xAAAAAA);
-    }
-    gui_window_draw_string(term_win, "> ", 10, 10 + (8 * 15), 0xFFFFFF);
-    gui_window_draw_string(term_win, shell_buffer, 26, 10 + (8 * 15), 0x00FF00);
+  window_t* curr = window_list_head;
+  while (curr) {
+      if (curr->active && curr->on_draw) {
+          curr->on_draw(curr); // Теперь терминал рисуется здесь!
+      }
+      curr = curr->next;
   }
 
   // 2. System Monitor
@@ -484,42 +480,10 @@ void update_gui() {
 // =========================================================================
 
 void term_print(const char *str) {
-  // Output to serial port for debugging
-  serial_puts(COM1, str);
-
-  while (*str) {
-    // Если встретили символ переноса строки
-    if (*str == '\n') {
-      // Сдвигаем все строки вверх (освобождаем место снизу)
-      for (int i = 0; i < 7; i++) {
-        memcpy(term_history[i], term_history[i + 1], 64);
-      }
-      // Очищаем самую нижнюю строку
-      memset(term_history[7], 0, 64);
-    } else {
-      // Ищем конец текущей (последней) строки
-      int len = 0;
-      while (term_history[7][len] != '\0' && len < 63) {
-        len++;
-      }
-
-      // Если в строке еще есть место
-      if (len < 63) {
-        term_history[7][len] = *str;
-        term_history[7][len + 1] = '\0';
-      } else {
-        // Если строка переполнена — принудительный перенос (автоперенос)
-        for (int i = 0; i < 7; i++) {
-          memcpy(term_history[i], term_history[i + 1], 64);
-        }
-        memset(term_history[7], 0, 64);
-        term_history[7][0] = *str;
-        term_history[7][1] = '\0';
-      }
-    }
-    str++;
-  }
+    serial_puts(COM1, str); // Оставляем для логов в QEMU
+    terminal_print(str);    // Вызываем новый крутой терминал
 }
+
 void *sys_get_file(const char *name, uint64_t *size) {
   if (module_request.response == NULL)
     return NULL;

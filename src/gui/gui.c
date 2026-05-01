@@ -4,6 +4,7 @@
 #include "../libc/string.h"
 #include "../system/memory.h"
 #include "../system/task.h"
+#include "terminal.h"
 
 #include <stdbool.h>
 
@@ -52,8 +53,11 @@ void gui_init() {
   main_win = window_create(50, 50, 320, 150, "System Monitor");
   main_win->active = false;
 
-  term_win = window_create(400, 100, 450, 200, "Terminal");
-  term_win->active = false;
+  term_win = window_create(400, 100, 500, 300, "Equinox Terminal");
+  term_win->active = true;
+    
+    // ПРИВЯЗЫВАЕМ ФУНКЦИЮ:
+  term_win->on_draw = terminal_render; 
 
   app_win = window_create(100, 100, 400, 300, "Application");
   app_win->active = false;

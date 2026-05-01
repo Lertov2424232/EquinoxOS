@@ -10,10 +10,10 @@
 #include "../drivers/pcspeaker/pcspeaker.h"
 #include <stdbool.h>
 #include <stdint.h>
+#include "../gui/terminal.h"
 
 extern void net_wget();
 extern void term_print(const char* str);
-extern char term_history[8][64];
 extern void init_fs();
 extern void list_files();
 extern void create_file(char* name, char* content);
@@ -52,7 +52,7 @@ void shell_handle_char(char c) {
             fat32_list_files();
         }
         else if (strcmp(shell_buffer, "clear") == 0) {
-            for(int i=0; i<8; i++) memset(term_history[i], 0, 64);
+            terminal_clear();
         }
         else if (strcmp(shell_buffer, "wget") == 0) {
             net_wget();
