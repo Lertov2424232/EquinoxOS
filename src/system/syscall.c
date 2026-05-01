@@ -3,6 +3,7 @@
 #include "../gui/gui.h"
 #include "../libc/stdio.h"
 #include "../libc/string.h"
+#include "../drivers/disk/ata.h"
 #include "task.h"
 #include "memory.h"
 #include "pmm.h"
@@ -64,31 +65,70 @@ void syscall_handler(syscall_regs_t *regs) {
   case 1: // SYS_PRINT
     term_print((const char *)regs->rdi);
     break;
-  case 2: { // SYS_READ_FILE
-    uint32_t size = 0;
-    // 1. Читаем файл в буфер ядра
-    uint8_t *kdata = fat32_read_file((const char *)regs->rdi, &size);
+  case 2: { // SYS_READ_FILE (Serious & Safe Edition)
+    const char* filename = (const char*)regs->rdi;
+    uint32_t* out_size_ptr = (uint32_t*)regs->rsi;
+    uint32_t size = 0, f_cluster = 0;
+
+    if (!fat32_find_file_info(filename, &size, &f_cluster)) {
+        regs->rax = 0; break;
+    }
+    if (out_size_ptr) *out_size_ptr = size;
+
+    uint32_t pages_needed = (size + 4095) / 4096;
     
-    if (!kdata) {
-        regs->rax = 0; // Возвращаем NULL если файл не найден
-        break;
+    // Пул адресов для загрузки файлов. 
+    // Используем уникальный адрес для каждого вызова, чтобы не пересекаться!
+    static uint64_t next_file_vaddr = 0xA0000000;
+    uint64_t target_virt = next_file_vaddr;
+    next_file_vaddr += (pages_needed * 4096); 
+    if (next_file_vaddr > 0xB0000000) next_file_vaddr = 0xA0000000; // Цикличный буфер
+
+    uint64_t cr3;
+    __asm__ volatile("mov %%cr3, %0" : "=r"(cr3));
+    page_table_t* pml4 = (page_table_t*)VIRT(cr3);
+
+    uint32_t cluster_size = fat32_get_cluster_size();
+    uint32_t sectors_per_cluster = fat32_get_sectors_per_cluster();
+    uint32_t first_data_sec = fat32_get_first_data_sector();
+    uint32_t copied = 0;
+
+    while (f_cluster >= 2 && f_cluster < 0x0FFFFFF8 && copied < size) {
+        uint64_t current_virt = target_virt + copied;
+
+        // 1. Мапим страницы для ТЕКУЩЕГО кластера
+        for (uint64_t v = current_virt; v < current_virt + cluster_size; v += 4096) {
+            uint64_t page_v = v & ~0xFFFULL;
+            if (vmm_get_phys(pml4, page_v) == 0) {
+                void* p = pmm_alloc();
+                memset((void*)VIRT(p), 0, 4096); // Чистим на всякий случай
+                vmm_map(pml4, page_v, (uintptr_t)p, PTE_PRESENT | PTE_USER | PTE_WRITABLE);
+            }
+        }
+
+        // 2. Читаем один кластер. 
+        // Если кластер разбит на разные физические страницы, мы должны читать его
+        // ПОСЕКТОРНО, чтобы драйвер ATA корректно попадал в виртуальную память.
+        uint32_t f_lba = first_data_sec + (f_cluster - 2) * sectors_per_cluster;
+        
+        // Магия: так как ядро видит всю память процесса в верхнем диапазоне (HHDM),
+        // но наш драйвер ATA работает с линейными адресами, мы будем читать по одному сектору
+        // в виртуальный адрес текущего процесса. 
+        // НО: target_virt — это адрес в Ring 3. Нам нужен его эквивалент в ядре.
+        
+        for (uint32_t s = 0; s < sectors_per_cluster; s++) {
+            uint64_t sector_vaddr = current_virt + (s * 512);
+            uint64_t sector_phys = vmm_get_phys(pml4, sector_vaddr);
+            
+            // Читаем один сектор прямо в физическую память через HHDM-окно
+            read_sectors_ata_pio(VIRT(sector_phys), f_lba + s, 1);
+        }
+
+        copied += cluster_size;
+        f_cluster = fat32_get_next_cluster(f_cluster);
     }
 
-    // 2. Если пользователь передал указатель в RSI, записываем туда размер файла
-    if (regs->rsi) {
-        uint32_t *user_size_ptr = (uint32_t*)regs->rsi;
-        *user_size_ptr = size;
-    }
-
-    // 3. Копируем данные из ядра в пространство процесса
-    // copy_to_user сама выделит страницы и замапит их
-    uint64_t user_ptr = copy_to_user(kdata, size);
-
-    // 4. Освобождаем временный буфер в ядре (данные уже скопированы юзеру)
-    kfree(kdata);
-
-    // 5. Возвращаем указатель на данные процесса в RAX
-    regs->rax = user_ptr;
+    regs->rax = target_virt;
     break;
   }
   case 3: // SYS_WRITE_FILE (name: rdi, buf: rsi, size: rdx)
