@@ -72,29 +72,32 @@ void ata_identify() {
     term_print("\n");
 }
 
+static inline void insw(uint16_t port, void* addr, uint32_t count) {
+    __asm__ volatile("rep insw" : "+D"(addr), "+c"(count) : "d"(port) : "memory");
+}
+
 void read_sectors_ata_pio(uintptr_t target_address, uint64_t LBA, uint32_t sector_count) {
-    uint16_t* target = (uint16_t*)target_address;
-    
+    if (sector_count == 0) return;
+
     while (sector_count > 0) {
-        // За один раз контроллер ATA PIO принимает до 255 секторов 
-        // (0 означает 256 в некоторых спецификациях, но 255 безопаснее)
         uint8_t chunk = (sector_count > 255) ? 255 : (uint8_t)sector_count;
 
         if (!ata_wait_bsy()) return;
+        
+        // Выбор диска и LBA
         outb(ATA_PRIMARY_DRIVE_SEL, 0xE0 | ((LBA >> 24) & 0x0F));
         ata_400ns_delay();
         outb(ATA_PRIMARY_SECCOUNT, chunk);
         outb(ATA_PRIMARY_LBA_LOW,  (uint8_t)LBA);
         outb(ATA_PRIMARY_LBA_MID,  (uint8_t)(LBA >> 8));
         outb(ATA_PRIMARY_LBA_HIGH, (uint8_t)(LBA >> 16));
-        outb(ATA_PRIMARY_COMMAND,  0x20);
+        outb(ATA_PRIMARY_COMMAND,  0x20); // Read sectors
 
         for (int j = 0; j < chunk; j++) {
             if (!ata_wait_bsy() || !ata_wait_drq()) return;
-            for (int i = 0; i < 256; i++) {
-                target[i] = inw(ATA_PRIMARY_DATA);
-            }
-            target += 256;
+            // ВМЕСТО ЦИКЛА FOR — ОДНА ИНСТРУКЦИЯ
+            insw(ATA_PRIMARY_DATA, (void*)(target_address), 256);
+            target_address += 512;
         }
 
         sector_count -= chunk;

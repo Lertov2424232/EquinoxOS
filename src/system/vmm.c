@@ -87,3 +87,22 @@ page_table_t* vmm_create_address_space() {
     
     return new_pml4;
 }
+
+uint64_t vmm_get_phys(page_table_t* pml4, uint64_t virt) {
+    uint64_t pml4_idx = (virt >> 39) & 0x1FF;
+    uint64_t pdpt_idx = (virt >> 30) & 0x1FF;
+    uint64_t pd_idx   = (virt >> 21) & 0x1FF;
+    uint64_t pt_idx   = (virt >> 12) & 0x1FF;
+
+    if (!(pml4[pml4_idx] & PTE_PRESENT)) return 0;
+    page_table_t* pdpt = (page_table_t*)VIRT(pml4[pml4_idx] & ~0xFFFULL);
+    
+    if (!(pdpt[pdpt_idx] & PTE_PRESENT)) return 0;
+    page_table_t* pd   = (page_table_t*)VIRT(pdpt[pdpt_idx] & ~0xFFFULL);
+    
+    if (!(pd[pd_idx] & PTE_PRESENT)) return 0;
+    page_table_t* pt   = (page_table_t*)VIRT(pd[pd_idx] & ~0xFFFULL);
+    
+    if (!(pt[pt_idx] & PTE_PRESENT)) return 0;
+    return (pt[pt_idx] & ~0xFFFULL) + (virt & 0xFFF);
+}

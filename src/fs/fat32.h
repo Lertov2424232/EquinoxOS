@@ -2,6 +2,7 @@
 #define FAT32_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 #pragma pack(push, 1)
 typedef struct {
@@ -66,5 +67,10 @@ void fat32_set_cluster_entry(uint32_t cluster, uint32_t value);
 void fat32_save_file(const char* name, const char* data, uint32_t size);
 void fat32_to_83(const char* src, char* dst);
 uint32_t fat32_allocate_cluster_chain(uint32_t count);
+uint32_t fat32_get_next_cluster(uint32_t cluster);
+uint32_t fat32_get_cluster_size();
+uint32_t fat32_get_first_data_sector();
+uint32_t fat32_get_sectors_per_cluster();
+bool fat32_find_file_info(const char* name, uint32_t* out_size, uint32_t* out_cluster);
 
 #endif
