@@ -5,6 +5,8 @@
 #include "../drivers/vga/vesa.h"
 extern void term_print(const char* str);
 
+static uint8_t fat_cache[512] __attribute__((aligned(16)));
+static uint32_t cached_fat_sector = 0xFFFFFFFF;
 static uint32_t part_lba = 0;
 static fat32_bpb_t* bpb = NULL;
 static uint32_t first_data_sector;
@@ -74,10 +76,12 @@ uint32_t fat32_get_next_cluster(uint32_t cluster) {
     uint32_t fat_sector = fat_start_sector + (fat_offset / 512);
     uint32_t ent_offset = fat_offset % 512;
 
-    uint8_t* buf = kmalloc(512);
-    read_sectors_ata_pio((uintptr_t)buf, fat_sector, 1);
-    uint32_t next = (*(uint32_t*)&buf[ent_offset]) & 0x0FFFFFFF;
-    kfree(buf);
+    if (cached_fat_sector != fat_sector) {
+        read_sectors_ata_pio((uintptr_t)fat_cache, fat_sector, 1);
+        cached_fat_sector = fat_sector;
+    }
+    
+    uint32_t next = (*(uint32_t*)&fat_cache[ent_offset]) & 0x0FFFFFFF;
     return next;
 }
 
@@ -409,4 +413,51 @@ void fat32_to_83(const char* src, char* dst) {
             }
         }
     }
+}
+
+// В fat32.c
+
+uint32_t fat32_get_cluster_size() {
+    return bpb->sectors_per_cluster * 512;
+}
+
+uint32_t fat32_get_first_data_sector() {
+    return first_data_sector;
+}
+
+uint32_t fat32_get_sectors_per_cluster() {
+    return bpb->sectors_per_cluster;
+}
+
+// Новая функция: находит информацию о файле без его чтения
+bool fat32_find_file_info(const char* name, uint32_t* out_size, uint32_t* out_cluster) {
+    char fat_name[11];
+    fat32_to_83(name, fat_name);
+
+    uint32_t current_cluster = bpb->root_cluster;
+    uint32_t cluster_size = bpb->sectors_per_cluster * 512;
+    uint8_t* cluster_buf = kmalloc(cluster_size);
+
+    while (current_cluster >= 2 && current_cluster < 0x0FFFFFF8) {
+        uint32_t lba = first_data_sector + (current_cluster - 2) * bpb->sectors_per_cluster;
+        read_sectors_ata_pio((uintptr_t)cluster_buf, lba, bpb->sectors_per_cluster);
+
+        fat32_entry_t* entries = (fat32_entry_t*)cluster_buf;
+        for (int e = 0; e < (int)(cluster_size / 32); e++) {
+            if (entries[e].name[0] == 0x00) break;
+            if ((uint8_t)entries[e].name[0] == 0xE5) continue;
+            if (entries[e].attr == 0x0F) continue;
+
+            if (memcmp(entries[e].name, fat_name, 11) == 0) {
+                *out_size = entries[e].file_size;
+                *out_cluster = (entries[e].cluster_high << 16) | entries[e].cluster_low;
+                kfree(cluster_buf);
+                return true;
+            }
+        }
+        current_cluster = fat32_get_next_cluster(current_cluster);
+    }
+
+    kfree(cluster_buf);
+    return false;
 }
