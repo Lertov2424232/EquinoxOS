@@ -23,6 +23,10 @@ extern bool should_run_app;
 extern void send_arp_request(uint32_t target_ip);
 extern void send_ntp_request();
 extern void show();
+extern void terminal_add_to_history(const char* cmd);
+extern char cmd_history[10][64];
+extern int history_index;
+extern int history_count;
 
 // Буфер ввода теперь живет здесь, а не в kernel.c!
 char shell_buffer[64] = {0};
@@ -44,6 +48,7 @@ void shell_handle_char(char c) {
     else if (c == '\n') {
         term_print(shell_buffer);
         term_print("\n");
+        terminal_add_to_history(shell_buffer);
         // Обрабатываем команды
         if (strcmp(shell_buffer, "panic") == 0) {
             __asm__ volatile("ud2");
@@ -53,6 +58,10 @@ void shell_handle_char(char c) {
         }
         else if (strcmp(shell_buffer, "clear") == 0) {
             terminal_clear();
+        }
+        if (strcmp(shell_buffer, "blur") == 0) {
+            terminal_set_blur(!terminal_get_blur());
+            term_print("Blur toggled!\n");
         }
         else if (strcmp(shell_buffer, "wget") == 0) {
             net_wget();
@@ -160,5 +169,33 @@ void shell_handle_char(char c) {
     else if (shell_idx < 62) {
         shell_buffer[shell_idx++] = c;
         shell_buffer[shell_idx] = '\0';
+    }
+}
+
+void shell_handle_special(uint8_t scancode) {
+    switch (scancode) {
+        case 0x48: // ВВЕРХ
+            if (history_count > 0 && history_index < history_count - 1) {
+                history_index++;
+                strcpy(shell_buffer, cmd_history[history_index]);
+                shell_idx = strlen(shell_buffer);
+            }
+            break;
+        case 0x50: // ВНИЗ
+            if (history_index > 0) {
+                history_index--;
+                strcpy(shell_buffer, cmd_history[history_index]);
+            } else {
+                history_index = -1;
+                memset(shell_buffer, 0, 64);
+            }
+            shell_idx = strlen(shell_buffer);
+            break;
+        case 0x49: // PGUP
+            terminal_scroll(5);
+            break;
+        case 0x51: // PGDN
+            terminal_scroll(-5);
+            break;
     }
 }

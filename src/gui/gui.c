@@ -470,6 +470,9 @@ void gui_compositor_render() {
   while (curr) {
     if (curr->active) {
       // --- РЕНДЕРИНГ РАМКИ ОКНА (План 1.5) ---
+      if (curr == term_win && terminal_get_blur()) {
+                apply_blur(curr->x, curr->y, curr->w, curr->h);
+            }
 
       // Темная внешняя обводка (1 пиксель)
       draw_rect(curr->x - 1, curr->y - 26, curr->w + 2, curr->h + 27, 0x1A1A1A);
@@ -530,4 +533,30 @@ void gui_compositor_render() {
 
   // 4. Курсор (самый верхний слой)
   draw_cursor(mouse_x, mouse_y);
+}
+
+void apply_blur(int x, int y, int w, int h) {
+    for (int i = y; i < y + h; i++) {
+        for (int j = x; j < x + w; j++) {
+            if (i <= 0 || j <= 0 || i >= screen_height-1 || j >= screen_width-1) continue;
+
+            // Берем 4 соседних пикселя из backbuffer
+            uint32_t c1 = backbuffer[i * screen_width + j];
+            uint32_t c2 = backbuffer[(i+1) * screen_width + j];
+            uint32_t c3 = backbuffer[i * screen_width + (j+1)];
+            uint32_t c4 = backbuffer[(i-1) * screen_width + j];
+
+            // Смешиваем каналы
+            uint8_t r = (((c1>>16)&0xFF) + ((c2>>16)&0xFF) + ((c3>>16)&0xFF) + ((c4>>16)&0xFF)) / 4;
+            uint8_t g = (((c1>>8)&0xFF) + ((c2>>8)&0xFF) + ((c3>>8)&0xFF) + ((c4>>8)&0xFF)) / 4;
+            uint8_t b = ((c1&0xFF) + (c2&0xFF) + (c3&0xFF) + (c4&0xFF)) / 4;
+
+            // Затемняем для эффекта стекла (умножаем на 0.7)
+            r = (r * 180) / 255;
+            g = (g * 180) / 255;
+            b = (b * 180) / 255;
+
+            backbuffer[i * screen_width + j] = (r << 16) | (g << 8) | b;
+        }
+    }
 }

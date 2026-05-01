@@ -68,5 +68,6 @@ extern window_t* app_win;
 extern window_t* paint_win;
 extern window_t* explorer_win;
 extern window_t* notepad_win;
+void apply_blur(int x, int y, int w, int h);
 
 #endif
