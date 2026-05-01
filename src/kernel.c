@@ -238,6 +238,10 @@ void update_gui() {
       }
       curr = curr->next;
   }
+  if (focused_window == term_win) {
+    if (last_scancode == 0x49) terminal_scroll(1); // PgUp
+    if (last_scancode == 0x51) terminal_scroll(-1); // PgDn
+  }
 
   // 2. System Monitor
   if (main_win && main_win->active) {
