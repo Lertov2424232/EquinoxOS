@@ -2,6 +2,7 @@
 #define VESA_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 // Теперь эти значения будут устанавливаться динамически из Limine
 // В vesa.h
@@ -39,6 +40,13 @@ typedef struct {
     uint8_t charsize;     // Высота символа (у тебя будет 16)
 } psf1_t;
 
+typedef struct {
+    int x1, y1, x2, y2;
+    bool modified;
+} dirty_rect_t;
+
+extern dirty_rect_t screen_dirty;
+
 // Прототипы функций с правильными аргументами
 void init_vesa(uint64_t fb_addr, uint32_t width, uint32_t height, uint32_t pitch);
 void put_pixel(int x, int y, uint32_t color);
@@ -60,5 +68,15 @@ void draw_rect_direct(int x, int y, int w, int h, uint32_t color);
 void vesa_draw_char_direct(char c, int x, int y, uint32_t fg);
 void vesa_draw_string_direct(const char* s, int x, int y, uint32_t fg);
 void vesa_draw_string_hex_direct(const char* prefix, int x, int y, uint64_t val, uint32_t fg);
+// Функция для пометки области как "нуждающейся в перерисовке"
+void vesa_mark_dirty(int x, int y, int w, int h);
+void vesa_clear_dirty();
+
+// Быстрые версии (SSE)
+void vesa_fill_color_fast(uint32_t* dest, uint32_t count, uint32_t color);
+void vesa_copy_buffer_fast(uint32_t* dest, uint32_t* src, uint32_t count);
+
+// Новая система слоев (опционально для 19.4, но заложим базу)
+void vesa_draw_rect_fast(int x, int y, int w, int h, uint32_t color);
 
 #endif

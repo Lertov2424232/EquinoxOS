@@ -1,24 +1,26 @@
-// src/system/memory.h
 #ifndef MEMORY_H
 #define MEMORY_H
 
+#include <stddef.h>
 #include <stdint.h>
-#include <stddef.h> // Для size_t
 
-// Макрос для выравнивания адресов
-// HEAP_ALIGNMENT - это размер страницы или кэш-линии (например, 4 или 8 байт)
-#define HEAP_ALIGNMENT 8 
+#define HEAP_MAGIC_ACTIVE 0x414C4F43 // "ALOC"
+#define HEAP_MAGIC_FREE 0x46524545   // "FREE"
+#define HEAP_ALIGNMENT 16
 
-// Структура для заголовка каждого блока памяти в свободном списке
-// (как свободного, так и занятого)
 typedef struct block_header {
-    size_t size;                // Размер блока (включая заголовок)
-    struct block_header* next;  // Указатель на следующий свободный блок (только если блок свободен)
-    uint8_t  free;              // Флаг: 1 = свободен, 0 = занят
+    uint32_t magic; // Магическое число для проверки целостности
+    size_t size;    // Полный размер блока (вместе с заголовком)
+    uint8_t free;
+    struct block_header *next;
+    uint32_t canary; // Канарейка в конце заголовка
 } block_header_t;
 
-void init_heap(uint64_t heap_start_addr, size_t heap_size);
-void* kmalloc(size_t size);
-void kfree(void* ptr);
+void init_heap(uint64_t start_addr, size_t size);
+void *kmalloc(size_t size);
+void *krealloc(void *ptr, size_t new_size);
+void *kzalloc(size_t size); // Новая функция: выделяет и обнуляет
+void kfree(void *ptr);
+void kheap_dump(); // Дебаг-функция для проверки кучи
 
 #endif

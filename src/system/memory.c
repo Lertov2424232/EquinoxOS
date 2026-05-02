@@ -1,102 +1,130 @@
-#include "system/memory.h"
-#include <stdint.h>
+#include "memory.h"
+#include "../libc/stdio.h"
+#include "../libc/string.h"
 
-// --- ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ---
-static block_header_t* heap_start = NULL;
+static block_header_t *heap_start = NULL;
 size_t used_memory = 0;
 
-// Выравнивание размера до ближайшего кратного HEAP_ALIGNMENT (обычно 8 байт)
 static size_t align_size(size_t size) {
-    return (size + HEAP_ALIGNMENT - 1) & ~(HEAP_ALIGNMENT - 1);
+  return (size + HEAP_ALIGNMENT - 1) & ~(HEAP_ALIGNMENT - 1);
 }
-
-// =========================================================================
-//                        ИНИЦИАЛИЗАЦИЯ КУЧИ
-// =========================================================================
 
 void init_heap(uint64_t start_addr, size_t size) {
-    uint64_t aligned_start = align_size(start_addr);
-    size -= (aligned_start - start_addr); // Учитываем потерянные байты при выравнивании
+  uint64_t aligned_start = align_size(start_addr);
+  size -= (aligned_start - start_addr);
 
-    heap_start = (block_header_t*)aligned_start;
-    heap_start->size = size;
-    heap_start->free = 1;
-    heap_start->next = NULL;
-    
-    used_memory = 0;
+  heap_start = (block_header_t *)aligned_start;
+  heap_start->magic = HEAP_MAGIC_FREE;
+  heap_start->size = size;
+  heap_start->free = 1;
+  heap_start->next = NULL;
+  heap_start->canary = 0xDEADC0DE;
+
+  used_memory = 0;
 }
 
-// =========================================================================
-//                        ВЫДЕЛЕНИЕ ПАМЯТИ (kmalloc)
-// =========================================================================
+void *krealloc(void *ptr, size_t new_size) {
+  if (!ptr)
+    return kmalloc(new_size);
+  if (new_size == 0) {
+    kfree(ptr);
+    return NULL;
+  }
 
-void* kmalloc(size_t size) {
-    if (size == 0 || !heap_start) return NULL;
+  block_header_t *block =
+      (block_header_t *)((uint8_t *)ptr - sizeof(block_header_t));
+  size_t old_data_size = block->size - sizeof(block_header_t);
 
-    // Нам нужно место под сами данные + заголовок блока
-    // align_size(size) гарантирует, что следующий блок тоже будет выровнен
-    size_t total_needed = align_size(size) + sizeof(block_header_t);
-    block_header_t* current = heap_start;
+  if (new_size <= old_data_size)
+    return ptr; // Уже влезает
 
-    while (current) {
-        // Если блок свободен и в нем хватает места
-        if (current->free && current->size >= total_needed) {
-            
-            // Если блок настолько большой, что от него можно отрезать кусок (Split).
-            // Оставляем минимум 16 байт запаса под данные нового свободного блока.
-            if (current->size >= total_needed + sizeof(block_header_t) + 16) {
-                block_header_t* next_node = (block_header_t*)((uint8_t*)current + total_needed);
-                
-                next_node->size = current->size - total_needed;
-                next_node->free = 1;
-                next_node->next = current->next;
+  // Выделяем новый кусок
+  void *new_ptr = kmalloc(new_size);
+  if (!new_ptr)
+    return NULL;
 
-                current->size = total_needed;
-                current->next = next_node;
-            }
+  // Копируем данные
+  memcpy(new_ptr, ptr, old_data_size);
 
-            current->free = 0;
-            used_memory += current->size; // ИСПРАВЛЕНИЕ: Теперь прибавляем ровно 1 раз!
-            
-            // Возвращаем указатель на данные (пропуская заголовок)
-            return (void*)((uint8_t*)current + sizeof(block_header_t));
-        }
-        current = current->next;
-    }
+  // Освобождаем старый
+  kfree(ptr);
 
-    return NULL; // Out of Memory (В куче нет места)
+  return new_ptr;
 }
 
-// =========================================================================
-//                        ОСВОБОЖДЕНИЕ ПАМЯТИ (kfree)
-// =========================================================================
+void *kmalloc(size_t size) {
+  if (size == 0 || !heap_start)
+    return NULL;
 
-void kfree(void* ptr) {
-    if (!ptr) return;
+  size_t total_needed = align_size(size) + sizeof(block_header_t);
+  block_header_t *current = heap_start;
 
-    // Находим заголовок блока, смещаясь назад
-    block_header_t* block = (block_header_t*)((uint8_t*)ptr - sizeof(block_header_t));
-    
-    // Защита от двойного освобождения (Double Free)
-    if (block->free) return; 
-
-    block->free = 1;
-    used_memory -= block->size; // ИСПРАВЛЕНИЕ: Теперь системный монитор покажет возврат памяти!
-
-    // СЛИЯНИЕ БЛОКОВ (Coalescing)
-    // Проходимся по всей куче и склеиваем соседние свободные блоки.
-    // Это предотвращает фрагментацию памяти.
-    block_header_t* curr = heap_start;
-    while (curr && curr->next) {
-        if (curr->free && curr->next->free) {
-            // Если оба блока свободны — склеиваем!
-            curr->size += curr->next->size;
-            curr->next = curr->next->next;
-            // ВАЖНО: Мы НЕ делаем curr = curr->next;
-            // Потому что новый огромный блок curr тоже может соседствовать со следующим свободным блоком!
-            // Цикл проверит его еще раз.
-        } else {
-            curr = curr->next; // Идем дальше, только если склеивать нечего
-        }
+  while (current) {
+    // ПРОВЕРКА ЦЕЛОСТНОСТИ: если магия сломана - кто-то затер память
+    if (current->magic != HEAP_MAGIC_FREE &&
+        current->magic != HEAP_MAGIC_ACTIVE) {
+      printf("\n!!! KERNEL PANIC: HEAP CORRUPTION DETECTED AT %x !!!\n",
+             (uint64_t)current);
+      __asm__("cli; hlt");
     }
+
+    if (current->free && current->size >= total_needed) {
+      // Split блока
+      if (current->size >= total_needed + sizeof(block_header_t) + 32) {
+        block_header_t *next_node =
+            (block_header_t *)((uint8_t *)current + total_needed);
+        next_node->magic = HEAP_MAGIC_FREE;
+        next_node->size = current->size - total_needed;
+        next_node->free = 1;
+        next_node->next = current->next;
+        next_node->canary = 0xDEADC0DE;
+
+        current->size = total_needed;
+        current->next = next_node;
+      }
+
+      current->free = 0;
+      current->magic = HEAP_MAGIC_ACTIVE;
+      used_memory += current->size;
+
+      return (void *)((uint8_t *)current + sizeof(block_header_t));
+    }
+    current = current->next;
+  }
+  return NULL;
+}
+
+// ВАЖНО: kzalloc обнуляет память. Именно это пофиксит твой GPF!
+void* kzalloc(size_t size) {
+    void* ptr = kmalloc(size);
+    if (ptr != NULL) {
+        memset(ptr, 0, size);
+    }
+    return ptr; // Если NULL, вернем NULL, а не упадем
+}
+void kfree(void *ptr) {
+  if (!ptr)
+    return;
+  block_header_t *block =
+      (block_header_t *)((uint8_t *)ptr - sizeof(block_header_t));
+
+  if (block->magic != HEAP_MAGIC_ACTIVE) {
+    printf("KFREE: Double free or invalid magic at %x\n", (uint64_t)ptr);
+    return;
+  }
+
+  block->free = 1;
+  block->magic = HEAP_MAGIC_FREE;
+  used_memory -= block->size;
+
+  // Склеивание
+  block_header_t *curr = heap_start;
+  while (curr && curr->next) {
+    if (curr->free && curr->next->free) {
+      curr->size += curr->next->size;
+      curr->next = curr->next->next;
+    } else {
+      curr = curr->next;
+    }
+  }
 }
