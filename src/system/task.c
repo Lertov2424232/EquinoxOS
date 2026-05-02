@@ -262,3 +262,32 @@ bool task_exec(char* full_command) {
     kfree(cmd_copy);
     return true;
 }
+
+// В task.c
+
+void task_kill_self() {
+  if (current_task->id == 1)
+    return; // Нельзя убить idle/kernel процесс
+
+  // 1. Освобождаем всю пользовательскую память (Ring 3)
+  // Это сразу вернет мегабайты в монитор!
+  if (current_task->cr3 != 0 && current_task->cr3 != kernel_cr3) {
+    vmm_destroy_address_space(current_task->cr3);
+  }
+
+  // 2. Помечаем задачу как мертвую
+  current_task->running = false;
+
+  // 3. (Опционально) Освобождаем ядерный стек и саму структуру task_t
+  // ВНИМАНИЕ: Это делать сложно, так как мы СЕЙЧАС на этом стеке.
+  // Для "вылизанности" мы просто помечаем её, а планировщик (schedule)
+  // сможет её удалить из списка в следующем цикле.
+
+  printf("[TASK] Process %u terminated and memory reclaimed.\n",
+         current_task->id);
+
+  // 4. Уходим в планировщик навсегда
+  yield();
+  while (1)
+    ; // Сюда мы никогда не вернемся
+}

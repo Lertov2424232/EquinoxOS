@@ -166,39 +166,43 @@ void syscall_handler(syscall_regs_t *regs) {
     break;
 }
 
-  case 10: // SYS_EXIT
-    term_print("[SYS] Killing process...\n");
-    
-    // 1. Помечаем задачу как неактивную
-    current_task->running = false; 
-    
-    // 2. Убираем окно приложения
-    if (app_win) app_win->active = false;
-    if (focused_window == app_win) focused_window = NULL;
-    
-    // 3. Сбрасываем глобальный флаг (чтобы можно было запустить снова)
-    ac97_stop(); 
-    extern bool is_app_running;
-    is_app_running = false;
+case 10: // SYS_EXIT
+  term_print("[SYS] Killing process and freeing RAM...\n");
 
-    // 4. Срочно переключаем контекст на другую задачу (ядро), 
-    // чтобы этот процесс больше не выполнил ни одной инструкции
-    yield(); 
-    break;
-  case 11: // SYS_YIELD (Уступить процессор)
-    break;
-  case 12: { // SYS_GET_FONT
-    extern void *vesa_get_font();
-    void *kfont = vesa_get_font();
+  // ВАЖНО: Останавливаем звук ДО очистки памяти,
+  // чтобы драйвер не пытался читать из удаленных страниц
+  ac97_stop();
 
-    uint64_t font_addr = (uint64_t)kfont;
-    if (font_addr < hhdm_offset) {
-      font_addr = VIRT(font_addr);
-    }
+  // 1. Освобождаем физическую память процесса!
+  // Эту функцию мы написали в прошлом шаге (в vmm.c)
+  extern void vmm_destroy_address_space(uint64_t cr3_phys);
+  vmm_destroy_address_space(current_task->cr3);
 
-    regs->rax = copy_to_user((void *)font_addr, 4096);
-    break;
+  // 2. Убиваем задачу
+  current_task->running = false;
+
+  extern bool is_app_running;
+  is_app_running = false;
+
+  if (app_win)
+    app_win->active = false;
+
+  yield(); // Уходим в планировщик
+  break;
+case 11: // SYS_YIELD (Уступить процессор)
+  break;
+case 12: { // SYS_GET_FONT
+  extern void *vesa_get_font();
+  void *kfont = vesa_get_font();
+
+  uint64_t font_addr = (uint64_t)kfont;
+  if (font_addr < hhdm_offset) {
+    font_addr = VIRT(font_addr);
   }
+
+  regs->rax = copy_to_user((void *)font_addr, 4096);
+  break;
+}
   case 13: { // SYS_SLEEP
     uint32_t ms = regs->rdi;
     uint32_t start = tick * 10;

@@ -22,5 +22,6 @@ void vmm_init();
 void vmm_map(page_table_t* pml4, uint64_t virt, uint64_t phys, uint64_t flags);
 page_table_t* vmm_create_address_space();
 uint64_t vmm_get_phys(page_table_t* pml4, uint64_t virt);
+void vmm_destroy_address_space(uint64_t cr3_phys);
 
 #endif
