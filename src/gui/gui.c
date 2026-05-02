@@ -92,16 +92,18 @@ void window_resize(window_t* win, int new_w, int new_h) {
     // Тут можно добавить вывод чисел, если есть sprintf
 }
 
-window_t *window_create(int x, int y, int w, int h, const char *title) {
-  window_t *win = (window_t *)kmalloc(sizeof(window_t));
-  win->x = x;
-  win->y = y;
-  win->w = w;
-  win->h = h;
-  strcpy(win->title, title);
-
-  // ВАЖНО: Выделяем память под буфер самого окна
-  win->buffer = (uint32_t *)kmalloc(w * h * 4);
+window_t* window_create(int x, int y, int w, int h, const char* title) {
+    // Используем kzalloc, чтобы on_draw был гарантированно NULL
+    window_t* win = (window_t*)kzalloc(sizeof(window_t)); 
+    
+    win->x = x;
+    win->y = y;
+    win->w = w;
+    win->h = h;
+    strcpy(win->title, title);
+    
+    // Буфер окна тоже лучше обнулить
+    win->buffer = (uint32_t*)kzalloc(w * h * 4); 
   memset(win->buffer, 0xFF, w * h * 4); // Белый фон по умолчанию
 
   win->active = true;
@@ -330,14 +332,12 @@ static void handle_mouse_drag(window_t *win) {
     static bool last_mouse_btn = false;
 
     if (mouse_left_button && !last_mouse_btn) {
-        // МОМЕНТ КЛИКА
         window_t* win = gui_find_window_at(mouse_x, mouse_y);
         if (win) {
             window_bring_to_front(win);
-            focused_window = win; // Нужно добавить эту глобальную переменную
+            focused_window = win;
 
-            // Проверка на заголовок для перетаскивания
-            if (mouse_y < win->y) { 
+            if (mouse_y < win->y) { // Клик по заголовку
                 dragging_window = win;
                 win->drag_off_x = mouse_x - win->x;
                 win->drag_off_y = mouse_y - win->y;
@@ -352,8 +352,26 @@ static void handle_mouse_drag(window_t *win) {
     }
 
     if (dragging_window) {
-        dragging_window->x = mouse_x - dragging_window->drag_off_x;
-        dragging_window->y = mouse_y - dragging_window->drag_off_y;
+        // Помечаем старое место
+        vesa_mark_dirty(dragging_window->x - 5, dragging_window->y - 30, 
+                        dragging_window->w + 10, dragging_window->h + 35);
+
+        int next_x = mouse_x - dragging_window->drag_off_x;
+        int next_y = mouse_y - dragging_window->drag_off_y;
+
+        // Ограничиваем, чтобы окно нельзя было выкинуть ПОЛНОСТЬЮ за экран
+        // (Оставляем хотя бы 20 пикселей видимыми)
+        if (next_x < -(dragging_window->w - 20)) next_x = -(dragging_window->w - 20);
+        if (next_x > (int)screen_width - 20) next_x = (int)screen_width - 20;
+        if (next_y < 25) next_y = 25; // Не даем заголовку уйти под верхний край (безопасность!)
+        if (next_y > (int)screen_height - 20) next_y = (int)screen_height - 20;
+
+        dragging_window->x = next_x;
+        dragging_window->y = next_y;
+
+        // Помечаем новое место
+        vesa_mark_dirty(dragging_window->x - 5, dragging_window->y - 30, 
+                        dragging_window->w + 10, dragging_window->h + 35);
     }
 
     last_mouse_btn = mouse_left_button;
@@ -462,6 +480,8 @@ static void draw_titlebar_gradient(int x, int y, int w, int h, uint32_t color,
 void gui_compositor_render() {
   // 1. Сначала рисуем фон и иконки (нижний слой)
   handle_mouse_drag(NULL);
+  static int old_mx, old_my;
+  vesa_mark_dirty(old_mx - 2, old_my - 2, 12, 12);
   draw_background();
   gui_render_desktop_icons();
 
@@ -495,41 +515,46 @@ void gui_compositor_render() {
       // --- РЕНДЕРИНГ КОНТЕНТА ОКНА (Блиттинг буфера) ---
       // Копируем содержимое win->buffer в backbuffer
       for (int i = 0; i < curr->h; i++) {
-        int draw_y = curr->y + i;
+                int draw_y = curr->y + i;
 
-        // Проверка выхода за границы экрана по вертикали
-        if (draw_y < 0 || draw_y >= (int)screen_height)
-          continue;
+                // 1. Проверка по вертикали (полное отсечение)
+                if (draw_y < 0 || draw_y >= (int)screen_height) continue;
 
-        int start_x = curr->x;
-        int copy_w = curr->w;
-        int offset_x = 0;
+                // 2. Вычисляем горизонтальные границы
+                int win_src_x = 0;      // Откуда начинаем брать пиксели в буфере окна
+                int screen_dest_x = curr->x; // Куда начинаем рисовать на экране
+                int line_width = curr->w;    // Сколько пикселей рисовать
 
-        // Проверка выхода за границы экрана по горизонтали (Clipping)
-        if (start_x < 0) {
-          offset_x = -start_x;
-          copy_w += start_x;
-          start_x = 0;
-        }
-        if (start_x + copy_w > (int)screen_width) {
-          copy_w = screen_width - start_x;
-        }
+                // Если окно ушло за левый край
+                if (screen_dest_x < 0) {
+                    win_src_x = -screen_dest_x;
+                    line_width -= win_src_x;
+                    screen_dest_x = 0;
+                }
 
-        if (copy_w > 0) {
-          // Используем memcpy для быстрой отрисовки строки
-          memcpy(&backbuffer[draw_y * screen_width + start_x],
-                 &curr->buffer[i * curr->w + offset_x], copy_w * 4);
-        }
+                // Если окно ушло за правый край
+                if (screen_dest_x + line_width > (int)screen_width) {
+                    line_width = (int)screen_width - screen_dest_x;
+                }
+
+                // 3. Рисуем строку только если она видима
+                if (line_width > 0) {
+                    uint32_t* dst = &backbuffer[draw_y * screen_width + screen_dest_x];
+                    uint32_t* src = &curr->buffer[i * curr->w + win_src_x];
+                    memcpy(dst, src, line_width * 4);
+              }
+          }
       }
-    }
-    curr = curr->next;
-  }
+  curr = curr->next;
+}
 
   // 3. Панель задач (над окнами)
   gui_render_taskbar();
 
   // 4. Курсор (самый верхний слой)
   draw_cursor(mouse_x, mouse_y);
+  vesa_mark_dirty(mouse_x - 2, mouse_y - 2, 12, 12); // Помечаем новый курсор
+  old_mx = mouse_x; old_my = mouse_y;
 }
 
 void apply_blur(int x, int y, int w, int h) {

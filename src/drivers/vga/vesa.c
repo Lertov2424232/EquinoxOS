@@ -32,7 +32,13 @@ void init_vesa(uint64_t addr, uint32_t width, uint32_t height, uint32_t pitch) {
 
   // Выделяем память под задний буфер кадра
   backbuffer = (uint32_t *)kmalloc(width * height * 4);
-  memset(backbuffer, 0, width * height * 4); // Очищаем от мусора
+  memset(backbuffer, 0, width * height * 4);
+  vesa_mark_dirty(0, 0, screen_width, screen_height);
+  screen_dirty.x1 = 0;
+    screen_dirty.y1 = 0;
+    screen_dirty.x2 = width;
+    screen_dirty.y2 = height;
+    screen_dirty.modified = true; // Очищаем от мусора
 }
 
 void put_pixel(int x, int y, uint32_t color) {
@@ -42,34 +48,43 @@ void put_pixel(int x, int y, uint32_t color) {
 }
 
 void draw_background() {
-  // Вычисляем каждый пиксель только ОДИН раз при запуске
   if (!cached_bg) {
     cached_bg = (uint32_t *)kmalloc(screen_width * screen_height * 4);
     for (int y = 0; y < (int)screen_height; y++) {
-      uint32_t blue = 100 + (y / 10);
-      uint32_t color = (blue << 0) | (50 << 8) | (30 << 16);
       for (int x = 0; x < (int)screen_width; x++) {
-        cached_bg[y * screen_width + x] = color;
+        // Красивый темно-синий градиент
+        uint8_t r = 20;
+        uint8_t g = 30;
+        uint8_t b = 50 + (y * 50 / screen_height);
+        cached_bg[y * screen_width + x] = (r << 16) | (g << 8) | b;
       }
     }
   }
-  // Вместо сотен тысяч вызовов put_pixel просто копируем готовый буфер!
   memcpy(backbuffer, cached_bg, screen_width * screen_height * 4);
 }
 
 void draw_rect(int x, int y, int w, int h, uint32_t color) {
-  int start_x = (x < 0) ? 0 : x;
-  int start_y = (y < 0) ? 0 : y;
-  int end_x = (x + w > (int)screen_width) ? (int)screen_width : x + w;
-  int end_y = (y + h > (int)screen_height) ? (int)screen_height : y + h;
+    vesa_mark_dirty(x, y, w, h);
+    
+    // КЛИППИНГ: обрезаем координаты до видимой зоны экрана
+    int start_x = x;
+    int start_y = y;
+    int end_x = x + w;
+    int end_y = y + h;
 
-  for (int i = start_y; i < end_y; i++) {
-    uint32_t *row = &backbuffer[i * screen_width];
-    for (int j = start_x; j < end_x; j++) {
-      row[j] = color;
+    if (start_x < 0) start_x = 0;
+    if (start_y < 0) start_y = 0;
+    if (end_x > (int)screen_width) end_x = screen_width;
+    if (end_y > (int)screen_height) end_y = screen_height;
+
+    int draw_w = end_x - start_x;
+    if (draw_w <= 0 || start_y >= end_y) return; // Если полностью за экраном
+
+    for (int i = start_y; i < end_y; i++) {
+        vesa_fill_color_fast(&backbuffer[i * screen_width + start_x], draw_w, color);
     }
-  }
 }
+
 // Вспомогательная функция для смешивания цветов
 static uint32_t blend(uint32_t color_bg, uint32_t color_fg, uint8_t alpha) {
   uint32_t rb = (((color_fg & 0xFF00FF) * alpha) +
@@ -139,36 +154,65 @@ void vesa_draw_string_hex(const char *prefix, int x, int y, uint64_t val,
 }
 
 void vesa_draw_buffer(int x, int y, int w, int h, uint32_t *buffer) {
-  for (int row = 0; row < h; row++) {
-    if (y + row >= (int)screen_height || y + row < 0)
-      continue;
+    int src_x = 0;
+    int dst_x = x;
+    int draw_w = w;
 
-    uint32_t *dst = &backbuffer[(y + row) * screen_width + x];
-    uint32_t *src = &buffer[row * w];
-
-    // Учитываем границы по ширине (Clipping), чтобы избежать buffer overflow
-    int copy_w = w;
-    if (x + w > (int)screen_width)
-      copy_w = screen_width - x;
-    if (copy_w > 0) {
-      memcpy(dst, src, copy_w * 4);
+    // Если уехали влево за экран
+    if (dst_x < 0) {
+        src_x = -dst_x; // Смещаем точку чтения из исходного буфера
+        draw_w -= src_x;
+        dst_x = 0;
     }
-  }
+    // Если уехали вправо за экран
+    if (dst_x + draw_w > (int)screen_width) {
+        draw_w = screen_width - dst_x;
+    }
+
+    if (draw_w <= 0) return;
+
+    for (int row = 0; row < h; row++) {
+        int draw_y = y + row;
+        if (draw_y < 0 || draw_y >= (int)screen_height) continue;
+
+        uint32_t *dst = &backbuffer[draw_y * screen_width + dst_x];
+        uint32_t *src = &buffer[row * w + src_x];
+        
+        memcpy(dst, src, draw_w * 4);
+    }
 }
 
 // Отправка всего кадра на видеокарту
 void vesa_update() {
-  uint8_t *dst = (uint8_t *)fb_base_addr;
-  uint8_t *src = (uint8_t *)backbuffer;
+    if (!screen_dirty.modified) return;
 
-  for (uint32_t i = 0; i < screen_height; i++) {
-    // Копируем построчно, учитывая pitch видеокарты (он может отличаться от
-    // width * 4)
-    memcpy(dst + (i * screen_pitch), src + (i * screen_width * 4),
-           screen_width * 4);
-  }
+    // 1. Жесткий клиппинг грязного прямоугольника
+    int x1 = (screen_dirty.x1 < 0) ? 0 : screen_dirty.x1;
+    int y1 = (screen_dirty.y1 < 0) ? 0 : screen_dirty.y1;
+    int x2 = (screen_dirty.x2 > (int)screen_width) ? (int)screen_width : screen_dirty.x2;
+    int y2 = (screen_dirty.y2 > (int)screen_height) ? (int)screen_height : screen_dirty.y2;
+
+    int copy_w = x2 - x1;
+    if (copy_w <= 0 || y1 >= y2) {
+        screen_dirty.modified = false;
+        return;
+    }
+
+    for (int i = y1; i < y2; i++) {
+        // Расчет адреса в видеопамяти (fb_base_addr)
+        // Используем pitch (байты на строку), чтобы точно попасть в цель
+        uint8_t* fb_line = (uint8_t*)fb_base_addr + (i * screen_pitch);
+        uint32_t* dst = (uint32_t*)(fb_line + (x1 * 4));
+        
+        // Расчет адреса в backbuffer (индекс по пикселям)
+        uint32_t* src = &backbuffer[i * screen_width + x1];
+        
+        // Копируем через твой ассемблерный vesa_copy_buffer_fast
+        vesa_copy_buffer_fast(dst, src, (uint32_t)copy_w);
+    }
+    
+    screen_dirty.modified = false;
 }
-
 void vesa_draw_psf_char(psf_t *font, char c, int x, int y, uint32_t fg) {
   uint8_t *glyph =
       (uint8_t *)font + font->headersize + (uint8_t)c * font->bytesperglyph;
@@ -234,6 +278,71 @@ void put_pixel_alpha(int x, int y, uint32_t argb) {
   uint8_t b_out = (b_fg * a + b_bg * (255 - a)) / 255;
 
   backbuffer[y * screen_width + x] = (r_out << 16) | (g_out << 8) | b_out;
+}
+
+// Быстрое заполнение 64-битными кусками (вместо SSE)
+// Заполняет count пикселей цветом color
+void vesa_fill_color_fast(uint32_t* dest, uint32_t count, uint32_t color) {
+    // Формируем 64-битное значение из двух 32-битных пикселей
+    uint64_t val = ((uint64_t)color << 32) | color;
+    uint64_t qcount = count / 2; // Сколько раз по 8 байт
+    uint32_t rem = count % 2;    // Остаток (если нечетное число пикселей)
+
+    __asm__ volatile (
+        "rep stosq\n"   // Заполняем по 8 байт (2 пикселя за раз)
+        : "+D"(dest), "+c"(qcount)
+        : "a"(val)
+        : "memory"
+    );
+
+    if (rem) {
+        *dest = color;
+    }
+}
+
+// Быстрое копирование 64-битными кусками
+void vesa_copy_buffer_fast(uint32_t* dest, uint32_t* src, uint32_t count) {
+    uint64_t qcount = count / 2;
+    uint32_t rem = count % 2;
+
+    __asm__ volatile (
+        "rep movsq\n"   // Копируем по 8 байт (2 пикселя за раз)
+        : "+D"(dest), "+S"(src), "+c"(qcount)
+        : 
+        : "memory"
+    );
+
+    if (rem) {
+        dest[0] = src[0];
+    }
+}
+
+dirty_rect_t screen_dirty = {0, 0, 0, 0, false};
+
+void vesa_mark_dirty(int x, int y, int w, int h) {
+    // 1. Если прямоугольник полностью за экраном — игнорим
+    if (x + w < 0 || y + h < 0 || x >= (int)screen_width || y >= (int)screen_height) return;
+
+    // 2. Зажимаем координаты строго в границы экрана
+    int nx1 = (x < 0) ? 0 : x;
+    int ny1 = (y < 0) ? 0 : y;
+    int nx2 = (x + w > (int)screen_width) ? (int)screen_width : x + w;
+    int ny2 = (y + h > (int)screen_height) ? (int)screen_height : y + h;
+
+    if (!screen_dirty.modified) {
+        screen_dirty.x1 = nx1; screen_dirty.y1 = ny1;
+        screen_dirty.x2 = nx2; screen_dirty.y2 = ny2;
+        screen_dirty.modified = true;
+    } else {
+        if (nx1 < screen_dirty.x1) screen_dirty.x1 = nx1;
+        if (ny1 < screen_dirty.y1) screen_dirty.y1 = ny1;
+        if (nx2 > screen_dirty.x2) screen_dirty.x2 = nx2;
+        if (ny2 > screen_dirty.y2) screen_dirty.y2 = ny2;
+    }
+}
+
+void vesa_clear_dirty() {
+    screen_dirty.modified = false;
 }
 
 // =========================================================================
