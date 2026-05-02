@@ -30,5 +30,6 @@ uint64_t schedule(uint64_t current_rsp); // Вызывается из ассем
 void yield(void);
 void task_create(void (*entry)(), uint64_t arg1, uint64_t arg2, uint64_t cr3);
 bool task_exec(char* full_command);
+void task_kill_self();
 
 #endif
