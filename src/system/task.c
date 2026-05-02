@@ -112,7 +112,7 @@ void task_create(void (*entry)(), uint64_t arg1, uint64_t arg2, uint64_t cr3) {
 // task.c
 // В task.c
 uint64_t schedule(uint64_t current_rsp) {
-    tick++;
+    // tick++;
     if (!current_task) return current_rsp;
     
     current_task->rsp = current_rsp;
