@@ -14,6 +14,8 @@
 #define SYS_GET_FONT      12
 #define SYS_SLEEP      13
 #define SYS_AUDIO_PLAY    20
+#define SYS_AUDIO_SET_RATE 21
+#define SYS_GET_MOUSE     7
 
 
 // Переименовали в _syscall и всегда принимаем 5 аргументов + номер

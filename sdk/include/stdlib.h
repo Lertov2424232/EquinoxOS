@@ -9,6 +9,8 @@ void* calloc(size_t nmemb, size_t size);
 void* realloc(void* ptr, size_t size);
 void exit(int status);
 int abs(int j);
+int rand(void);
+void srand(unsigned int seed);
 char* itoa(int value, char* str, int base);
 int atoi(const char* s);
 double atof(const char* s);

@@ -89,7 +89,7 @@ void window_resize(window_t* win, int new_w, int new_h) {
     // Заполняем черным на всякий случай
     memset(win->buffer, 0, new_w * new_h * 4);
     
-    term_print("GUI: Window resized to ");
+    terminal_print("GUI: Window resized to ");
     // Тут можно добавить вывод чисел, если есть sprintf
 }
 
@@ -224,7 +224,7 @@ bool gui_check_close_button(int mx, int my) {
 
         // ЕСЛИ ЗАКРЫЛИ ОКНО ПРИЛОЖЕНИЯ (Doom/NiPlay)
         if (curr == app_win) {
-          term_print("[GUI] Closing application via UI...\n");
+          terminal_print("[GUI] Closing application via UI...\n");
 
           // 1. Останавливаем звук немедленно
           ac97_stop();
@@ -240,7 +240,7 @@ bool gui_check_close_button(int mx, int my) {
               extern void vmm_destroy_address_space(uint64_t cr3_phys);
               vmm_destroy_address_space(t->cr3);
 
-              term_print("[SYS] Task memory reclaimed.\n");
+              terminal_print("[SYS] Task memory reclaimed.\n");
             }
             t = t->next;
           }
@@ -282,6 +282,8 @@ void window_bring_to_front(window_t *win) {
 }
 
 // Рисует градиентную тень вокруг прямоугольника
+// static void draw_shadow(int wx, int wy, int ww, int wh) {
+/*
 static void draw_shadow(int wx, int wy, int ww, int wh) {
   int shadow_size = 10;
   for (int y = -shadow_size; y < wh + shadow_size; y++) {
@@ -303,6 +305,7 @@ static void draw_shadow(int wx, int wy, int ww, int wh) {
     }
   }
 }
+*/
 
 window_t* gui_get_window_at(int mx, int my) {
     // В твоей реализации tail списка - это верх экрана. 
@@ -343,7 +346,7 @@ window_t* gui_find_window_at(int mx, int my) {
 
 window_t* dragging_window = NULL;
 
-static void handle_mouse_drag(window_t *win) {
+static void handle_mouse_drag() {
     static bool last_mouse_btn = false;
 
     if (mouse_left_button && !last_mouse_btn) {
@@ -414,7 +417,7 @@ void gui_window_draw_string(window_t *win, const char *s, int x, int y,
                             uint32_t color) {
   while (*s) {
     char c = *s;
-    if (c < 0 || c > 127) {
+    if ((uint8_t)c > 127) {
       s++;
       continue;
     }
@@ -494,7 +497,7 @@ static void draw_titlebar_gradient(int x, int y, int w, int h, uint32_t color,
 
 void gui_compositor_render() {
   // 1. Сначала рисуем фон и иконки (нижний слой)
-  handle_mouse_drag(NULL);
+  handle_mouse_drag();
   static int old_mx, old_my;
   vesa_mark_dirty(old_mx - 2, old_my - 2, 12, 12);
   draw_background();
@@ -575,7 +578,7 @@ void gui_compositor_render() {
 void apply_blur(int x, int y, int w, int h) {
     for (int i = y; i < y + h; i++) {
         for (int j = x; j < x + w; j++) {
-            if (i <= 0 || j <= 0 || i >= screen_height-1 || j >= screen_width-1) continue;
+            if (i <= 0 || j <= 0 || (uint32_t)i >= screen_height-1 || (uint32_t)j >= screen_width-1) continue;
 
             // Берем 4 соседних пикселя из backbuffer
             uint32_t c1 = backbuffer[i * screen_width + j];
