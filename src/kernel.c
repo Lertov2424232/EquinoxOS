@@ -240,38 +240,26 @@ void update_gui() {
     }
     // 2. System Monitor
     if (main_win && main_win->active) {
-    gui_window_draw_rect(main_win, 0, 0, main_win->w, main_win->h, 0xFFFFFF);
-    
-    char info[64];
-    // Берем напрямую через функции, чтобы избежать ошибок округления
-    uint64_t used_bytes = pmm_get_used_memory();
-    uint64_t total_bytes = pmm_get_total_memory();
-    
-    uint32_t used_mb = (uint32_t)(used_bytes / 1024 / 1024);
-    uint32_t total_mb = (uint32_t)(total_bytes / 1024 / 1024);
+      gui_window_draw_rect(main_win, 0, 0, main_win->w, main_win->h, 0xFFFFFF);
 
-    sprintf(info, "System RAM: %u / %u MB", used_mb, total_mb);
-    gui_window_draw_string(main_win, info, 15, 20, 0x000000);
-    
-    // Прогресс-бар
-    gui_window_draw_rect(main_win, 15, 35, 150, 10, 0xEEEEEE);
-    if (total_bytes > 0) {
-        int bar_w = (int)((used_bytes * 150) / total_bytes);
-        gui_window_draw_rect(main_win, 15, 35, bar_w, 10, 0x0055FF);
+      char info[64];
+      uint32_t used_mb = (uint32_t)(pmm_get_used_memory() / 1024 / 1024);
+      uint32_t total_mb = (uint32_t)(pmm_get_total_memory() / 1024 / 1024);
+
+      sprintf(info, "System RAM: %u / %u MB", used_mb, total_mb);
+      gui_window_draw_string(main_win, info, 15, 20, 0x000000);
+
+      // Рисуем полоску
+      gui_window_draw_rect(main_win, 15, 35, 150, 10, 0xDDDDDD);
+      int bar_w = (used_mb * 150) / total_mb;
+      gui_window_draw_rect(main_win, 15, 35, bar_w, 10, 0x0078D7);
+
+      // КРАСИВЫЙ UPTIME (теперь с нулями!)
+      uint32_t s = tick / 100;
+      sprintf(info, "Uptime: %02u:%02u:%02u", s / 3600, (s % 3600) / 60,
+              s % 60);
+      gui_window_draw_string(main_win, info, 15, 85, 0x555555);
     }
-
-    // Kernel Heap
-    sprintf(info, "Kernel Heap: %u KB", (uint32_t)(used_memory / 1024));
-    gui_window_draw_string(main_win, info, 15, 60, 0x000000);
-    
-    // Продвинутый Uptime
-    uint32_t total_sec = tick / 100;
-    uint32_t hours = total_sec / 3600;
-    uint32_t mins = (total_sec % 3600) / 60;
-    uint32_t secs = total_sec % 60;
-    sprintf(info, "Uptime: %02u:%02u:%02u", hours, mins, secs);
-    gui_window_draw_string(main_win, info, 15, 85, 0x666666);
-  }
     // 3. Paint — smooth line drawing with Bresenham interpolation
     if (paint_win && paint_win->active) {
         // Color palette bar (top 20px)

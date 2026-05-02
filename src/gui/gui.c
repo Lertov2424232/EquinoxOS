@@ -5,6 +5,7 @@
 #include "../system/memory.h"
 #include "../system/task.h"
 #include "terminal.h"
+#include "../drivers/audio/ac97.h"
 
 #include <stdbool.h>
 
@@ -215,23 +216,37 @@ bool gui_check_close_button(int mx, int my) {
   window_t *curr = window_list_head;
   while (curr) {
     if (curr->active) {
-      int bx = curr->x + curr->w - 32; // Уточни координаты по своему рендеру
+      int bx = curr->x + curr->w - 32;
       int by = curr->y - 22;
+
       if (mx >= bx && mx < bx + 28 && my >= by && my < by + 19) {
         curr->active = false;
-        
-        // --- НОВОЕ: Если закрыли окно приложения ---
+
+        // ЕСЛИ ЗАКРЫЛИ ОКНО ПРИЛОЖЕНИЯ (Doom/NiPlay)
         if (curr == app_win) {
-            is_app_running = false;
-            // Находим задачу змейки и убиваем её
-            // Для простоты: можно просто помечать все задачи кроме ядра 
-            // как running = false, если у тебя только одна программа.
-            // Но лучше в будущем хранить pid в window_t.
-            task_t* t = current_task->next;
-            while(t != current_task) {
-                if (t->cr3 != 0) t->running = false; // Убиваем все Ring 3 задачи
-                t = t->next;
+          term_print("[GUI] Closing application via UI...\n");
+
+          // 1. Останавливаем звук немедленно
+          ac97_stop();
+
+          // 2. Ищем и убиваем Ring 3 задачу
+          // Проходим по списку задач и ищем ту, у которой cr3 != kernel_cr3
+          extern task_t *current_task;
+          task_t *t = current_task->next;
+          while (t != current_task) {
+            if (t->cr3 != 0 && t->running) {
+              t->running = false;
+              // Вызываем очистку памяти (которую мы написали в vmm.c)
+              extern void vmm_destroy_address_space(uint64_t cr3_phys);
+              vmm_destroy_address_space(t->cr3);
+
+              term_print("[SYS] Task memory reclaimed.\n");
             }
+            t = t->next;
+          }
+
+          extern bool is_app_running;
+          is_app_running = false;
         }
         return true;
       }
@@ -582,3 +597,4 @@ void apply_blur(int x, int y, int w, int h) {
         }
     }
 }
+
