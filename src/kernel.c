@@ -31,6 +31,7 @@
 
 // --- ФАЙЛОВАЯ СИСТЕМА И ОБОЛОЧКА ---
 #include "fs/fat32.h"
+#include "fs/ext2.h"
 #include "fs/fs.h"
 #include "fs/vfs.h"
 #include "gui/terminal.h"
@@ -42,7 +43,14 @@ extern size_t used_memory;
 extern volatile uint32_t tick;
 extern char shell_buffer[64];
 uint64_t hhdm_offset = 0;
-static fat32_file_info_t real_files[256];
+typedef struct {
+    char name[128];
+    uint32_t size;
+    vfs_node_t* dev;
+    uint32_t inode;
+} explorer_file_t;
+
+static explorer_file_t real_files[256];
 uint64_t canary_safety = 0xDEADBEEFCAFEBABE;
 
 // --- ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ---
@@ -353,16 +361,34 @@ void update_gui() {
 
         // Панель инструментов
         gui_window_draw_rect(explorer_win, 0, 0, explorer_win->w, 24, 0xF0F0F0);
-        gui_window_draw_string(explorer_win, "Path: / (FAT32 DISK)", 8, 7, 0x333333);
+        gui_window_draw_string(explorer_win, "Path: / (All VFS Volumes)", 8, 7, 0x333333);
 
         // Кнопка Refresh (Обновить)
         gui_window_draw_rect(explorer_win, explorer_win->w - 60, 3, 52, 18, 0xDDDDDD);
         gui_window_draw_string(explorer_win, "REFR", explorer_win->w - 50, 7, 0x333333);
         gui_window_draw_rect(explorer_win, 0, 24, explorer_win->w, 1, 0xCCCCCC);
 
-        // Сканируем файлы, если окно только открыто или нажали Refresh
+        // Сканируем VFS, если окно только открыто или нажали Refresh
         if (!explorer_scanned) {
-            explorer_file_count = fat32_get_files(real_files, 16);
+            explorer_file_count = 0;
+            vfs_node_t* dev = vfs_root->next; // Skip the "root" container
+            while (dev && explorer_file_count < 256) {
+                // List files from each device root (only if it has a readdir function)
+                if (dev->readdir) {
+                    for (int i = 0; i < 32; i++) {
+                        vfs_dirent_t* de = dev->readdir(dev, i);
+                        if (!de) break;
+                        
+                        strcpy(real_files[explorer_file_count].name, de->name);
+                        real_files[explorer_file_count].size = de->size;
+                        real_files[explorer_file_count].dev = dev;
+                        real_files[explorer_file_count].inode = de->inode;
+                        explorer_file_count++;
+                        if (explorer_file_count >= 256) break;
+                    }
+                }
+                dev = dev->next;
+            }
             explorer_scanned = true;
         }
 
@@ -371,59 +397,63 @@ void update_gui() {
             int rx = mouse_x - explorer_win->x;
             int ry = mouse_y - explorer_win->y;
             if (rx >= explorer_win->w - 60 && rx < explorer_win->w - 8 && ry >= 3 && ry < 21) {
-                explorer_scanned = false; // Сброс флага заставит перечитать диск
+                explorer_scanned = false;
             }
         }
 
         // Список файлов
         int y_off = 30;
         if (explorer_file_count == 0) {
-            gui_window_draw_string(explorer_win, "No files found on disk.", 20, 40, 0x999999);
+            gui_window_draw_string(explorer_win, "No files found on VFS.", 20, 40, 0x999999);
         }
 
         for (int i = 0; i < explorer_file_count; i++) {
             int row_y = y_off - 2;
 
-            // Подсветка каждой второй строки
             if (i % 2 == 0) {
                 gui_window_draw_rect(explorer_win, 0, row_y, explorer_win->w, 18, 0xF5F5F5);
             }
 
-            // РИСУЕМ ТЕКСТ (имя файла) - ТЫ ЭТО ПОТЕРЯЛ В ПРОШЛОМ КОДЕ!
-            gui_window_draw_rect(explorer_win, 5, y_off + 2, 8, 8,
-                                 0xF0C040); // Маленькая иконка
+            // Иконка (цвет зависит от ФС)
+            uint32_t icon_color = (strcmp(real_files[i].dev->name, "EXT2_DISK") == 0) ? 0x40C0F0 : 0xF0C040;
+            gui_window_draw_rect(explorer_win, 5, y_off + 2, 8, 8, icon_color);
             gui_window_draw_string(explorer_win, real_files[i].name, 20, y_off, 0x000000);
+            
+            // Источник
+            gui_window_draw_string(explorer_win, real_files[i].dev->name, explorer_win->w - 100, y_off, 0x888888);
 
             // ПРОВЕРКА КЛИКА ПО ФАЙЛУ
             if (mouse_just_pressed) {
                 int rx = mouse_x - explorer_win->x;
                 int ry = mouse_y - explorer_win->y;
 
-                // Если кликнули в пределах этой строки
                 if (rx > 0 && rx < explorer_win->w && ry >= row_y && ry < row_y + 18) {
                     term_print("Explorer: Opening ");
                     term_print(real_files[i].name);
                     term_print("\n");
 
-                    uint32_t f_size = 0;
-                    // Читаем данные из FAT32
-                    char *file_data = (char *)fat32_read_file(real_files[i].name, &f_size);
-
-                    if (file_data) {
-                        // Загружаем в блокнот
-                        notepad_load_content(file_data, f_size);
-
-                        // Фокусируемся на блокноте
+                    vfs_node_t* dev = real_files[i].dev;
+                    vfs_node_t file_node;
+                    memset(&file_node, 0, sizeof(vfs_node_t));
+                    file_node.inode = real_files[i].inode;
+                    strcpy(file_node.name, real_files[i].name);
+                    
+                    uint8_t* file_data = kmalloc(real_files[i].size + 1);
+                    uint32_t read_bytes = dev->read(&file_node, 0, real_files[i].size, file_data);
+                    
+                    if (read_bytes > 0) {
+                        file_data[read_bytes] = '\0';
+                        notepad_load_content((char*)file_data, read_bytes);
                         notepad_win->active = true;
                         window_bring_to_front(notepad_win);
-
-                        kfree(file_data); // Обязательно чистим память за собой
+                        kfree(file_data);
                     } else {
-                        term_print("Explorer: Failed to read file!\n");
+                        term_print("Explorer: Failed to read file via VFS!\n");
+                        kfree(file_data);
                     }
                 }
             }
-            y_off += 18; // Смещаемся ниже для следующего файла
+            y_off += 18;
         }
     }
 
@@ -449,8 +479,20 @@ void update_gui() {
                     strcat(save_buffer, notepad_buf[i]);
                     strcat(save_buffer, "\n");
                 }
-                // Сохраняем как NOTES.TXT
-                fat32_save_file("NOTES", save_buffer, strlen(save_buffer));
+                // Сохраняем как NOTES.TXT на ПЕРВОЕ попавшееся устройство с поддержкой записи
+                vfs_node_t* dev = vfs_root->next;
+                while (dev) {
+                    if (dev->write) {
+                         vfs_node_t file_node;
+                         memset(&file_node, 0, sizeof(vfs_node_t));
+                         strcpy(file_node.name, "NOTES.TXT");
+                         
+                         dev->write(&file_node, 0, strlen(save_buffer), (uint8_t*)save_buffer);
+                         term_print("Notepad: Saved to "); term_print(dev->name); term_print("\n");
+                         break;
+                    }
+                    dev = dev->next;
+                }
 
                 // Заставляем Explorer пересканировать диск
                 explorer_scanned = false;
@@ -629,29 +671,41 @@ void exec_module() {
     term_print("Error: app.elf not found in modules!\n");
 }
 
-// Загрузка и запуск ELF-файла прямо с FAT32
+// Загрузка и запуск ELF-файла через VFS (теперь работает и с EXT2, и с FAT32!)
 void exec_from_disk(const char *filename) {
-    uint32_t size = 0;
-    // 1. Читаем файл с диска через твой драйвер ATA + FAT32
-    uint8_t *elf_data = fat32_read_file(filename, &size);
+    vfs_node_t* dev = vfs_root->next;
+    while (dev) {
+        if (!dev->readdir || !dev->read) {
+            dev = dev->next;
+            continue;
+        }
 
-    if (!elf_data) {
-        term_print("EXEC: File not found or disk error: ");
-        term_print(filename);
-        term_print("\n");
-        return;
+        // Search for file in this device
+        for (int i = 0; i < 64; i++) {
+            vfs_dirent_t* de = dev->readdir(dev, i);
+            if (!de) break;
+
+            if (strcmp(de->name, filename) == 0) {
+                term_print("EXEC: Found "); term_print(filename);
+                term_print(" on "); term_print(dev->name); term_print("\n");
+
+                uint8_t* elf_data = kmalloc(de->size);
+                vfs_node_t file_node;
+                memset(&file_node, 0, sizeof(vfs_node_t));
+                file_node.inode = de->inode;
+                strcpy(file_node.name, de->name);
+
+                if (dev->read(&file_node, 0, de->size, elf_data) > 0) {
+                    run_elf(elf_data);
+                    kfree(elf_data);
+                    return;
+                }
+                kfree(elf_data);
+            }
+        }
+        dev = dev->next;
     }
-
-    term_print("EXEC: Loaded ");
-    term_print(filename);
-    term_print(" from disk. Starting...\n");
-
-    // 2. Используем уже готовую у тебя функцию run_elf
-    run_elf(elf_data);
-
-    // 3. После того как run_elf создал задачу и скопировал сегменты,
-    // данные из кучи ядра можно (и нужно) освободить.
-    kfree(elf_data);
+    term_print("EXEC: File not found on any VFS device!\n");
 }
 
 void kmain(void) {
@@ -723,6 +777,14 @@ void kmain(void) {
     serial_puts(COM1, "VFS initialized\n");
     fat32_init();
     serial_puts(COM1, "FAT32 initialized\n");
+    ext2_init();
+    vfs_register_device(ext2_get_root_node());
+    vfs_register_device(fat32_get_root_node());
+    serial_puts(COM1, "EXT2 initialized\n");
+    ext2_stress_test_phase1();
+    ext2_stress_test_phase2();
+    ext2_stress_test_phase3();
+    ext2_stress_test_phase4();
     pci_init();
     serial_puts(COM1, "PCI initialized\n");
     pcspeaker_init();
