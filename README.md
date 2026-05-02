@@ -137,12 +137,22 @@ x86_64-elf-addr2line -e kernel.elf <RIP_ADDRESS>
 ---
 
 ## 🗺 Roadmap
-- [x] Preemptive Multitasking
-- [x] Windowed GUI Support
-- [x] FAT32 File System (Read/Write)
-- [ ] Stable TCP/IP Stack
-- [ ] Port SDK to full Dynamic Linking
-- [ ] Port Doom (The ultimate goal)
+~~1. Paint saving BMP~~
+~~2. BMP viewer external application~~
+~~3. Ring 3~~
+~~4. Z view (Program behind other programs)~~
+~~5. Context Switch + Keyboard ARE NOT HARDLOCKED~~
+~~6. Better SDK~~
+~~7. Doom~~
+8. Run on real hardware
+~~9. ***SOUND***~~
+10. Port any new FS (EXT/EXT2/UFS/ZFS) [Porting EXT2 Right now]
+11. Make your OWN FS
+12. Port any SECOND FS (EXT/EXT2/UFS/ZFS)
+13. Make OS SERIOUS (Fix ANY of the stubs | Polishing)
+14. Port any language (AS USERSPACE) - C#, C++, Lua, Python
+
+
 
 ***
 
