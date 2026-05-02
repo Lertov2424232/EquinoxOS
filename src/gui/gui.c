@@ -470,9 +470,6 @@ void gui_compositor_render() {
   while (curr) {
     if (curr->active) {
       // --- РЕНДЕРИНГ РАМКИ ОКНА (План 1.5) ---
-      if (curr == term_win && terminal_get_blur()) {
-                apply_blur(curr->x, curr->y, curr->w, curr->h);
-            }
 
       // Темная внешняя обводка (1 пиксель)
       draw_rect(curr->x - 1, curr->y - 26, curr->w + 2, curr->h + 27, 0x1A1A1A);
