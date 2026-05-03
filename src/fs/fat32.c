@@ -1,16 +1,124 @@
 #include "fat32.h"
+#include "vfs.h"
 #include "../drivers/disk/ata.h"
 #include "../system/memory.h"
 #include "../libc/string.h"
 #include "../drivers/vga/vesa.h"
+
 extern void term_print(const char* str);
 
+static vfs_dirent_t fat_shared_dirent;
 static uint8_t fat_cache[512] __attribute__((aligned(16)));
 static uint32_t cached_fat_sector = 0xFFFFFFFF;
 static uint32_t part_lba = 0;
 static fat32_bpb_t* bpb = NULL;
 static uint32_t first_data_sector;
 static uint32_t fat_start_sector;
+static bool fat32_ready = false;
+
+uint32_t fat32_vfs_read(vfs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
+    if (!fat32_ready) return 0;
+    
+    uint32_t fsize, fcluster;
+    if (!fat32_find_file_info(node->name, &fsize, &fcluster)) return 0;
+    
+    if (offset >= fsize) return 0;
+    if (offset + size > fsize) size = fsize - offset;
+    
+    uint32_t cluster_size = bpb->sectors_per_cluster * 512;
+    uint32_t clusters_to_skip = offset / cluster_size;
+    uint32_t internal_offset = offset % cluster_size;
+    
+    uint32_t curr = fcluster;
+    for (uint32_t i = 0; i < clusters_to_skip; i++) {
+        curr = fat32_get_next_cluster(curr);
+        if (curr < 2 || curr >= 0x0FFFFFF8) return 0;
+    }
+    
+    uint8_t* cbuf = kmalloc(cluster_size);
+    uint32_t read = 0;
+    while (read < size) {
+        uint32_t lba = first_data_sector + (curr - 2) * bpb->sectors_per_cluster;
+        read_sectors_ata_pio((uintptr_t)cbuf, lba, bpb->sectors_per_cluster);
+        
+        uint32_t to_copy = cluster_size - internal_offset;
+        if (to_copy > size - read) to_copy = size - read;
+        
+        memcpy(buffer + read, cbuf + internal_offset, to_copy);
+        read += to_copy;
+        internal_offset = 0; 
+        
+        if (read < size) {
+            curr = fat32_get_next_cluster(curr);
+            if (curr < 2 || curr >= 0x0FFFFFF8) break;
+        }
+    }
+    kfree(cbuf);
+    return read;
+}
+
+uint32_t fat32_vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
+    if (!fat32_ready) return 0;
+    // Bridging to existing save_file (which handles allocation/overwriting)
+    fat32_save_file(node->name, (char*)buffer, size);
+    return size;
+}
+
+struct vfs_dirent* fat32_vfs_readdir(vfs_node_t* node, uint32_t index) {
+    if (bpb->sectors_per_cluster == 0) return NULL;
+
+    uint8_t* buf = kmalloc(bpb->sectors_per_cluster * 512);
+    uint32_t cluster = bpb->root_cluster;
+    uint32_t current_idx = 0;
+
+    while (cluster >= 2 && cluster < 0x0FFFFFF8) {
+        uint32_t lba = first_data_sector + (cluster - 2) * bpb->sectors_per_cluster;
+        read_sectors_ata_pio((uintptr_t)buf, lba, bpb->sectors_per_cluster);
+
+        fat32_entry_t* entries = (fat32_entry_t*)buf;
+        for (int i = 0; i < (int)(bpb->sectors_per_cluster * 512 / 32); i++) {
+            if (entries[i].name[0] == 0x00) break;
+            if ((uint8_t)entries[i].name[0] == 0xE5) continue; 
+            if (entries[i].attr & 0x08) continue; // Volume Label
+
+            if (current_idx == index) {
+                // Format name
+                int p = 0;
+                for(int j=0; j<8; j++) {
+                    if(entries[i].name[j] != ' ') fat_shared_dirent.name[p++] = entries[i].name[j];
+                }
+                if (entries[i].name[8] != ' ') {
+                    fat_shared_dirent.name[p++] = '.';
+                    for(int j=8; j<11; j++) {
+                        if(entries[i].name[j] != ' ') fat_shared_dirent.name[p++] = entries[i].name[j];
+                    }
+                }
+                fat_shared_dirent.name[p] = '\0';
+                fat_shared_dirent.size = entries[i].file_size;
+                fat_shared_dirent.inode = (entries[i].cluster_high << 16) | entries[i].cluster_low;
+                
+                kfree(buf);
+                return &fat_shared_dirent;
+            }
+            current_idx++;
+        }
+        cluster = fat32_get_next_cluster(cluster);
+    }
+    kfree(buf);
+    return NULL;
+}
+
+vfs_node_t* fat32_get_root_node() {
+    if (!fat32_ready) return NULL;
+    vfs_node_t* node = kmalloc(sizeof(vfs_node_t));
+    memset(node, 0, sizeof(vfs_node_t));
+    strcpy(node->name, "FAT32_DISK");
+    node->flags = 0x01; // Directory
+    node->read = fat32_vfs_read;
+    node->readdir = fat32_vfs_readdir;
+    node->write = fat32_vfs_write;
+    return node;
+}
 
 void fat32_init() {
     ata_identify();
@@ -67,6 +175,7 @@ void fat32_init() {
     fat_start_sector = part_lba + bpb->reserved_sectors;
     first_data_sector = fat_start_sector + (bpb->fat_count * bpb->sectors_per_fat_32);
     
+    fat32_ready = true;
     kfree(sector_buf);
     term_print("FAT32: Mounted successfully!\n");
 }

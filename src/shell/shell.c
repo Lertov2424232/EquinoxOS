@@ -3,6 +3,7 @@
 #include "../libc/stdio.h"
 #include "../api.h" 
 #include "../fs/fat32.h"
+#include "../fs/vfs.h"
 #include "../gui/gui.h"
 #include "../system/task.h"
 #include "../system/memory.h"
@@ -49,7 +50,7 @@ void shell_handle_char(char c) {
             __asm__ volatile("ud2");
         }
         else if (strcmp(shell_buffer, "ls") == 0) {
-            fat32_list_files();
+            vfs_ls();
         }
         else if (strcmp(shell_buffer, "clear") == 0) {
             terminal_clear();
@@ -139,7 +140,7 @@ void shell_handle_char(char c) {
             } else {
                 char* filename = shell_buffer + 5;
                 uint32_t size = 0;
-                uint8_t* data = fat32_read_file(filename, &size);
+                uint8_t* data = vfs_read_file(filename, &size);
                 if (data) {
                     bmp_draw_to_window(term_win, data, 10, 50); 
                     kfree(data);

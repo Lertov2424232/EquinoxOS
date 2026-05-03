@@ -9,6 +9,7 @@ extern void term_print(const char* str);
 #include "../fs/fat32.h"
 #include "vmm.h"
 #include "../libc/stdio.h"
+#include "../fs/vfs.h"
 
 #define IA32_FS_BASE_MSR 0xC0000100
 #define IA32_GS_BASE_MSR 0xC0000101
@@ -155,10 +156,10 @@ bool task_exec(char* full_command) {
     }
 
     uint32_t elf_size = 0;
-    uint8_t* elf_raw = (uint8_t*)fat32_read_file(argv[0], &elf_size);
+    uint8_t* elf_raw = vfs_read_file(argv[0], &elf_size);
 
     if (!elf_raw) {
-        term_print("EXEC: File not found: ");
+        term_print("EXEC: File not found on any disk: ");
         term_print(argv[0]);
         term_print("\n");
         kfree(cmd_copy);
@@ -253,7 +254,7 @@ bool task_exec(char* full_command) {
     user_argv_array[argc] = 0; 
 
     term_print("EXEC: Starting Ring 3 process with arguments...\n");
-    
+
     task_create((void(*)())header->e_entry, (uint64_t)argc, user_argv_page, phys_pml4);
     
     // FS base will be set by the scheduler when it switches to this task

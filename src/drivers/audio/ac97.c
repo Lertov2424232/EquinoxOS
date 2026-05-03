@@ -83,6 +83,14 @@ void ac97_play_at_idx(int idx, void* phys_addr, uint32_t len) {
         outb(bar_nab + 0x1B, 0x01); 
     }
 }
+
+void ac97_set_rate(uint32_t rate) {
+    uint16_t ext_id = inw(bar_nam + 0x28);
+    if (ext_id & 1) {
+        outw(bar_nam + 0x2A, inw(bar_nam + 0x2A) | 1); // VRA On
+        outw(bar_nam + 0x2C, (uint16_t)rate);
+    }
+}
 void ac97_stop() {
     outb(bar_nab + 0x1B, 0x00); // Stop DMA
     outw(bar_nam + 0x02, 0x8000); // Mute
