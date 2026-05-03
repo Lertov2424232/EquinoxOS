@@ -22,5 +22,7 @@ char* strrchr(const char* s, int c);
 char* strdup(const char* s);
 
 void itoa_hex(uint64_t num, char* buffer);
+char* itoa(int num, char* buffer, int base);
+int rand(void);
 
 #endif

@@ -1,4 +1,6 @@
 #include "string.h"
+#include <stdint.h>
+#include <stddef.h>
 #include "../include/ctype.h"
 // sdk/lib/string.c // NOT A STRING INSIDE SRC OF THE SYSTEM
 

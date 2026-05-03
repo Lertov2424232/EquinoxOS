@@ -73,4 +73,6 @@ uint32_t fat32_get_first_data_sector();
 uint32_t fat32_get_sectors_per_cluster();
 bool fat32_find_file_info(const char* name, uint32_t* out_size, uint32_t* out_cluster);
 
+struct vfs_node* fat32_get_root_node(void);
+
 #endif
