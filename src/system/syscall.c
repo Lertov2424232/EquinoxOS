@@ -111,10 +111,27 @@ void syscall_handler(syscall_regs_t *regs) {
     regs->rax = target_virt;
     break;
   }
-  case 3: // SYS_WRITE_FILE (name: rdi, buf: rsi, size: rdx)
-    // fat32_save_file((const char *)regs->rdi, (const char *)regs->rsi,
-    //                 (uint32_t)regs->rdx);
+  case 3: { // SYS_WRITE_FILE (Теперь через VFS!)
+    const char *filename = (const char *)regs->rdi;
+    const uint8_t *data = (const uint8_t *)regs->rsi;
+    uint32_t size = (uint32_t)regs->rdx;
+
+    // Ищем устройство с поддержкой записи (первое попавшееся, обычно EXT2 или
+    // FAT32)
+    vfs_node_t *dev = vfs_root->next;
+    while (dev) {
+      if (dev->write) {
+        vfs_node_t file_node;
+        memset(&file_node, 0, sizeof(vfs_node_t));
+        strcpy(file_node.name, filename);
+        dev->write(&file_node, 0, size, (uint8_t *)data);
+        regs->rax = size;
+        break;
+      }
+      dev = dev->next;
+    }
     break;
+  }
   case 5: // SYS_DRAW_BUFFER
     sys_draw_app_buffer(regs->rdi, regs->rsi, regs->rdx, regs->rcx,
                         (uint32_t *)regs->r8);
@@ -122,17 +139,13 @@ void syscall_handler(syscall_regs_t *regs) {
   case 6:                  // SYS_GET_TIME
     regs->rax = tick * 10; // Возвращаем время в RAX
     break;
-  case 7: { // SYS_GET_MOUSE
+  case 7: { // SYS_GET_MOUSE_FULL
     extern int mouse_x, mouse_y;
-    extern bool mouse_left_button;
-
-    // Передаем данные через регистры обратно в приложение
-    if (regs->rdi == 0)
-      regs->rax = mouse_x;
-    else if (regs->rdi == 1)
-      regs->rax = mouse_y;
-    else if (regs->rdi == 2)
-      regs->rax = mouse_left_button ? 1 : 0;
+    extern bool mouse_left_button, mouse_right_button;
+    // RAX = X, RBX = Y, RCX = Кнопки (биты: 0-L, 1-R)
+    regs->rax = mouse_x;
+    regs->rbx = mouse_y;
+    regs->rcx = (mouse_left_button ? 1 : 0) | (mouse_right_button ? 2 : 0);
     break;
   }
   case 9: // SYS_GET_SCANCODE

@@ -115,7 +115,9 @@ uint32_t ext2_read(uint32_t inode_num, uint32_t offset, uint32_t size, uint8_t* 
 uint32_t ext2_write(uint32_t inode_num, uint32_t offset, uint32_t size, uint8_t* buffer);
 void ext2_overwrite(const char* name, const char* data, uint32_t size);
 void ext2_read_block(uint32_t block, uint8_t* buffer);
-void ext2_read_inode(uint32_t inode, ext2_inode_t* out_inode);
+void ext2_write_block(uint32_t block, uint8_t *buffer);
+void ext2_read_inode(
+    uint32_t inode, ext2_inode_t *out_inode);
 uint32_t ext2_get_inode_block(ext2_inode_t* inode, uint32_t block);
 
 struct vfs_node* ext2_get_root_node(void);

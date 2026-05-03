@@ -2,85 +2,118 @@
 #include <equos.h>
 #include <string.h>
 
-static void *system_font = NULL;
+// Структура шрифта PSF1 (встроена в ядро)
+typedef struct {
+  uint16_t magic;
+  uint8_t mode;
+  uint8_t charsize;
+} psf1_t;
 
-void eid_init() { system_font = get_system_font(); }
+static psf1_t *sys_font = NULL;
 
-static uint32_t _eid_hash(const char *str) {
-  uint32_t hash = 5381;
-  int c;
-  while ((c = *str++))
-    hash = ((hash << 5) + hash) + c;
-  return hash;
+void eid_init() { sys_font = (psf1_t *)_syscall(SYS_GET_FONT, 0, 0, 0, 0, 0); }
+
+// Хэш-функция Murmur-style для генерации ID
+uint32_t eid_get_id(const char *label, int x, int y) {
+  uint32_t h = 0x811c9dc5;
+  while (*label)
+    h = (h ^ (uint8_t)*label++) * 0x01000193;
+  h ^= (uint32_t)x;
+  h ^= (uint32_t)(y << 16);
+  return h;
 }
 
-void eid_begin(eid_context_t *ctx, uint32_t *buffer, int w, int h) {
+void eid_begin(eid_ctx_t *ctx, uint32_t *buffer, int w, int h) {
   ctx->fb = buffer;
   ctx->win_w = w;
   ctx->win_h = h;
 
-  // Читаем мышь через syscall 7
-  // ВАЖНО: Тут мы вычитаем координаты окна (допустим, оно всегда на 150,150)
-  // В будущем это должно приходить из оконного менеджера
-  ctx->mouse_x = (int)_syscall(7, 0, 0, 0, 0, 0) - 150;
-  ctx->mouse_y = (int)_syscall(7, 1, 0, 0, 0, 0) - 150;
-  ctx->mouse_down = (bool)_syscall(7, 2, 0, 0, 0, 0);
+  // Опрос мыши (Syscall 7)
+  // RAX=X, RBX=Y, RCX=Buttons
+  uint64_t mx, my, btns;
+  __asm__ volatile(
+      "mov $7, %%rax; int $0x80; mov %%rax, %0; mov %%rbx, %1; mov %%rcx, %2"
+      : "=r"(mx), "=r"(my), "=r"(btns)::"rax", "rbx", "rcx");
 
-  ctx->mouse_clicked =
-      (ctx->mouse_down && !ctx->mouse_clicked); // Упрощенный клик
-  ctx->hot_id = 0;
+  // Смещение окна (пока хардкод 150, потом можно передавать как аргументы)
+  ctx->mx = (int)mx - 150;
+  ctx->my = (int)my - 150;
+
+  bool was_down = ctx->m_down;
+  ctx->m_down = (btns & 1);
+  ctx->m_clicked = (ctx->m_down && !was_down);
+
+  // Получаем клавиатуру
+  ctx->last_key = (uint8_t)_syscall(SYS_GET_SCANCODE, 0, 0, 0, 0, 0);
+
+  ctx->hot_id = 0; // Сбрасываем "цель" в каждом кадре
 }
 
-void eid_end(eid_context_t *ctx) {
-  if (!ctx->mouse_down)
-    ctx->active_id = 0;
-  // Рисуем буфер приложения на экран (Syscall 5)
-  _syscall(5, 200, 200, ctx->win_w, ctx->win_h, (uintptr_t)ctx->fb);
+uint32_t eid_process_interaction(eid_ctx_t *ctx, uint32_t id, int x, int y,
+                                 int w, int h) {
+  uint32_t state = EID_STATE_NONE;
+
+  // Проверка попадания мыши
+  bool inside =
+      (ctx->mx >= x && ctx->mx <= x + w && ctx->my >= y && ctx->my <= y + h);
+
+  if (inside) {
+    ctx->hot_id = id;
+    state |= EID_STATE_HOVER;
+  }
+
+  // Логика Active (удержание)
+  if (ctx->active_id == id) {
+    if (ctx->m_down) {
+      state |= EID_STATE_ACTIVE;
+    } else {
+      // Если отпустили над виджетом — это клик
+      if (inside)
+        state |= EID_STATE_CLICKED;
+      ctx->active_id = 0;
+    }
+  } else {
+    if (ctx->hot_id == id && ctx->m_clicked) {
+      ctx->active_id = id;
+      ctx->focus_id = id; // Даем фокус при клике
+    }
+  }
+
+  if (ctx->focus_id == id)
+    state |= EID_STATE_FOCUSED;
+
+  return state;
 }
 
-void eid_draw_rect(uint32_t *buf, int win_w, int x, int y, int w, int h,
+// --- ПРИМИТИВЫ (БЕЗ ЦВЕТОВЫХ ОГРАНИЧЕНИЙ) ---
+
+void eid_draw_pixel(uint32_t *fb, int win_w, int x, int y, uint32_t color) {
+  if (x < 0 || y < 0 || x >= 1920 || y >= 1080)
+    return; // Защита границ
+  fb[y * win_w + x] = color;
+}
+
+void eid_draw_rect(uint32_t *fb, int win_w, int x, int y, int w, int h,
                    uint32_t color) {
   for (int i = y; i < y + h; i++) {
-    if (i < 0 || i >= 1080)
-      continue;
     for (int j = x; j < x + w; j++) {
-      if (j < 0 || j >= 1920)
-        continue;
-      buf[i * win_w + j] = color;
+      eid_draw_pixel(fb, win_w, j, i, color);
     }
   }
 }
 
-static void _eid_draw_rounded_rect(uint32_t *buf, int win_w, int x, int y,
-                                   int w, int h, uint32_t color) {
-  eid_draw_rect(buf, win_w, x + 1, y, w - 2, h, color);
-  eid_draw_rect(buf, win_w, x, y + 1, 1, h - 2, color);
-  eid_draw_rect(buf, win_w, x + w - 1, y + 1, 1, h - 2, color);
-}
-
-static void _eid_draw_rounded_border(uint32_t *buf, int win_w, int x, int y,
-                                     int w, int h, uint32_t color) {
-  eid_draw_rect(buf, win_w, x + 1, y, w - 2, 1, color);
-  eid_draw_rect(buf, win_w, x + 1, y + h - 1, w - 2, 1, color);
-  eid_draw_rect(buf, win_w, x, y + 1, 1, h - 2, color);
-  eid_draw_rect(buf, win_w, x + w - 1, y + 1, 1, h - 2, color);
-}
-
-void eid_draw_text(uint32_t *buf, int win_w, int x, int y, const char *text,
+void eid_draw_text(uint32_t *fb, int win_w, int x, int y, const char *text,
                    uint32_t color) {
-  if (!system_font)
+  if (!sys_font)
     return;
-  psf1_t *font = (psf1_t *)system_font;
+
   while (*text) {
-    uint8_t *glyph =
-        (uint8_t *)font + sizeof(psf1_t) + ((uint8_t)*text * font->charsize);
-    for (int cy = 0; cy < font->charsize; cy++) {
+    uint8_t *glyph = (uint8_t *)sys_font + sizeof(psf1_t) +
+                     ((uint8_t)*text * sys_font->charsize);
+    for (int cy = 0; cy < sys_font->charsize; cy++) {
       for (int cx = 0; cx < 8; cx++) {
         if ((*glyph >> (7 - cx)) & 1) {
-          int dx = x + cx;
-          int dy = y + cy;
-          if (dx >= 0 && dx < win_w && dy >= 0)
-            buf[dy * win_w + dx] = color;
+          eid_draw_pixel(fb, win_w, x + cx, y + cy, color);
         }
       }
       glyph++;
@@ -90,103 +123,32 @@ void eid_draw_text(uint32_t *buf, int win_w, int x, int y, const char *text,
   }
 }
 
-void eid_panel(uint32_t *buf, int win_w, int x, int y, int w, int h,
-               bool sunken) {
-  uint32_t bg_color = sunken ? EID_CLR_SURFACE_DP : EID_CLR_SURFACE;
-  _eid_draw_rounded_rect(buf, win_w, x, y, w, h, bg_color);
-  _eid_draw_rounded_border(buf, win_w, x, y, w, h, EID_CLR_BORDER);
-}
+void eid_draw_line(uint32_t *fb, int win_w, int x1, int y1, int x2, int y2,
+                   uint32_t color) {
+  int dx = (x2 - x1 < 0) ? -(x2 - x1) : (x2 - x1);
+  int dy = (y2 - y1 < 0) ? -(y2 - y1) : (y2 - y1);
+  int sx = (x1 < x2) ? 1 : -1;
+  int sy = (y1 < y2) ? 1 : -1;
+  int err = dx - dy;
 
-bool eid_button(eid_context_t *ctx, const char *label, int x, int y, int w,
-                int h) {
-  uint32_t id = _eid_hash(label);
-  bool result = false;
-
-  if (ctx->mouse_x >= x && ctx->mouse_x <= x + w && ctx->mouse_y >= y &&
-      ctx->mouse_y <= y + h) {
-    ctx->hot_id = id;
-    if (ctx->active_id == 0 && ctx->mouse_down)
-      ctx->active_id = id;
-  }
-
-  uint32_t color = EID_CLR_SURFACE;
-  if (ctx->hot_id == id) {
-    color = (ctx->active_id == id) ? EID_CLR_ACCENT : EID_CLR_BORDER;
-  }
-
-  _eid_draw_rounded_rect(ctx->fb, ctx->win_w, x, y, w, h, color);
-  _eid_draw_rounded_border(ctx->fb, ctx->win_w, x, y, w, h,
-                           (ctx->active_id == id) ? 0xFFFFFF : EID_CLR_BORDER);
-
-  int text_len = strlen(label);
-  int text_x = x + (w / 2) - (text_len * 4);
-  int text_y = y + (h / 2) - 8;
-  eid_draw_text(ctx->fb, ctx->win_w, text_x, text_y, label,
-                (ctx->active_id == id) ? EID_CLR_TEXT_DARK : EID_CLR_TEXT);
-
-  if (ctx->hot_id == id && !ctx->mouse_down && ctx->active_id == id)
-    result = true;
-  return result;
-}
-
-bool eid_window_begin(eid_context_t *ctx, const char *title, bool *open) {
-  _eid_draw_rounded_border(ctx->fb, ctx->win_w, 0, 0, ctx->win_w, ctx->win_h,
-                           EID_CLR_ACCENT);
-  _eid_draw_rounded_rect(ctx->fb, ctx->win_w, 1, 1, ctx->win_w - 2,
-                         ctx->win_h - 2, EID_CLR_BG);
-
-  eid_draw_rect(ctx->fb, ctx->win_w, 1, 1, ctx->win_w - 2, 28, EID_CLR_SURFACE);
-  eid_draw_rect(ctx->fb, ctx->win_w, 1, 28, ctx->win_w - 2, 1, EID_CLR_BORDER);
-  eid_draw_text(ctx->fb, ctx->win_w, 12, 6, title, EID_CLR_TEXT);
-
-  if (eid_button(ctx, "x", ctx->win_w - 22, 5, 18, 18)) {
-    if (open)
-      *open = false;
-    return true;
-  }
-  return false;
-}
-
-void eid_label(eid_context_t *ctx, const char *text, int x, int y,
-               uint32_t color) {
-  eid_draw_text(ctx->fb, ctx->win_w, x, y, text, color);
-}
-
-void eid_progressbar(uint32_t *buf, int win_w, int x, int y, int w, int h,
-                     int progress) {
-  if (progress < 0)
-    progress = 0;
-  if (progress > 100)
-    progress = 100;
-  _eid_draw_rounded_rect(buf, win_w, x, y, w, h, EID_CLR_SURFACE_DP);
-  _eid_draw_rounded_border(buf, win_w, x, y, w, h, EID_CLR_BORDER);
-  if (progress > 0) {
-    int fill_w = ((w - 2) * progress) / 100;
-    eid_draw_rect(buf, win_w, x + 1, y + 1, fill_w, h - 2, EID_CLR_ACCENT);
+  while (1) {
+    eid_draw_pixel(fb, win_w, x1, y1, color);
+    if (x1 == x2 && y1 == y2)
+      break;
+    int e2 = 2 * err;
+    if (e2 > -dy) {
+      err -= dy;
+      x1 += sx;
+    }
+    if (e2 < dx) {
+      err += dx;
+      y1 += sy;
+    }
   }
 }
 
-void eid_checkbox(uint32_t *buf, int win_w, int x, int y, const char *label,
-                  bool checked) {
-  _eid_draw_rounded_rect(buf, win_w, x, y, 16, 16, EID_CLR_SURFACE_DP);
-  _eid_draw_rounded_border(buf, win_w, x, y, 16, 16,
-                           checked ? EID_CLR_ACCENT : EID_CLR_BORDER);
-  if (checked)
-    eid_draw_rect(buf, win_w, x + 4, y + 4, 8, 8, EID_CLR_ACCENT);
-  eid_draw_text(buf, win_w, x + 24, y, label, EID_CLR_TEXT);
-}
-
-void eid_draw_panel(uint32_t *buf, int win_w, int x, int y, int w, int h,
-                    bool sunken) {
-  eid_panel(buf, win_w, x, y, w, h, sunken);
-}
-
-void eid_draw_window_frame(uint32_t *buf, int win_w, int w, int h,
-                           const char *title) {
-  // Рамка окна
-  _eid_draw_rounded_border(buf, win_w, 0, 0, w, h, EID_CLR_ACCENT);
-  // Заголовок
-  eid_draw_rect(buf, win_w, 1, 1, w - 2, 28, EID_CLR_SURFACE);
-  eid_draw_rect(buf, win_w, 1, 28, w - 2, 1, EID_CLR_BORDER);
-  eid_draw_text(buf, win_w, 12, 6, title, EID_CLR_TEXT);
+void eid_end(eid_ctx_t *ctx, int win_x, int win_y) {
+  // Просто отправляем буфер в ядро
+  _syscall(SYS_DRAW_BUFFER, win_x, win_y, ctx->win_w, ctx->win_h,
+           (uint64_t)ctx->fb);
 }

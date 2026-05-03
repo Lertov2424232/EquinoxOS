@@ -89,8 +89,10 @@ vfs_node_t* ext2_get_root_node() {
     return node;
 }
 
-void ext2_read_block(uint32_t block, uint8_t* buffer) {
-    read_sectors_ata_pio((uintptr_t)buffer, block * (block_size / 512), block_size / 512);
+void ext2_read_block(uint32_t block, uint8_t *buffer) {
+  // ВАЖНО: Сначала буфер, потом LBA, потом количество секторов
+  read_sectors_ata_pio((uintptr_t)buffer, block * (block_size / 512),
+                       block_size / 512);
 }
 
 void ext2_read_inode(uint32_t inode, ext2_inode_t* out_inode) {
@@ -213,7 +215,8 @@ uint32_t ext2_resolve_path(const char* path) {
 }
 
 void ext2_write_block(uint32_t block, uint8_t* buffer) {
-    write_sectors_ata_pio(block * (block_size / 512), block_size / 512, (uint16_t*)buffer);
+    // ВАЖНО: Сначала адрес буфера, потом LBA, потом количество
+    write_sectors_ata_pio((uintptr_t)buffer, block * (block_size / 512), block_size / 512);
 }
 
 void ext2_write_inode(uint32_t inode, ext2_inode_t* in_inode) {
@@ -236,10 +239,15 @@ void ext2_write_inode(uint32_t inode, ext2_inode_t* in_inode) {
 }
 
 void ext2_save_bgd() {
-    uint32_t bgd_block = (block_size == 1024) ? 2 : 1;
-    uint32_t bgd_table_size = groups_count * sizeof(ext2_group_desc_t);
-    uint32_t sectors_to_write = (bgd_table_size + 511) / 512;
-    write_sectors_ata_pio(bgd_block * (block_size / 512), sectors_to_write, (uint16_t*)bgd_table);
+  uint32_t bgd_block = (block_size == 1024) ? 2 : 1;
+  uint32_t bgd_table_size = groups_count * sizeof(ext2_group_desc_t);
+  uint32_t sectors_to_write = (bgd_table_size + 511) / 512;
+
+  // БЫЛО: write_sectors_ata_pio(LBA, Count, Buffer)
+  // СТАЛО: write_sectors_ata_pio(Buffer, LBA, Count)
+  write_sectors_ata_pio((uintptr_t)bgd_table,
+                        (uint64_t)bgd_block * (block_size / 512),
+                        sectors_to_write);
 }
 
 void ext2_add_entry(uint32_t dir_inode_num, uint32_t file_inode, const char* name, uint8_t type) {
