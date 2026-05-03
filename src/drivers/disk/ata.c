@@ -105,33 +105,38 @@ void read_sectors_ata_pio(uintptr_t target_address, uint64_t LBA, uint32_t secto
     }
 }
 
-void write_sectors_ata_pio(uint64_t LBA, uint32_t sector_count, uint16_t* buffer) {
-    uint16_t* ptr = buffer;
+// src/drivers/disk/ata.c
+void write_sectors_ata_pio(uintptr_t source_address, uint64_t LBA,
+                           uint32_t sector_count) {
+  uint16_t *ptr =
+      (uint16_t *)source_address; // Кастим адрес к указателю на слова
 
-    while (sector_count > 0) {
-        uint8_t chunk = (sector_count > 255) ? 255 : (uint8_t)sector_count;
+  while (sector_count > 0) {
+    uint8_t chunk = (sector_count > 255) ? 255 : (uint8_t)sector_count;
 
-        if (!ata_wait_bsy()) return;
-        outb(ATA_PRIMARY_DRIVE_SEL, 0xE0 | ((LBA >> 24) & 0x0F));
-        ata_400ns_delay();
-        outb(ATA_PRIMARY_SECCOUNT, chunk);
-        outb(ATA_PRIMARY_LBA_LOW,  (uint8_t)LBA);
-        outb(ATA_PRIMARY_LBA_MID,  (uint8_t)(LBA >> 8));
-        outb(ATA_PRIMARY_LBA_HIGH, (uint8_t)(LBA >> 16));
-        outb(ATA_PRIMARY_COMMAND,  0x30); // Write
+    if (!ata_wait_bsy())
+      return;
+    outb(ATA_PRIMARY_DRIVE_SEL, 0xE0 | ((LBA >> 24) & 0x0F));
+    ata_400ns_delay();
+    outb(ATA_PRIMARY_SECCOUNT, chunk);
+    outb(ATA_PRIMARY_LBA_LOW, (uint8_t)LBA);
+    outb(ATA_PRIMARY_LBA_MID, (uint8_t)(LBA >> 8));
+    outb(ATA_PRIMARY_LBA_HIGH, (uint8_t)(LBA >> 16));
+    outb(ATA_PRIMARY_COMMAND, 0x30); // Command: Write sectors
 
-        for (int j = 0; j < chunk; j++) {
-            if (!ata_wait_bsy() || !ata_wait_drq()) return;
-            for (int i = 0; i < 256; i++) {
-                outw(ATA_PRIMARY_DATA, ptr[i]);
-            }
-            ptr += 256;
-        }
-        
-        outb(ATA_PRIMARY_COMMAND, 0xE7); // Cache Flush после каждой пачки
-        ata_wait_bsy();
-
-        sector_count -= chunk;
-        LBA += chunk;
+    for (int j = 0; j < chunk; j++) {
+      if (!ata_wait_bsy() || !ata_wait_drq())
+        return;
+      for (int i = 0; i < 256; i++) {
+        outw(ATA_PRIMARY_DATA, ptr[i]);
+      }
+      ptr += 256;
     }
+
+    outb(ATA_PRIMARY_COMMAND, 0xE7); // Cache Flush
+    ata_wait_bsy();
+
+    sector_count -= chunk;
+    LBA += chunk;
+  }
 }

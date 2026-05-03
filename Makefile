@@ -26,9 +26,9 @@ OBJ = $(OBJ_DIR)/kernel.o $(OBJ_DIR)/io.o $(OBJ_DIR)/keyboard.o $(OBJ_DIR)/rtl81
       $(OBJ_DIR)/gdt_flush.o $(OBJ_DIR)/idt.o $(OBJ_DIR)/stdio.o $(OBJ_DIR)/pci.o $(OBJ_DIR)/pmm.o $(OBJ_DIR)/shell.o $(OBJ_DIR)/eqstart.o \
       $(OBJ_DIR)/pic.o $(OBJ_DIR)/interrupt.o $(OBJ_DIR)/timer.o $(OBJ_DIR)/ata.o $(OBJ_DIR)/bmp.o $(OBJ_DIR)/task.o $(OBJ_DIR)/fat32.o $(OBJ_DIR)/serial.o \
       $(OBJ_DIR)/memory.o $(OBJ_DIR)/fs.o $(OBJ_DIR)/vesa.o $(OBJ_DIR)/mouse.o $(OBJ_DIR)/string.o $(OBJ_DIR)/panic.o $(OBJ_DIR)/vmm.o $(OBJ_DIR)/gdt.o \
-      $(OBJ_DIR)/pcspeaker.o $(OBJ_DIR)/terminal.o 
+      $(OBJ_DIR)/pcspeaker.o $(OBJ_DIR)/terminal.o $(OBJ_DIR)/ext2.o $(OBJ_DIR)/ext2_tests.o
 
-all: setup kernel.elf compile_app
+all: setup kernel.elf compile_app create_hdd
 
 setup:
 	@if not exist $(OBJ_DIR) mkdir $(OBJ_DIR)
@@ -88,12 +88,7 @@ $(SDK_LIB_DIR)/%.o: $(SDK_LIB_DIR)/%.asm
 compile_app: $(SDK_OBJS)
 	$(CC) $(USER_CFLAGS) -c app/snake.c -o app/snake.o
 	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) app/snake.o -o $(ISO_ROOT)/snake.elf
-	$(CC) $(USER_CFLAGS) -c app/bmpview.c -o app/bmpview.o
-	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) app/bmpview.o -o $(ISO_ROOT)/bmpview.elf
-	$(CC) $(USER_CFLAGS) -c app/niplay.c -o app/niplay.o
-	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) app/niplay.o -o $(ISO_ROOT)/niplay.elf
-	$(CC) $(USER_CFLAGS) -c app/notepad.c -o app/notepad.o
-	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) app/notepad.o -o $(ISO_ROOT)/notepad.elf
+
 # --- ОЧИСТКА ---
 clean:
 	@if exist $(OBJ_DIR) rmdir /s /q $(OBJ_DIR)
@@ -106,7 +101,11 @@ clean:
 	@if exist app\niplay.o del /q app\niplay.o
 	@if exist app\bmpview.o del /q app\bmpview.o
 
-cleanrun: clean all copykernel compile_app iso run
+cleanrun: clean all copykernel compile_app create_hdd iso run
+
+create_hdd:
+	@echo --- Generating EXT2 hdd.img ---
+	python WINDOWS_ext2.py
 
 copykernel:
 	copy /Y kernel.elf $(ISO_ROOT)\kernel.elf
@@ -115,7 +114,7 @@ iso:
 	xorriso -as mkisofs -b limine-bios-cd.bin -no-emul-boot -boot-load-size 4 -boot-info-table --efi-boot limine-bios-cd.bin -efi-boot-part --efi-boot-image -o equos.iso $(ISO_ROOT)
 
 run:
-	qemu-system-x86_64 -m 512M -boot d -drive file=hdd.img,format=raw,index=0,media=disk -cdrom equos.iso -serial stdio -netdev user,id=n0,hostfwd=tcp::2222-:22 -device rtl8139,netdev=n0 -device ac97,audiodev=snd0 -audiodev pa,id=snd0 -d int,guest_errors,mmu -D qemu.log 
+	qemu-system-x86_64 -m 512M -boot d -drive file=hdd.img,format=raw,index=0,media=disk -cdrom equos.iso -serial stdio -netdev user,id=n0,hostfwd=tcp::2222-:22 -device rtl8139,netdev=n0 -device ac97,audiodev=snd0 -audiodev dsound,id=snd0 -d int,guest_errors,mmu -D qemu.log 
 
 DOOM_DIR = app/doom
 DOOM_SRCS = $(wildcard $(DOOM_DIR)/*.c)

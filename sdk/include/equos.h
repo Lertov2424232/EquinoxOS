@@ -3,20 +3,22 @@
 
 #include <stdint.h>
 
-#define SYS_PRINT         1
-#define SYS_READ_FILE     2
-#define SYS_WRITE_FILE    3
-#define SYS_DRAW_BUFFER   5
-#define SYS_GET_TIME      6
-#define SYS_GET_SCANCODE  9
-#define SYS_EXIT          10
-#define SYS_YIELD         11
-#define SYS_GET_FONT      12
-#define SYS_SLEEP      13
-#define SYS_AUDIO_PLAY    20
+#define SYS_PRINT 1
+#define SYS_READ_FILE 2
+#define SYS_WRITE_FILE 3
+#define SYS_DRAW_BUFFER 5
+#define SYS_GET_TIME 6
+#define SYS_GET_MOUSE_FULL 7
+#define SYS_GET_SCANCODE 9
+#define SYS_EXIT 10
+#define SYS_YIELD 11
+#define SYS_GET_FONT 12
+#define SYS_SLEEP 13
+#define SYS_MMAP 14
+#define SYS_BRK 15
+#define SYS_WRITE 16
+#define SYS_AUDIO_PLAY 20
 #define SYS_AUDIO_SET_RATE 21
-#define SYS_GET_MOUSE     7
-
 
 // Переименовали в _syscall и всегда принимаем 5 аргументов + номер
 static inline uint64_t _syscall(uint64_t num, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5) {
@@ -45,10 +47,6 @@ static inline void write_file(const char* name, void* buf, uint32_t size) {
     _syscall(SYS_WRITE_FILE, (uint64_t)name, (uint64_t)buf, size, 0, 0);
 }
 
-static inline void sys_yield() {
-    _syscall(SYS_YIELD, 0, 0, 0, 0, 0);
-}
-
 static inline void sys_sleep(uint32_t ms) {
     _syscall(SYS_SLEEP, ms, 0, 0, 0, 0);
 }
@@ -61,4 +59,9 @@ static inline void sys_audio_submit(void* buffer, uint32_t size) {
     _syscall(SYS_AUDIO_PLAY, (uint64_t)buffer, (uint64_t)size, 0, 0, 0);
 }
 
+static inline void sys_exit(int code) { _syscall(SYS_EXIT, code, 0, 0, 0, 0); }
+static inline void sys_yield() { _syscall(SYS_YIELD, 0, 0, 0, 0, 0); }
+static inline void *sys_get_font() {
+  return (void *)_syscall(SYS_GET_FONT, 0, 0, 0, 0, 0);
+}
 #endif
