@@ -96,9 +96,17 @@ void ext2_read_block(uint32_t block, uint8_t *buffer) {
 }
 
 void ext2_read_inode(uint32_t inode, ext2_inode_t* out_inode) {
-    if (!sb) return;
+    if (!sb || inode == 0) {
+        memset(out_inode, 0, sizeof(ext2_inode_t));
+        return;
+    }
 
     uint32_t group = (inode - 1) / sb->inodes_per_group;
+    if (group >= groups_count) {
+        memset(out_inode, 0, sizeof(ext2_inode_t));
+        return;
+    }
+
     uint32_t index = (inode - 1) % sb->inodes_per_group;
     
     uint32_t inode_table_block = bgd_table[group].inode_table;
@@ -125,6 +133,7 @@ uint32_t ext2_get_inode_block(ext2_inode_t* inode, uint32_t block) {
 
     // Indirect block
     if (block < p_per_block) {
+        if (inode->block[12] == 0) return 0;
         uint32_t* indirect = kmalloc(block_size);
         ext2_read_block(inode->block[12], (uint8_t*)indirect);
         uint32_t res = indirect[block];
@@ -135,10 +144,15 @@ uint32_t ext2_get_inode_block(ext2_inode_t* inode, uint32_t block) {
 
     // Doubly indirect block
     if (block < p_per_block * p_per_block) {
+        if (inode->block[13] == 0) return 0;
         uint32_t* doubly = kmalloc(block_size);
         ext2_read_block(inode->block[13], (uint8_t*)doubly);
         
         uint32_t indirect_idx = block / p_per_block;
+        if (doubly[indirect_idx] == 0) {
+            kfree(doubly);
+            return 0;
+        }
         uint32_t* indirect = kmalloc(block_size);
         ext2_read_block(doubly[indirect_idx], (uint8_t*)indirect);
         
@@ -167,14 +181,18 @@ uint32_t ext2_find_entry(ext2_inode_t* dir_inode, const char* name) {
         uint32_t offset = 0;
         
         while (offset < block_size) {
-            char entry_name[256];
-            memcpy(entry_name, (uint8_t*)entry + sizeof(ext2_dir_entry_t), entry->name_len);
-            entry_name[entry->name_len] = '\0';
-            
-            if (strcmp(entry_name, name) == 0) {
-                uint32_t ino = entry->inode;
-                kfree(buffer);
-                return ino;
+            if (entry->rec_len == 0) break;
+
+            if (entry->inode != 0 && entry->name_len < 255) {
+                char entry_name[256];
+                memcpy(entry_name, (uint8_t*)entry + sizeof(ext2_dir_entry_t), entry->name_len);
+                entry_name[entry->name_len] = '\0';
+
+                if (strcmp(entry_name, name) == 0) {
+                    uint32_t ino = entry->inode;
+                    kfree(buffer);
+                    return ino;
+                }
             }
             
             offset += entry->rec_len;
@@ -187,6 +205,9 @@ uint32_t ext2_find_entry(ext2_inode_t* dir_inode, const char* name) {
 }
 
 uint32_t ext2_resolve_path(const char* path) {
+    if (!sb || !path) return 0;
+    if (path[0] == '\0' || (path[0] == '/' && path[1] == '\0')) return 2;
+
     uint32_t current_inode_num = 2; // Start at root
     ext2_inode_t current_inode;
     
@@ -262,6 +283,7 @@ void ext2_add_entry(uint32_t dir_inode_num, uint32_t file_inode, const char* nam
 
     for (uint32_t i = 0; i < dir_inode.blocks; i++) {
         uint32_t b = ext2_get_inode_block(&dir_inode, i);
+        if (b == 0) break;
         ext2_read_block(b, buffer);
         
         ext2_dir_entry_t* entry = (ext2_dir_entry_t*)buffer;
@@ -383,6 +405,8 @@ void ext2_overwrite(const char* name, const char* data, uint32_t size) {
     
     if (ino == 0) {
         ino = ext2_allocate_inode();
+        if (ino == 0) return;
+
         ext2_inode_t new_inode;
         memset(&new_inode, 0, sizeof(ext2_inode_t));
         new_inode.mode = EXT2_S_IFREG | 0644;
@@ -392,6 +416,11 @@ void ext2_overwrite(const char* name, const char* data, uint32_t size) {
         
         ext2_add_entry(2, ino, name + 1, 1);
         ext2_save_bgd();
+    } else {
+        ext2_inode_t inode;
+        ext2_read_inode(ino, &inode);
+        inode.size = 0;
+        ext2_write_inode(ino, &inode);
     }
     
     ext2_write(ino, 0, size, (uint8_t*)data);
@@ -399,6 +428,8 @@ void ext2_overwrite(const char* name, const char* data, uint32_t size) {
 
 uint32_t ext2_vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
     if (!sb) return 0;
+    (void)offset;
+
     char path[130];
     path[0] = '/';
     strcpy(path + 1, node->name);
@@ -417,17 +448,10 @@ uint32_t ext2_allocate_block() {
                     for (int bit = 0; bit < 8; bit++) {
                         if (!(bitmap[j] & (1 << bit))) {
                             bitmap[j] |= (1 << bit);
-                            // Write back modified bitmap
-                            uint8_t* sector_buf = kmalloc(512);
-                            uint32_t bitmap_sector = bgd_table[i].block_bitmap * (block_size / 512) + (j / 512);
-                            read_sectors_ata_pio((uintptr_t)sector_buf, bitmap_sector, 1);
-                            sector_buf[j % 512] = bitmap[j];
-                            write_sectors_ata_pio(bitmap_sector, 1, (uint16_t*)sector_buf);
-                            kfree(sector_buf);
-                            
-                            // Update group descriptor
+                            ext2_write_block(bgd_table[i].block_bitmap, bitmap);
                             bgd_table[i].free_blocks_count--;
-                            // TODO: Write back group descriptor table
+                            if (sb->free_blocks_count > 0) sb->free_blocks_count--;
+                            ext2_save_bgd();
                             
                             kfree(bitmap);
                             return i * sb->blocks_per_group + (j * 8 + bit) + sb->first_data_block;
@@ -452,10 +476,11 @@ uint32_t ext2_allocate_inode() {
                     for (int bit = 0; bit < 8; bit++) {
                         if (!(bitmap[j] & (1 << bit))) {
                             bitmap[j] |= (1 << bit);
-                            // Write back bitmap (simplified)
-                            // ... same logic as block bitmap ...
-                            
+                            ext2_write_block(bgd_table[i].inode_bitmap, bitmap);
                             bgd_table[i].free_inodes_count--;
+                            if (sb->free_inodes_count > 0) sb->free_inodes_count--;
+                            ext2_save_bgd();
+
                             kfree(bitmap);
                             return i * sb->inodes_per_group + (j * 8 + bit) + 1;
                         }
