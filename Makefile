@@ -88,11 +88,14 @@ $(SDK_LIB_DIR)/%.o: $(SDK_LIB_DIR)/%.asm
 compile_app: $(SDK_OBJS)
 	$(CC) $(USER_CFLAGS) -c app/snake.c -o app/snake.o
 	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) app/snake.o -o $(ISO_ROOT)/snake.elf
+	$(CC) $(USER_CFLAGS) -c app/htmlview.c -o app/htmlview.o
+	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) app/htmlview.o -o $(ISO_ROOT)/htmlview.elf
 
 # --- ОЧИСТКА ---
 clean:
 	@if exist $(OBJ_DIR) rmdir /s /q $(OBJ_DIR)
 	@if exist app\snake.o del /q app\snake.o
+	@if exist app\htmlview.o del /q app\htmlview.o
 	@if exist sdk\lib\*.o del /q sdk\lib\*.o
 	@if exist kernel.elf del /q kernel.elf
 	@if exist iso_root\app.elf del /q iso_root\app.elf
