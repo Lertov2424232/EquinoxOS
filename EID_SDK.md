@@ -1,110 +1,113 @@
 ***
 
-# eid - Equinox Interface Designer & SDK Documentation
+# EquinoxOS SDK & EID v2.0 Documentation
 
-This document describes the architecture and usage of the EquinoxOS Software Development Kit (SDK) and its built-in UI toolkit, EID.
+## 1. System Architecture
+EquinoxOS follows a strict **User-Kernel Separation** model. Applications are compiled as **ELF64** binaries, linked to a base address of `0x1000000`. 
 
-## Overview
-EquinoxOS uses a **User-Kernel Separation** model. Applications run in their own memory space and communicate with the kernel via an `int 0x80` interrupt bridge. The SDK provides the necessary headers and wrappers to make development efficient.
+### The System Call Bridge (`int 0x80`)
+All hardware and system interactions are performed via the `_syscall` wrapper.
+* **RAX**: Syscall Number
+* **RDI, RSI, RDX, RCX, R8**: Arguments 1-5
+* **Return**: Value is returned in `RAX`.
 
-### System Call Architecture
-All interactions with hardware (disk, screen, keyboard) are performed via system calls.
-* **Entry Point:** Applications start at `_start` (defined in `crt0.asm`), which calls `main()`.
-* **Registers:**
-    * `RAX`: Syscall Number
-    * `RDI`, `RSI`, `RDX`, `RCX`, `R8`: Arguments 1-5
-    * `RAX`: Return value
-
----
-
-## SDK System Calls Reference
-
-The SDK provides a low-level `_syscall` wrapper in `<equos.h>`.
-
-| Number | Name | Description | Arguments |
+### Core System Calls Reference
+| No. | Name | Description | Arguments |
 | :--- | :--- | :--- | :--- |
-| 1 | `SYS_PRINT` | Prints a string to the kernel terminal. | `rdi`: char* string |
-| 2 | `SYS_READ_FILE` | Reads a file from FAT32. | `rdi`: name, `rsi`: size_ptr |
-| 3 | `SYS_WRITE_FILE` | Saves/Updates a file on FAT32. | `rdi`: name, `rsi`: buf, `rdx`: size |
-| 5 | `SYS_DRAW_BUFFER` | Blits a local buffer to the window. | `rdi`: x, `rsi`: y, `rdx`: w, `rcx`: h, `r8`: buf |
-| 6 | `SYS_GET_TIME` | Returns system ticks (1 tick = 10ms). | - |
-| 9 | `SYS_GET_SCANCODE` | Pops a scancode from the input buffer. | - |
-| 10 | `SYS_EXIT` | Terminates the current process. | - |
-| 11 | `SYS_YIELD` | Relinquishes CPU to other tasks. | - |
-| 12 | `SYS_GET_FONT` | Returns the kernel-space PSF font pointer. | - |
-
-### Syscall Usage Examples
-
-**Reading a file:**
-```c
-uint32_t size = 0;
-void* buffer = (void*)_syscall(SYS_READ_FILE, (uintptr_t)"LOGO.BMP", (uintptr_t)&size, 0, 0, 0);
-if (buffer) {
-    // Process data...
-}
-```
-
-**Exiting an application:**
-```c
-_syscall(SYS_EXIT, 0, 0, 0, 0, 0);
-```
+| 1 | `SYS_PRINT` | Output string to serial/terminal. | `rdi`: char* msg |
+| 2 | `SYS_READ_FILE` | Map file from VFS to User RAM. | `rdi`: name, `rsi`: size_out |
+| 3 | `SYS_WRITE_FILE` | Save data to VFS (EXT2/FAT32). | `rdi`: name, `rsi`: buf, `rdx`: size |
+| 5 | `SYS_DRAW_BUFFER` | Blit window buffer to Compositor. | `rdi/rsi`: x/y, `rdx/rcx`: w/h, `r8`: buf |
+| 7 | `SYS_GET_MOUSE` | Get mouse state from Kernel. | `RAX`: X, `RBX`: Y, `RCX`: Buttons |
+| 9 | `SYS_GET_SCANCODE` | Pop keyboard scancode. | - |
+| 10 | `SYS_EXIT` | Terminate process & reclaim RAM. | `rdi`: exit_code |
+| 12 | `SYS_GET_FONT` | Map system PSF font to User-space. | - |
+| 20 | `SYS_AUDIO_PLAY` | Submit PCM chunk to AC97. | `rdi`: buf, `rsi`: size |
 
 ---
 
-## eid - Equinox Interface Designer
+## 2. EID (Equinox Interface Designer)
+EID v2.0 is an **Immediate Mode GUI** toolkit. It does not store widget state in the library; instead, it provides logical interaction flags and drawing primitives, giving the developer total control over the visual style.
 
-EID is a "Buffer-First" UI toolkit. Instead of calling kernel functions for every pixel, the application maintains a local `uint32_t` pixel buffer. EID functions draw into this buffer in user-space, and then the buffer is sent to the kernel compositor once per frame.
+### The EID Context (`eid_ctx_t`)
+The context tracks the state of the mouse, active widgets, and keyboard focus during a single frame.
 
-### Core Concepts
-* **Design Language:** Modern Dark Flat (Tokyonight-inspired).
-* **Font Handling:** EID fetches the system PSF font from the kernel during `eid_init()` to ensure UI consistency.
-* **Coordinate System:** Relative to the application window.
+```c
+typedef struct {
+  uint32_t *fb;       // Target pixel buffer
+  int win_w, win_h;   // Buffer dimensions
+  int mx, my;         // Mouse X/Y (Relative to Window)
+  bool m_down;        // Left Mouse Button held
+  bool m_clicked;     // Left Mouse Button clicked this frame
+  uint32_t hot_id;    // ID of widget under mouse
+  uint32_t active_id; // ID of widget being held
+  uint32_t focus_id;  // ID of widget with keyboard focus
+} eid_ctx_t;
+```
 
-### Key Functions
+### Interaction Model
+Widgets are identified by a unique **ID** generated from their label and position.
+```c
+uint32_t id = eid_get_id("MyButton", x, y);
+uint32_t state = eid_process_interaction(&ctx, id, x, y, width, height);
 
-| Function | Description |
+if (state & EID_STATE_HOVER)   { /* Draw hover effect */ }
+if (state & EID_STATE_CLICKED) { /* Perform action */ }
+```
+
+### Drawing Primitives
+All drawing functions are **Safe**. They perform boundary checks against `win_w` and `win_h` to prevent memory corruption and Page Faults.
+
+| Function | Parameters |
 | :--- | :--- |
-| `eid_init()` | Connects to the kernel and maps the system font. |
-| `eid_draw_window_frame(...)` | Draws a complete window decoration (title, close btn). |
-| `eid_draw_button(...)` | Draws a button with 4 states (Normal, Pressed, Hover, Disabled). |
-| `eid_draw_panel(...)` | Draws a surface/card (can be flat or sunken). |
-| `eid_draw_text(...)` | Renders PSF text into the buffer. |
+| `eid_draw_pixel` | `fb, win_w, win_h, x, y, color` |
+| `eid_draw_rect` | `fb, win_w, win_h, x, y, w, h, color` |
+| `eid_draw_line` | `fb, win_w, win_h, x1, y1, x2, y2, color` |
+| `eid_draw_text` | `fb, win_w, win_h, x, y, text, color` |
 
-### Component Example: Main Menu
+---
+
+## 3. Practical Example: A Neon Button
+This example demonstrates how to create a custom-styled button using EID primitives and interaction logic.
+
 ```c
-#include <equos.h>
 #include <eid.h>
+#include <equos.h>
 
-static uint32_t win_buf[400 * 300];
+eid_ctx_t ui;
+uint32_t buffer[400 * 300];
 
-int main() {
-    eid_init();
+void my_app_render() {
+    eid_begin(&ui, buffer, 400, 300);
     
-    while(1) {
-        // 1. Render Window UI
-        eid_draw_window_frame(win_buf, 400, 300, "App Title");
-        
-        // 2. Draw a Button
-        eid_draw_button(win_buf, 400, 50, 50, 100, 30, "Click Me", EID_STATE_NORMAL);
-        
-        // 3. Draw a Checkbox
-        eid_draw_checkbox(win_buf, 400, 50, 100, "Enable Audio", true);
-        
-        // 4. Send buffer to Kernel Compositor
-        _syscall(SYS_DRAW_BUFFER, 0, 0, 400, 300, (uintptr_t)win_buf);
-        
-        // 5. Sleep to prevent CPU hogging
-        _syscall(SYS_YIELD, 0, 0, 0, 0, 0);
+    // Map Global Mouse to Window Space
+    ui.mx -= 200; // Assuming window is at X=200
+    ui.my -= 200; // Assuming window is at Y=200
+
+    // Logic for a Button
+    uint32_t id = eid_get_id("START", 50, 50);
+    uint32_t state = eid_process_interaction(&ui, id, 50, 50, 100, 40);
+
+    // Style Calculation
+    uint32_t color = (state & EID_STATE_HOVER) ? 0x00FFFF : 0x008888;
+    if (state & EID_STATE_ACTIVE) color = 0xFFFFFF;
+
+    // Drawing
+    eid_draw_rect(buffer, 400, 300, 50, 50, 100, 40, color);
+    eid_draw_text(buffer, 400, 300, 60, 62, "START", 0xFFFFFF);
+
+    if (state & EID_STATE_CLICKED) {
+        // Handle click event...
     }
+
+    eid_end(&ui, 200, 200);
 }
 ```
 
 ---
 
-## Technical Specifications
-* **Screen Buffer Format:** 32-bit ARGB (8-8-8-8).
-* **Font Engine:** PSF1 (PC Screen Font), 8x16 pixels.
-* **Linker Requirements:** Applications must be linked with `-Ttext=0x1000000` (User Base Address).
-* **Binary Format:** Executable and Linkable Format (ELF64).
-
-***
+## 4. Best Practices
+1. **Always use `exit(0)`**: Never let `main()` return. Always terminate via the syscall to ensure the kernel reclaims the process memory.
+2. **Coordinate Mapping**: Since EID v2.0 uses absolute mouse coordinates, always subtract your window's `X` and `Y` from `ui.mx` and `ui.my` after `eid_begin`.
+3. **Safety First**: Use the drawing primitives provided by EID rather than writing to the buffer directly to avoid Kernel Panics when drawing outside window bounds.
+4. **Yielding**: If your application is in a loop waiting for events, call `sys_yield()` to prevent consuming 100% of the CPU.

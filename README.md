@@ -31,9 +31,9 @@ graph TD
     end
 
     subgraph VFS_Layer
-        VFS[Virtual File System] --> FAT32[FAT32 Driver]
+        VFS[Virtual File System] --> FAT32EXT[FAT32 & EXT2 Driver]
         VFS --> DevFS[Device Nodes]
-        FAT32 --> ATA[ATA / Disk Driver]
+        FAT32+EXT2 --> ATA[ATA / Disk Driver]
     end
 
     subgraph Graphics_Input
@@ -58,7 +58,7 @@ graph TD
 | **Memory** | PMM + Heap | ✅ | Physical page allocator and kernel heap (malloc/kfree). |
 | **Multitasking** | Preemptive | ✅ | Round-Robin scheduler. Context switching via IRQ0 timer. |
 | **Graphics** | VESA LFB | ✅ | Direct framebuffer access with hardware cursor and double buffering. |
-| **Storage** | FAT32 / ATA | ✅ | File Read/Write support. 8.3 filename compliance. |
+| **Storage** | FAT32 / ATA / EXT2 | ✅ | File Read/Write support. 8.3 filename compliance. |
 | **Network** | RTL8139 | 🛠 | Basic PCI driver, raw packet RX/TX (WIP). |
 
 ---
@@ -72,6 +72,7 @@ The OS comes with a graphical shell and a set of system utilities:
 3.  **Notepad:** Text editor with the ability to save (`NOTES.TXT`) to disk.
 4.  **Paint:** Graphics editor. **Killer feature:** Canvas export to a valid `.BMP` file on disk.
 5.  **System Monitor:** Real-time RAM usage monitoring.
+6.  +**HTML Viewer** and a music player (NiPlay) as external apps!
 
 ---
 
@@ -143,14 +144,26 @@ x86_64-elf-addr2line -e kernel.elf <RIP_ADDRESS>
 ~~4. Z view (Program behind other programs)~~
 ~~5. Context Switch + Keyboard ARE NOT HARDLOCKED~~
 ~~6. Better SDK~~
-~~7. Doom~~
-8. Run on real hardware
-~~9. ***SOUND***~~
-10. Port any new FS (EXT/EXT2/UFS/ZFS) [Porting EXT2 Right now]
-11. Make your OWN FS
-12. Port any SECOND FS (EXT/EXT2/UFS/ZFS)
-13. Make OS SERIOUS (Fix ANY of the stubs | Polishing)
-14. Port any language (AS USERSPACE) - C#, C++, Lua, Python
+~~7. *PHYSICAL OS*~~
+~~8. Doom~~
+9. Run on real hardware
+~~10. ***SOUND***~~
+11. ***USB***
+~~12. Port any new FS (EXT2)~~
+13. Make your OWN FS
+14. Port any SECOND FS (EXT3/EXT4/UFS/ZFS)
+15. Make OS SERIOUS (Fix ANY of the stubs | Polishing)
+16. Port any language (AS USERSPACE) - C#, C++, Lua, Python [Better to now implement HTML, JS, CSS (Because htmlview.elf)]
+16.1. If needed, write SOMETHING IN THE KERNEL on the language implemented (Like UI on lua)
+17. Text browser (Maybe will be deleted soon bcs of htmlview.elf)
+18. HTTPS 
+19 - VERY…
+~~19.1 - Very better VESA | Maybe OWN graphical?~~
+~~19.2 - Very better Memory~~
+~~19.3 - Very better EID (Equinox Interface Designer)~~
+19.4. OS is INSTALLABLE/Archiveable so it’s able to separate
+19.5 - General separation. Kernel is separated from anything including GUI (except Drivers). 
+
 
 
 
@@ -161,7 +174,9 @@ x86_64-elf-addr2line -e kernel.elf <RIP_ADDRESS>
 * **@oxtiskz** — Special Thanks (Deleted account)
 * **@gobgolaxi** - Special thanks (Contributor)
 * **@Offihito** - Special thanks (Contributor)
+* **@Lertov2424232** - Special thanks (Contributor)
 
-<img width="1278" height="801" alt="image" src="https://github.com/user-attachments/assets/5c9ab047-cd60-42a9-904e-8b5c63db58eb" />
-<img width="464" height="581" alt="image" src="https://github.com/user-attachments/assets/52dd9b4d-a635-423a-b7bc-64052a4fc246" />
-<img width="455" height="565" alt="image" src="https://github.com/user-attachments/assets/9e21c077-ce9d-4bbc-8865-e1cd939073c6" />
+<img width="1278" height="805" alt="image" src="https://github.com/user-attachments/assets/8ed14d39-b20f-4268-b6cb-b40d0beda5df" />
+<img width="1283" height="802" alt="image" src="https://github.com/user-attachments/assets/bf378308-364d-41f6-80ac-3446b5ab0c3a" />
+<img width="1277" height="805" alt="image" src="https://github.com/user-attachments/assets/5b0c8d2d-14c2-42a8-b338-527108dcc8fc" />
+<img width="644" height="448" alt="image" src="https://github.com/user-attachments/assets/99d3e6b5-459b-4ccc-8976-516775a7bb1c" />

@@ -348,57 +348,78 @@ static void draw_text_line(int x, int y, const char *text, line_style_t style) {
       w = 24;
     if (w > CONTENT_W)
       w = CONTENT_W;
-    eid_draw_rect(fb, WIN_W, x - 4, y - 2, w, LINE_H, CLR_CODE_BG);
+    // ИЗМЕНЕНИЕ: Добавлен WIN_H
+    eid_draw_rect(fb, WIN_W, WIN_H, x - 4, y - 2, w, LINE_H, CLR_CODE_BG);
   }
 
-  eid_draw_text(fb, WIN_W, x, y, text, color_for_style(style));
+  // ИЗМЕНЕНИЕ: Добавлен WIN_H
+  eid_draw_text(fb, WIN_W, WIN_H, x, y, text, color_for_style(style));
+
   if (style == STYLE_H1)
-    eid_draw_line(fb, WIN_W, x, y + 17, x + 220, y + 17, 0x7EB9CC);
+    // ИЗМЕНЕНИЕ: Добавлен WIN_H
+    eid_draw_line(fb, WIN_W, WIN_H, x, y + 17, x + 220, y + 17, 0x7EB9CC);
+
   if (style == STYLE_LINK)
-    eid_draw_line(fb, WIN_W, x, y + 15, x + strlen(text) * 8, y + 15, CLR_LINK);
+    // ИЗМЕНЕНИЕ: Добавлен WIN_H
+    eid_draw_line(fb, WIN_W, WIN_H, x, y + 15, x + strlen(text) * 8, y + 15,
+                  CLR_LINK);
 }
 
 static void render(const char *filename) {
-  eid_draw_rect(fb, WIN_W, 0, 0, WIN_W, WIN_H, CLR_BG);
+  // 1. Очистка фона и отрисовка "шапки" (добавлен WIN_H)
+  eid_draw_rect(fb, WIN_W, WIN_H, 0, 0, WIN_W, WIN_H, CLR_BG);
+  eid_draw_rect(fb, WIN_W, WIN_H, 0, 0, WIN_W, 42, CLR_CHROME);
+  eid_draw_rect(fb, WIN_W, WIN_H, 0, 42, WIN_W, 1, CLR_BORDER);
 
-  eid_draw_rect(fb, WIN_W, 0, 0, WIN_W, 42, CLR_CHROME);
-  eid_draw_rect(fb, WIN_W, 0, 42, WIN_W, 1, CLR_BORDER);
-  eid_draw_text(fb, WIN_W, 14, 12, "Equinox HTML Viewer", 0xFFFFFF);
-  eid_draw_rect(fb, WIN_W, 210, 9, WIN_W - 230, 24, CLR_CHROME_2);
-  eid_draw_text(fb, WIN_W, 220, 15, filename, 0xDCE6EF);
+  eid_draw_text(fb, WIN_W, WIN_H, 14, 12, "Equinox HTML Viewer", 0xFFFFFF);
+  eid_draw_rect(fb, WIN_W, WIN_H, 210, 9, WIN_W - 230, 24, CLR_CHROME_2);
+  eid_draw_text(fb, WIN_W, WIN_H, 220, 15, filename, 0xDCE6EF);
 
-  eid_draw_text(fb, WIN_W, CONTENT_X, 48, page_title, CLR_MUTED);
+  eid_draw_text(fb, WIN_W, WIN_H, CONTENT_X, 48, page_title, CLR_MUTED);
 
-  int max_scroll = line_count - visible_lines();
+  // 2. Расчет скролла (объявляем переменную здесь, чтобы она была видна всей
+  // функции)
+  int v_lines = visible_lines();
+  int max_scroll = line_count - v_lines;
   if (max_scroll < 0)
     max_scroll = 0;
   if (scroll_line > max_scroll)
     scroll_line = max_scroll;
 
-  int y = CONTENT_Y;
-  for (int i = 0; i < visible_lines(); i++) {
-    int idx = scroll_line + i;
+  // 3. Цикл отрисовки текста
+  int cur_y = CONTENT_Y;
+  for (int i = 0; i < v_lines; i++) {
+    int idx = scroll_line + i; // Объявляем idx внутри цикла
     if (idx >= line_count)
       break;
 
-    int x = CONTENT_X + (lines[idx].indent ? 18 : 0);
-    draw_text_line(x, y, lines[idx].text, lines[idx].style);
-    y += LINE_H;
+    // Смещение для списков (indent)
+    int cur_x = CONTENT_X + (lines[idx].indent ? 18 : 0);
+
+    // Вызов отрисовки строки (убедись, что draw_text_line принимает нужные
+    // аргументы)
+    draw_text_line(cur_x, cur_y, lines[idx].text, lines[idx].style);
+    cur_y += LINE_H;
   }
 
-  eid_draw_rect(fb, WIN_W, WIN_W - 12, CONTENT_Y, 4, WIN_H - CONTENT_Y - 18,
-                0xD5DCE4);
-  if (line_count > visible_lines()) {
+  // 4. Отрисовка скроллбара (используем max_scroll, который объявили выше)
+  eid_draw_rect(fb, WIN_W, WIN_H, WIN_W - 12, CONTENT_Y, 4,
+                WIN_H - CONTENT_Y - 18, 0xD5DCE4);
+
+  if (line_count > v_lines) {
     int track_h = WIN_H - CONTENT_Y - 18;
-    int knob_h = (visible_lines() * track_h) / line_count;
+    int knob_h = (v_lines * track_h) / line_count;
     if (knob_h < 16)
       knob_h = 16;
-    int denom = max_scroll > 0 ? max_scroll : 1;
+
+    int denom = (max_scroll > 0) ? max_scroll : 1;
     int knob_y = CONTENT_Y + (scroll_line * (track_h - knob_h)) / denom;
-    eid_draw_rect(fb, WIN_W, WIN_W - 12, knob_y, 4, knob_h, CLR_LINK);
+
+    eid_draw_rect(fb, WIN_W, WIN_H, WIN_W - 12, knob_y, 4, knob_h, CLR_LINK);
   }
 
-  eid_draw_text(fb, WIN_W, CONTENT_X, WIN_H - 16,
+  // 5. Футер
+  eid_draw_text(fb, WIN_W, WIN_H, CONTENT_X, WIN_H - 16,
                 "Up/Down scroll  Esc close", CLR_MUTED);
 }
 
@@ -432,6 +453,8 @@ int main(int argc, char **argv) {
 
   while (1) {
     eid_begin(&ui, fb, WIN_W, WIN_H);
+    ui.mx -= 120; // 120 - это WIN_X из вызова eid_end
+    ui.my -= 90;
 
     uint8_t key = ui.last_key;
     int max_scroll = line_count - visible_lines();
