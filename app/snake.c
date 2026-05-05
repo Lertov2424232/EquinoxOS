@@ -9,6 +9,8 @@
 // --- Настройки игры ---
 #define WIN_W 400
 #define WIN_H 300
+#define WIN_X 200
+#define WIN_Y 200
 uint32_t fb[WIN_W * WIN_H];
 eid_ctx_t gui;
 #define GAME_W 40
@@ -111,58 +113,55 @@ void update_game() {
 
 // --- Отрисовка ---
 void render_game_scene() {
-  // ИЗМЕНЕНИЕ: Рисуем границу игрового поля (Neon Border)
-  eid_draw_line(screen_buffer, WIN_W, 0, 30, WIN_W, 30,
-                0x00FFFF); // Верхняя линия под тайтлбаром
+  // ИЗМЕНЕНИЕ: Добавлен WIN_H (3-й аргумент)
+  eid_draw_line(screen_buffer, WIN_W, WIN_H, 0, 30, WIN_W, 30, 0x00FFFF);
 
-  // 1. Рисуем яблоко (Маджента контур)
-  eid_draw_rect(screen_buffer, WIN_W, apple.x * 10, apple.y * 10 + 32, 8, 8,
-                0xFF00FF);
-  // Маленькая точка внутри для эффекта свечения
-  eid_draw_rect(screen_buffer, WIN_W, apple.x * 10 + 3, apple.y * 10 + 35, 2, 2,
-                0xFFFFFF);
+  // 1. Яблоко
+  eid_draw_rect(screen_buffer, WIN_W, WIN_H, apple.x * 10, apple.y * 10 + 32, 8,
+                8, 0xFF00FF);
+  eid_draw_rect(screen_buffer, WIN_W, WIN_H, apple.x * 10 + 3,
+                apple.y * 10 + 35, 2, 2, 0xFFFFFF);
 
-  // 2. Рисуем змею
+  // 2. Змея
   for (int i = 0; i < snake_len; i++) {
-    // ИЗМЕНЕНИЕ: Цвет - Cyan (Циан) для головы, тусклый для хвоста
     uint32_t color = (i == 0) ? 0x00FFFF : 0x008888;
     if (game_over)
       color = 0x444444;
 
-    // Вместо сплошного квадрата - рисуем полый с точкой
-    eid_draw_rect(screen_buffer, WIN_W, snake[i].x * 10, snake[i].y * 10 + 32,
-                  9, 9, color);
+    eid_draw_rect(screen_buffer, WIN_W, WIN_H, snake[i].x * 10,
+                  snake[i].y * 10 + 32, 9, 9, color);
     if (i == 0)
-      eid_draw_rect(screen_buffer, WIN_W, snake[i].x * 10 + 3,
+      eid_draw_rect(screen_buffer, WIN_W, WIN_H, snake[i].x * 10 + 3,
                     snake[i].y * 10 + 35, 3, 3, 0xFFFFFF);
   }
 
-  // 3. Плашка счета (Минимализм)
+  // 3. Счет
   char sbuf[32];
   sprintf(sbuf, "SYS.CORE // SC: %d  HI: %d", score, high_score);
-  eid_draw_text(screen_buffer, WIN_W, 10, 10, sbuf, 0x00FFFF);
+  eid_draw_text(screen_buffer, WIN_W, WIN_H, 10, 35, sbuf, 0x00FFFF);
 }
 // --- Main Loop ---
 
 void draw_neon_button(int x, int y, int w, int h, const char *label,
-                      uint32_t color) {
+                       uint32_t color) {
   uint32_t id = eid_get_id(label, x, y);
-  // Теперь это eid_ctx_t
   uint32_t state = eid_process_interaction(&eid, id, x, y, w, h);
 
-  // ИЗМЕНЕНИЕ: Используем наш локальный цвет S_CLR_GRAY
   uint32_t draw_color = (state & EID_STATE_HOVER) ? color : S_CLR_GRAY;
   if (state & EID_STATE_ACTIVE)
     draw_color = 0xFFFFFF;
 
-  eid_draw_line(screen_buffer, WIN_W, x, y, x + w, y, draw_color);
-  eid_draw_line(screen_buffer, WIN_W, x, y + h, x + w, y + h, draw_color);
-  eid_draw_line(screen_buffer, WIN_W, x, y, x, y + h, draw_color);
-  eid_draw_line(screen_buffer, WIN_W, x + w, y, x + w, y + h, draw_color);
+  // Везде добавляем WIN_H
+  eid_draw_line(screen_buffer, WIN_W, WIN_H, x, y, x + w, y, draw_color);
+  eid_draw_line(screen_buffer, WIN_W, WIN_H, x, y + h, x + w, y + h,
+                draw_color);
+  eid_draw_line(screen_buffer, WIN_W, WIN_H, x, y, x, y + h, draw_color);
+  eid_draw_line(screen_buffer, WIN_W, WIN_H, x + w, y, x + w, y + h,
+                draw_color);
 
   int tw = strlen(label) * 8;
-  eid_draw_text(screen_buffer, WIN_W, x + (w / 2) - (tw / 2), y + (h / 2) - 8,
-                label, draw_color);
+  eid_draw_text(screen_buffer, WIN_W, WIN_H, x + (w / 2) - (tw / 2),
+                y + (h / 2) - 8, label, draw_color);
 }
 
 // И в is_neon_clicked тоже меняем тип:
@@ -178,16 +177,15 @@ int main() {
 
   while (1) {
     eid_begin(&eid, screen_buffer, WIN_W, WIN_H);
+    eid.mx -= WIN_X; // Исправлено мапирование координат
+    eid.my -= WIN_Y;
 
-    // ИЗМЕНЕНИЕ: Используем наш локальный цвет фона
-    eid_draw_rect(screen_buffer, WIN_W, 0, 0, WIN_W, WIN_H, S_CLR_BG);
-
-    // ИЗМЕНЕНИЕ: Рисуем заголовок окна вручную (дизайн кодера!)
-    eid_draw_rect(screen_buffer, WIN_W, 0, 0, WIN_W, 25,
-                  0x111111); // Полоска сверху
-    eid_draw_line(screen_buffer, WIN_W, 0, 25, WIN_W, 25,
-                  S_CLR_CYAN); // Линия раздела
-    eid_draw_text(screen_buffer, WIN_W, 10, 5, "SNAKE.CORE v1.0", S_CLR_CYAN);
+    // Фон и заголовок
+    eid_draw_rect(screen_buffer, WIN_W, WIN_H, 0, 0, WIN_W, WIN_H, S_CLR_BG);
+    eid_draw_rect(screen_buffer, WIN_W, WIN_H, 0, 0, WIN_W, 25, 0x111111);
+    eid_draw_line(screen_buffer, WIN_W, WIN_H, 0, 25, WIN_W, 25, S_CLR_CYAN);
+    eid_draw_text(screen_buffer, WIN_W, WIN_H, 10, 5, "SNAKE.CORE v1.0",
+                  S_CLR_CYAN);
 
     // Кнопка закрытия "X" (тоже вручную)
     if (is_neon_clicked("X", WIN_W - 20, 5, 15, 15))
@@ -199,10 +197,10 @@ int main() {
     switch (current_state) {
     case STATE_MENU:
       // ИЗМЕНЕНИЕ: Логотип
-      eid_draw_text(screen_buffer, WIN_W, 110, 80, "S N A K E", 0x00FFFF);
-      eid_draw_line(screen_buffer, WIN_W, 110, 98, 185, 98, 0xFF00FF);
-
-      eid_draw_text(screen_buffer, WIN_W, 90, 110, "STAY IN THE LIGHT",
+      eid_draw_text(screen_buffer, WIN_W, WIN_H, 110, 80, "S N A K E",
+                    0x00FFFF);
+      eid_draw_line(screen_buffer, WIN_W, WIN_H, 110, 98, 185, 98, 0xFF00FF);
+      eid_draw_text(screen_buffer, WIN_W, WIN_H, 90, 110, "STAY IN THE LIGHT",
                     0x444444);
 
       // ИЗМЕНЕНИЕ: Использование кастомных кнопок
@@ -255,19 +253,14 @@ int main() {
 
     case STATE_GAMEOVER:
       render_game_scene();
-
-      // ИЗМЕНЕНИЕ: Вместо панели - просто текст и неоновые кнопки
-      eid_draw_rect(screen_buffer, WIN_W, 60, 100, 280, 110,
-                    0x000000); // Черная подложка
-      eid_draw_line(screen_buffer, WIN_W, 60, 100, 340, 100,
-                    0xFF0000); // Красная линия смерти
-
-      eid_draw_text(screen_buffer, WIN_W, 145, 115, "CONNECTION LOST",
+      eid_draw_rect(screen_buffer, WIN_W, WIN_H, 60, 100, 280, 110, 0x000000);
+      eid_draw_line(screen_buffer, WIN_W, WIN_H, 60, 100, 340, 100, 0xFF0000);
+      eid_draw_text(screen_buffer, WIN_W, WIN_H, 145, 115, "CONNECTION LOST",
                     0xFF0000);
 
       char fscore[32];
       sprintf(fscore, "UNITS: %d", score);
-      eid_draw_text(screen_buffer, WIN_W, 135, 140, fscore, 0x00FFFF);
+      eid_draw_text(screen_buffer, WIN_W, WIN_H, 135, 140, fscore, 0x00FFFF);
 
       draw_neon_button(100, 165, 200, 30, "RECONNECT", 0x00FFFF);
       if (is_neon_clicked("RECONNECT", 100, 165, 200, 30) || key == 0x1C) {
@@ -278,7 +271,7 @@ int main() {
     }
 
     // Вывод буфера на экран через системный вызов внутри eid_end
-    eid_end(&eid, 200, 200);
+    eid_end(&eid, WIN_X, WIN_Y);
 
     // Выход на ESC
     if (key == 0x01)

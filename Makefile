@@ -90,7 +90,8 @@ compile_app: $(SDK_OBJS)
 	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) app/snake.o -o $(ISO_ROOT)/snake.elf
 	$(CC) $(USER_CFLAGS) -c app/htmlview.c -o app/htmlview.o
 	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) app/htmlview.o -o $(ISO_ROOT)/htmlview.elf
-
+	$(CC) $(USER_CFLAGS) -c app/niplay.c -o app/niplay.o
+	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) app/niplay.o -o $(ISO_ROOT)/niplay.elf
 # --- ОЧИСТКА ---
 clean:
 	@if exist $(OBJ_DIR) rmdir /s /q $(OBJ_DIR)
@@ -103,6 +104,8 @@ clean:
 	@if exist packets.pcap del /q packets.pcap
 	@if exist app\niplay.o del /q app\niplay.o
 	@if exist app\bmpview.o del /q app\bmpview.o
+	@if exist app\htmlview.o del /q app\htmlview.o
+
 
 cleanrun: clean all copykernel compile_app create_hdd iso run
 

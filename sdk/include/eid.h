@@ -39,12 +39,12 @@ uint32_t eid_process_interaction(eid_ctx_t *ctx, uint32_t id, int x, int y,
                                  int w, int h);
 
 // ПРИМИТИВЫ ОТРИСОВКИ (Кодер использует их сам)
-void eid_draw_pixel(uint32_t *fb, int win_w, int x, int y, uint32_t color);
-void eid_draw_rect(uint32_t *fb, int win_w, int x, int y, int w, int h,
-                   uint32_t color);
-void eid_draw_text(uint32_t *fb, int win_w, int x, int y, const char *text,
-                   uint32_t color);
-void eid_draw_line(uint32_t *fb, int win_w, int x1, int y1, int x2, int y2,
-                   uint32_t color);
-
+void eid_draw_pixel(uint32_t *fb, int win_w, int win_h, int x, int y,
+                    uint32_t color);
+void eid_draw_rect(uint32_t *fb, int win_w, int win_h, int x, int y, int w,
+                   int h, uint32_t color);
+void eid_draw_text(uint32_t *fb, int win_w, int win_h, int x, int y,
+                   const char *text, uint32_t color);
+void eid_draw_line(uint32_t *fb, int win_w, int win_h, int x1, int y1, int x2,
+                   int y2, uint32_t color);
 #endif
