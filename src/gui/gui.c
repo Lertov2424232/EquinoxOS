@@ -56,6 +56,7 @@ void gui_init() {
 
   term_win = window_create(400, 100, 500, 300, "Equinox Terminal");
   term_win->active = true;
+  focused_window = term_win;
     
     // ПРИВЯЗЫВАЕМ ФУНКЦИЮ:
   term_win->on_draw = terminal_render; 
