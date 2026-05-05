@@ -1,0 +1,35 @@
+<!doctype html>
+<html>
+<head>
+  <title>EquinoxOS Local Web</title>
+</head>
+<body>
+  <h1>EquinoxOS Local Web</h1>
+  <p>
+    This page is rendered by htmlview.elf from the EXT2 disk image.
+    It is not a full browser yet, but it proves the first browser layer:
+    reading an HTML file, parsing common tags, wrapping text, and drawing
+    the result in a userspace window.
+  </p>
+
+  <h2>Supported in this viewer</h2>
+  <ul>
+    <li>Headings with h1, h2, and h3.</li>
+    <li>Paragraphs, line breaks, and simple wrapping.</li>
+    <li>Lists with li elements.</li>
+    <li>Links are highlighted as text.</li>
+    <li>Inline code blocks use a separate color.</li>
+  </ul>
+
+  <h2>Next target</h2>
+  <p>
+    The next step toward a real browser is an HTTP client. Once EquinoxOS
+    can fetch a plain http:// page over TCP, this renderer can become the
+    display layer for downloaded documents.
+  </p>
+
+  <p>
+    Try running: <code>run htmlview.elf index.html</code>
+  </p>
+</body>
+</html>

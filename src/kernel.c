@@ -559,6 +559,7 @@ void sys_draw_app_buffer(int x, int y, int w, int h, uint32_t *buffer) {
     if (!app_win->active) {
         app_win->active = true;
         window_bring_to_front(app_win);
+        focused_window = app_win;
     }
 
     // Копируем кадр целиком (теперь размеры точно совпадают)
