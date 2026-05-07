@@ -147,3 +147,33 @@ int rand(void) {
 void srand(unsigned int seed) {
     next = seed;
 }
+
+// Добавляем поддержку записи
+size_t fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream) {
+  if (!stream || !ptr)
+    return 0;
+
+  size_t total = size * nmemb;
+
+  // 1. Увеличиваем буфер в памяти, если пишем дальше конца
+  if (stream->pos + total > stream->size) {
+    size_t new_size = stream->pos + total;
+    uint8_t *new_buf = realloc(stream->buffer, new_size);
+    if (!new_buf)
+      return 0;
+    stream->buffer = new_buf;
+    stream->size = new_size;
+  }
+
+  // 2. Копируем данные в буфер
+  memcpy(stream->buffer + stream->pos, ptr, total);
+  stream->pos += total;
+
+  // 3. СИНХРОНИЗАЦИЯ С ДИСКОМ (SYS_WRITE_FILE = 3)
+  // Мы передаем имя файла (которое надо сохранить в структуре FILE)
+  // Для простоты пока считаем, что мы знаем имя или передаем его в FILE
+  // В идеале: _syscall(3, (uint64_t)stream->filename, (uint64_t)stream->buffer,
+  // stream->size, 0, 0);
+
+  return nmemb;
+}

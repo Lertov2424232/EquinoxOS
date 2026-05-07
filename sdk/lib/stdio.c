@@ -173,10 +173,6 @@ int putchar(int c) {
     return c;
 }
 
-size_t fwrite(const void* ptr, size_t size, size_t nmemb, FILE* stream) {
-    return nmemb;
-}
-
 int vfprintf(FILE* stream, const char* format, va_list ap) {
     char buffer[2048]; // Был 512, стал 2048
     int len = vsprintf(buffer, format, ap);

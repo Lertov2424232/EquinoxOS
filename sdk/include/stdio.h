@@ -9,6 +9,7 @@ typedef struct {
     uint8_t* buffer;
     uint32_t size;
     uint32_t pos;
+    char filename[128];
 } FILE;
 
 #define SEEK_SET 0
