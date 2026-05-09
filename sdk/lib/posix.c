@@ -187,3 +187,17 @@ static struct lconv static_lconv = {".", "", ""};
 
 char *setlocale(int category, const char *locale) { return "C"; }
 struct lconv *localeconv(void) { return &static_lconv; }
+
+time_t time(time_t *t) {
+  time_t res = (time_t)_syscall(6, 0, 0, 0, 0, 0); // Твой SYS_GET_TIME
+  if (t)
+    *t = res;
+  return res;
+}
+
+clock_t clock(void) { return (clock_t)time(NULL); }
+
+// Пока без пересчета в даты (просто заглушка структуры, чтобы скомплить)
+static struct tm _tm_tmp;
+struct tm *localtime(const time_t *t) { return &_tm_tmp; }
+struct tm *gmtime(const time_t *t) { return &_tm_tmp; }
