@@ -86,6 +86,9 @@
 #define LUA_USE_DLOPEN
 #endif
 
+#if !defined(LUA_USE_C89)
+#define LUA_USE_C89
+#endif
 
 #if defined(LUA_USE_C89) && defined(LUA_USE_POSIX)
 #error "POSIX is not compatible with C89"
@@ -146,11 +149,7 @@
 ** C89 ('long' and 'double'); Windows always has '__int64', so it does
 ** not need to use this case.
 */
-#if defined(LUA_USE_C89) && !defined(LUA_USE_WINDOWS)
-#define LUA_C89_NUMBERS		1
-#else
 #define LUA_C89_NUMBERS		0
-#endif
 
 
 #if defined(LUA_32BITS)	/* { */
