@@ -15,6 +15,11 @@ typedef struct {
 #define SEEK_SET 0
 #define SEEK_CUR 1
 #define SEEK_END 2
+#define BUFSIZ 1024
+#define EOF (-1)
+#define _IOFBF 0 // Full buffering (полная буферизация)
+#define _IOLBF 1 // Line buffering (построчная)
+#define _IONBF 2 // No buffering (без буферизации)
 
 extern FILE* stdin;
 extern FILE* stdout;
@@ -40,4 +45,13 @@ int fclose(FILE* stream);
 int fflush(FILE* stream);
 int remove(const char* path);
 int rename(const char* old_name, const char* new_name);
+
+int feof(FILE *stream);
+int ferror(FILE *stream);
+int getc(FILE *stream);
+FILE *freopen(const char *filename, const char *mode, FILE *stream);
+int setvbuf(FILE *stream, char *buf, int mode, size_t size);
+int fflush(FILE *stream);
+void clearerr(FILE *stream);
+
 #endif
