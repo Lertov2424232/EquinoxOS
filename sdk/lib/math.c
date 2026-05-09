@@ -1,5 +1,6 @@
 #include <errno.h>
 #include <math.h>
+#include <time.h>
 
 
 // --- Округление ---
@@ -94,3 +95,6 @@ double fmod(double x, double y) {
     return NAN;
   return __builtin_fmod(x, y);
 }
+
+// difftime считает разницу между временем
+double difftime(time_t t1, time_t t0) { return (double)(t1 - t0); }

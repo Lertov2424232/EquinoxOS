@@ -1,15 +1,17 @@
 // sdk/lib/posix.c
-#include <stdint.h>
 #include "../include/equos.h"
-#include <string.h>
-#include <sys/types.h>
+#include <ctype.h>
+#include <errno.h>
+#include <locale.h>
+#include <signal.h>
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <locale.h>
+#include <string.h>
+#include <sys/types.h>
 #include <time.h>
-#include <signal.h>
-#include <errno.h>
+
 
 int errno = 0;
 
@@ -71,7 +73,6 @@ int fclose(FILE* stream) { return 0; }
 
 
 int abs(int n) { return (n < 0) ? -n : n; }
-double fabs(double x) { return (x < 0) ? -x : x; }
 
 // Конвертация
 int atoi(const char* s) {
@@ -80,7 +81,28 @@ int atoi(const char* s) {
     return res;
 }
 
-double atof(const char* s) { return (double)atoi(s); } // Очень грубо
+double atof(const char *s) {
+  double res = 0.0;
+  double factor = 1.0;
+  int decimal_found = 0;
+
+  while (*s) {
+    if (*s >= '0' && *s <= '9') {
+      if (decimal_found) {
+        factor /= 10.0;
+        res = res + (*s - '0') * factor;
+      } else {
+        res = res * 10.0 + (*s - '0');
+      }
+    } else if (*s == '.') {
+      decimal_found = 1;
+    } else if (*s != ' ' && *s != '\t') {
+      break;
+    }
+    s++;
+  }
+  return res;
+}
 
 // Строки
 char* strdup(const char* s) {
@@ -287,3 +309,54 @@ char *tmpnam(char *s) {
   sprintf(target, "/tmp/eq_%d%d.tmp", (int)time(NULL), tmp_count++);
   return target;
 }
+
+void abort(void) { exit(1); }
+
+// getenv - Lua ищет пути к библиотекам. Возвращаем NULL (переменных нет).
+char *getenv(const char *name) { return NULL; }
+
+// fgets - построчное чтение
+char *fgets(char *s, int size, FILE *stream) {
+  int i = 0;
+  while (i < size - 1) {
+    int c = getc(stream);
+    if (c == EOF)
+      break;
+    s[i++] = (char)c;
+    if (c == '\n')
+      break;
+  }
+  if (i == 0)
+    return NULL;
+  s[i] = '\0';
+  return s;
+}
+
+// ungetc - возвращает символ в поток (нужно Lua для парсинга чисел)
+int ungetc(int c, FILE *stream) {
+  if (c == EOF || !stream || stream->pos == 0)
+    return EOF;
+  stream->pos--; // Просто сдвигаем указатель назад
+  return c;
+}
+
+// strtod - Самая сложная функция (строка в double).
+// Пока сделаем базовую версию, Lua её хватит.
+double strtod(const char *nptr, char **endptr) {
+  double res = atof(nptr);
+  if (endptr) {
+    // Упрощенно: двигаем указатель до конца числа
+    while (*nptr && (*nptr == '.' || isdigit(*nptr)))
+      nptr++;
+    *endptr = (char *)nptr;
+  }
+  return res;
+}
+
+// Пустые реализации для компиляции (т.к. у нас нет полноценных дат и временных
+// файлов)
+size_t strftime(char *s, size_t max, const char *format, const struct tm *tm) {
+  return 0;
+}
+time_t mktime(struct tm *tm) { return -1; }
+FILE *tmpfile(void) { return NULL; }

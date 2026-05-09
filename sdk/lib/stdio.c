@@ -179,5 +179,3 @@ int vfprintf(FILE* stream, const char* format, va_list ap) {
     _syscall(1, (uint64_t)buffer, 0, 0, 0, 0);
     return len;
 }
-
-int fflush(FILE* stream) { return 0; }

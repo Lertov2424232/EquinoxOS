@@ -228,3 +228,41 @@ int strncmp(const char* s1, const char* s2, size_t n) {
     }
     return 0;
 }
+
+void *memchr(const void *s, int c, size_t n) {
+  const unsigned char *p = (const unsigned char *)s;
+  while (n--) {
+    if (*p == (unsigned char)c)
+      return (void *)p;
+    p++;
+  }
+  return NULL;
+}
+
+size_t strspn(const char *s, const char *accept) {
+  const char *p, *a;
+  size_t count = 0;
+  for (p = s; *p != '\0'; ++p) {
+    for (a = accept; *a != '\0'; ++a) {
+      if (*p == *a)
+        break;
+    }
+    if (*a == '\0')
+      return count;
+    ++count;
+  }
+  return count;
+}
+
+char *strpbrk(const char *s, const char *accept) {
+  while (*s) {
+    if (strchr(accept, *s))
+      return (char *)s;
+    s++;
+  }
+  return NULL;
+}
+
+// strcoll используется для сравнения строк с учетом локали.
+// У нас локаль одна - "C", поэтому просто вызываем strcmp.
+int strcoll(const char *s1, const char *s2) { return strcmp(s1, s2); }
