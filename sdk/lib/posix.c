@@ -182,3 +182,8 @@ void (*signal(int sig, void (*func)(int)))(int) {
   return SIG_ERR; // Пока возвращаем ошибку, так как системы сигналов в ядре нет
 }
 int raise(int sig) { return -1; }
+
+static struct lconv static_lconv = {".", "", ""};
+
+char *setlocale(int category, const char *locale) { return "C"; }
+struct lconv *localeconv(void) { return &static_lconv; }
