@@ -9,6 +9,7 @@
 #include <locale.h>
 #include <time.h>
 #include <signal.h>
+#include <errno.h>
 
 int errno = 0;
 
@@ -204,3 +205,75 @@ clock_t clock(void) { return (clock_t)time(NULL); }
 static struct tm _tm_tmp;
 struct tm *localtime(const time_t *t) { return &_tm_tmp; }
 struct tm *gmtime(const time_t *t) { return &_tm_tmp; }
+
+char *strerror(int errnum) {
+  switch (errnum) {
+  case 0:
+    return "No error";
+  case ENOENT:
+    return "No such file or directory";
+  case EIO:
+    return "I/O error";
+  case ENOMEM:
+    return "Out of memory";
+  case EACCES:
+    return "Permission denied";
+  case EEXIST:
+    return "File exists";
+  case EINVAL:
+    return "Invalid argument";
+  default:
+    return "Unknown error";
+  }
+}
+
+int feof(FILE *stream) {
+  if (!stream)
+    return 1;
+  return (stream->pos >= stream->size);
+}
+
+int ferror(FILE *stream) {
+  return 0; // Пока у нас нет асинхронных ошибок ФС, всегда возвращаем 0
+}
+
+int getc(FILE *stream) {
+  unsigned char c;
+  if (fread(&c, 1, 1, stream) == 1) {
+    return (int)c;
+  }
+  return EOF;
+}
+
+FILE *freopen(const char *filename, const char *mode, FILE *stream) {
+  if (!stream)
+    return NULL;
+  fclose(stream);
+  return fopen(filename, mode);
+}
+
+int setvbuf(FILE *stream, char *buf, int mode, size_t size) {
+  if (!stream)
+    return -1;
+
+  // В Equos файлы уже в памяти, поэтому мы игнорируем запрос на смену буфера,
+  // но подтверждаем, что операция "прошла", если режим нам знаком.
+  if (mode == _IOFBF || mode == _IOLBF || mode == _IONBF) {
+    return 0; // Успех
+  }
+
+  return -1; // Некорректный режим
+}
+
+int fflush(FILE *stream) {
+  if (!stream)
+    return 0;
+  // Твоя текущая реализация fwrite сразу пишет в память,
+  // так что сбрасывать буфер некуда.
+  return 0;
+}
+
+void clearerr(FILE *stream) {
+  // У нас пока нет флагов ошибок в структуре FILE,
+  // так что просто "чистим" пустоту.
+}
