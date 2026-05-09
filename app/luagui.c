@@ -60,17 +60,33 @@ int main(int argc, char **argv) {
   lua_register(L, "draw_rect", l_draw_rect);
   lua_register(L, "button", l_button);
 
+  // 1. ЗАГРУЖАЕМ И ВЫПОЛНЯЕМ ФАЙЛ ТОЛЬКО ОДИН РАЗ
+  if (luaL_dofile(L, argv[1])) {
+    printf("Lua Error: %s\n", lua_tostring(L, -1));
+    return 1;
+  }
+
   while (1) {
     eid_begin(&ctx, fb, W, H);
     eid_draw_rect(fb, W, H, 0, 0, W, H, 0x1a1a1a); // Фон
 
-    // ВЫЗЫВАЕМ LUA СКРИПТ КАЖДЫЙ КАДР
-    if (luaL_dofile(L, argv[1])) {
-      printf("Lua Error: %s\n", lua_tostring(L, -1));
-      break;
+    // 2. ИЩЕМ ФУНКЦИЮ on_update И ВЫЗЫВАЕМ ЕЁ КАЖДЫЙ КАДР
+    lua_getglobal(L, "on_update");
+    if (lua_isfunction(L, -1)) {
+      if (lua_pcall(L, 0, 0, 0) != LUA_OK) { // 0 аргументов, 0 возвратов
+        printf("Lua Update Error: %s\n", lua_tostring(L, -1));
+        break;
+      }
+    } else {
+      lua_pop(L, 1); // Снимаем со стека, если функции нет
     }
 
+    // Отрисовка
+    bool open = true;
+    // Мы можем добавить рамку окна вокруг нашего Lua-интерфейса!
+    // Либо просто eid_end(&ctx, 100, 100);
     eid_end(&ctx, 100, 100);
+
     if (ctx.last_key == 0x01)
       break; // ESC
     sys_yield();
