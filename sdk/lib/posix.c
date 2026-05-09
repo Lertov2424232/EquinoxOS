@@ -277,3 +277,13 @@ void clearerr(FILE *stream) {
   // У нас пока нет флагов ошибок в структуре FILE,
   // так что просто "чистим" пустоту.
 }
+
+char *tmpnam(char *s) {
+  static char static_buf[L_tmpnam];
+  static int tmp_count = 0;
+  char *target = s ? s : static_buf;
+
+  // Генерируем имя на основе счетчика и времени
+  sprintf(target, "/tmp/eq_%d%d.tmp", (int)time(NULL), tmp_count++);
+  return target;
+}
