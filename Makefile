@@ -30,7 +30,8 @@ SDK_OBJS = $(SDK_LIB_DIR)/crt0.o \
            $(SDK_LIB_DIR)/string.o \
            $(SDK_LIB_DIR)/eid.o \
            $(SDK_LIB_DIR)/posix.o \
-           $(SDK_LIB_DIR)/malloc.o
+           $(SDK_LIB_DIR)/malloc.o \
+		   $(SDK_LIB_DIR)/math.o 
 
 # --- ОБЪЕКТЫ ЯДРА ---
 KERNEL_OBJS = $(OBJ_DIR)/kernel.o $(OBJ_DIR)/io.o $(OBJ_DIR)/keyboard.o $(OBJ_DIR)/rtl8139.o \
