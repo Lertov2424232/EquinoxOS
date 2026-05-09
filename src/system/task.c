@@ -47,67 +47,76 @@ void task_init() {
 }
 
 void task_create(void (*entry)(), uint64_t arg1, uint64_t arg2, uint64_t cr3) {
-    task_t* new_task = (task_t*)kmalloc(sizeof(task_t));
-    memset(new_task, 0, sizeof(task_t)); // ОБЯЗАТЕЛЬНО!
-    new_task->brk = 0x40000000;
-    new_task->id = next_pid++;
-    new_task->running = true;
-    new_task->cr3 = cr3;
-    new_task->fs_base = 0;
+  task_t *new_task = (task_t *)kmalloc(sizeof(task_t));
+  memset(new_task, 0, sizeof(task_t));
+  new_task->brk = 0x40000000;
+  new_task->id = next_pid++;
+  new_task->running = true;
+  new_task->cr3 = cr3;
 
-    void* kstack_phys = pmm_alloc_continuous(4); 
-    uint64_t kstack_virt = (uint64_t)kstack_phys + hhdm_offset;
-    memset((void*)kstack_virt, 0, 16384);
-    new_task->kstack_at_bottom = kstack_virt + 16384;
+  // 1. Ядерный стек (для прерываний)
+  void *kstack_phys = pmm_alloc_continuous(4);
+  new_task->kstack_at_bottom = (uint64_t)kstack_phys + hhdm_offset + 16384;
 
-    uint64_t user_stack_virt = 0x70000000000;
-    if (cr3 != 0) {
-        // Выделяем 512 страниц для стека (2 МБ)
-        int stack_pages = 512; 
-        void* ustack_phys = pmm_alloc_continuous(stack_pages);
-        
-        // Мапим ВСЕ страницы, которые выделили
-        for (int i = 0; i < stack_pages; i++) { 
-            vmm_map((page_table_t*)VIRT(cr3), 
-                    user_stack_virt + (i * 4096), 
-                    (uint64_t)ustack_phys + (i * 4096), 
-                    PTE_USER | PTE_WRITABLE | PTE_PRESENT);
-        }
-        memset((void*)VIRT(ustack_phys), 0, stack_pages * 4096);
+  stack_frame_t *frame =
+      (stack_frame_t *)(new_task->kstack_at_bottom - sizeof(stack_frame_t));
+  memset(frame, 0, sizeof(stack_frame_t));
 
-        uint64_t tls_virt = 0x60000000000;
-        void* tls_phys = pmm_alloc();
-        vmm_map((page_table_t*)VIRT(cr3), tls_virt, (uint64_t)tls_phys, 
-                PTE_USER | PTE_WRITABLE | PTE_PRESENT);
-        memset((void*)VIRT(tls_phys), 0, 4096);
-        
-        uint64_t* tcb = (uint64_t*)VIRT(tls_phys);
-        tcb[0] = tls_virt + 64;  
-        new_task->fs_base = tls_virt;
+  // 2. Пользовательский стек (8 МБ)
+  if (cr3 != 0) {
+    uint64_t stack_top = 0x70000000000; // Верхушка стека
+    uint64_t stack_pages = 2048;        // 8 МБ
+
+    // Мапим страницы ПО ОДНОЙ. Так мы не зависим от фрагментации RAM.
+    for (uint64_t i = 0; i < stack_pages; i++) {
+      // Мапим страницы ПЕРЕД stack_top (т.к. стек растет вниз)
+      uint64_t vaddr = stack_top - (stack_pages * 4096) + (i * 4096);
+      void *phys = pmm_alloc(); // Берем любую свободную страницу
+
+      if (!phys) {
+        term_print("TASK: KERNEL OUT OF RAM DURING STACK ALLOC!\n");
+        while (1)
+          ;
+      }
+
+      vmm_map((page_table_t *)VIRT(cr3), vaddr, (uint64_t)phys,
+              PTE_PRESENT | PTE_USER | PTE_WRITABLE);
+
+      // Обнуляем страницу (через HHDM), чтобы не было мусора
+      memset((void *)VIRT(phys), 0, 4096);
     }
 
-    stack_frame_t* frame = (stack_frame_t*)(new_task->kstack_at_bottom - sizeof(stack_frame_t));
-    memset(frame, 0, sizeof(stack_frame_t));
-    
-    frame->rip = (uint64_t)entry;
-    frame->rdi = arg1; 
-    frame->rsi = arg2;
-    frame->rflags = 0x202;
-    
-    if (cr3 == 0) {
-        frame->cs = 0x08; 
-        frame->ss = 0x10;
-        frame->rsp = (uint64_t)kmalloc(16000) + 16000; // Просто пример для ядерных задач
-    } else {
-        frame->cs = 0x23;
-        frame->ss = 0x1B;
-        // RSP должен быть выровнен по 16 байт для System V ABI
-        frame->rsp = (user_stack_virt + (512 * 4096)) - 16;
-    }
-    
-    new_task->rsp = (uint64_t)frame;
-    new_task->next = task_list->next;
-    task_list->next = new_task;
+    // TLS...
+    uint64_t tls_virt = 0x60000000000;
+    void *tls_phys = pmm_alloc();
+    vmm_map((page_table_t *)VIRT(cr3), tls_virt, (uint64_t)tls_phys,
+            PTE_USER | PTE_WRITABLE | PTE_PRESENT);
+    memset((void *)VIRT(tls_phys), 0, 4096);
+    ((uint64_t *)VIRT(tls_phys))[0] = tls_virt + 64;
+    new_task->fs_base = tls_virt;
+
+    // ВАЖНО: Выставляем RSP на самый верх выделенной области
+    frame->rsp = stack_top - 16;
+  }
+
+  // 3. Настройка фрейма
+  frame->rip = (uint64_t)entry;
+  frame->rdi = arg1;
+  frame->rsi = arg2;
+  frame->rflags = 0x202; // Прерывания включены
+
+  if (cr3 == 0) {
+    frame->cs = 0x08;
+    frame->ss = 0x10;
+    frame->rsp = (uint64_t)kmalloc(16384) + 16384;
+  } else {
+    frame->cs = 0x23;
+    frame->ss = 0x1B;
+  }
+
+  new_task->rsp = (uint64_t)frame;
+  new_task->next = task_list->next;
+  task_list->next = new_task;
 }
 
 // task.c
