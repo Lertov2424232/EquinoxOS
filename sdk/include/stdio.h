@@ -14,6 +14,7 @@ typedef struct {
 
 #define SEEK_SET 0
 #define SEEK_CUR 1
+#define L_tmpnam 32
 #define SEEK_END 2
 #define BUFSIZ 1024
 #define EOF (-1)
@@ -53,5 +54,7 @@ FILE *freopen(const char *filename, const char *mode, FILE *stream);
 int setvbuf(FILE *stream, char *buf, int mode, size_t size);
 int fflush(FILE *stream);
 void clearerr(FILE *stream);
+
+char *tmpnam(char *s);
 
 #endif
