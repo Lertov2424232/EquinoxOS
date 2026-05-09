@@ -24,7 +24,7 @@ longjmp:
     mov rbp, [rdi + 8]
     mov r12, [rdi + 16]
     mov r13, [rdi + 24]
-    mov r14, [rdi + 40]
+    mov r14, [rdi + 32]
     mov r15, [rdi + 40]
     mov rsp, [rdi + 48]
     mov rdx, [rdi + 56]     ; RIP

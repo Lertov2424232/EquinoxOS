@@ -248,9 +248,8 @@ void syscall_handler(syscall_regs_t *regs) {
     break;
   }
   case 15: { // SYS_BRK
-    if (current_task->brk == 0) {
+    if (current_task->brk == 0)
       current_task->brk = 0x40000000;
-    }
 
     uint64_t requested_brk = regs->rdi;
     if (requested_brk == 0) {
@@ -259,20 +258,20 @@ void syscall_handler(syscall_regs_t *regs) {
     }
 
     if (requested_brk > current_task->brk) {
-      // ИСПРАВЛЕНИЕ ВЕКА: Добавляем 4095 перед маскированием!
-      // Это гарантирует, что мы не перепишем уже замапленную страницу.
-      uint64_t start_page = (current_task->brk + 4095) & ~4095;
-      uint64_t end_page = (requested_brk + 4095) & ~4095;
+      // Округляем текущий brk вниз до страницы, а новый - вверх
+      uint64_t start_map = (current_task->brk + 4095) & ~4095;
+      uint64_t end_map = (requested_brk + 4095) & ~4095;
 
       uint64_t cr3_val;
       __asm__ volatile("mov %%cr3, %0" : "=r"(cr3_val));
       page_table_t *pml4 = (page_table_t *)VIRT(cr3_val);
 
-      for (uint64_t addr = start_page; addr < end_page; addr += 4096) {
+      for (uint64_t addr = start_map; addr < end_map; addr += 4096) {
         void *phys = pmm_alloc();
         if (phys) {
-          vmm_map(pml4, addr, (uint64_t)phys,
+          vmm_map(pml4, addr, (uintptr_t)phys,
                   PTE_PRESENT | PTE_USER | PTE_WRITABLE);
+          memset((void *)VIRT(phys), 0, 4096);
         }
       }
     }
