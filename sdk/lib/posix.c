@@ -177,3 +177,8 @@ size_t fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream) {
 
   return nmemb;
 }
+
+void (*signal(int sig, void (*func)(int)))(int) {
+  return SIG_ERR; // Пока возвращаем ошибку, так как системы сигналов в ядре нет
+}
+int raise(int sig) { return -1; }
