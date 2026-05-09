@@ -12,5 +12,7 @@ extern int errno;
 #define EISDIR  21  // Is a directory  <-- ДОБАВЬ ВОТ ЭТО
 #define EINVAL  22  // Invalid argument
 #define ENOSPC  28  // No space left on device
+#define EDOM 33     // Domain error (аргумент вне области определения)
+#define ERANGE 34
 
 #endif
