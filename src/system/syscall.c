@@ -6,6 +6,9 @@
 #include "../gui/gui.h"
 #include "../libc/stdio.h"
 #include "../libc/string.h"
+#include "../net/dns.h"
+#include "../net/net.h"
+#include "../net/tcp.h"
 #include "memory.h"
 #include "pmm.h"
 #include "task.h"
@@ -75,22 +78,24 @@ void syscall_handler(syscall_regs_t *regs) {
   case 2: { // SYS_READ_FILE (Now VFS-agnostic)
     const char *filename = (const char *)regs->rdi;
     uint32_t *out_size_ptr = (uint32_t *)regs->rsi;
-    
+
     uint32_t size = 0;
-    uint8_t* file_data = vfs_read_file(filename, &size);
-    
+    uint8_t *file_data = vfs_read_file(filename, &size);
+
     if (!file_data) {
       regs->rax = 0;
       break;
     }
-    
-    if (out_size_ptr) *out_size_ptr = size;
+
+    if (out_size_ptr)
+      *out_size_ptr = size;
 
     uint32_t pages_needed = (size + 4095) / 4096;
     static uint64_t next_file_vaddr = 0xA0000000;
     uint64_t target_virt = next_file_vaddr;
     next_file_vaddr += (pages_needed * 4096);
-    if (next_file_vaddr > 0xB0000000) next_file_vaddr = 0xA0000000;
+    if (next_file_vaddr > 0xB0000000)
+      next_file_vaddr = 0xA0000000;
 
     uint64_t cr3;
     __asm__ volatile("mov %%cr3, %0" : "=r"(cr3));
@@ -98,13 +103,14 @@ void syscall_handler(syscall_regs_t *regs) {
 
     // Map and copy
     for (uint32_t i = 0; i < pages_needed; i++) {
-        uint64_t v = target_virt + (i * 4096);
-        void* p = pmm_alloc();
-        memset((void*)VIRT(p), 0, 4096);
-        vmm_map(pml4, v, (uintptr_t)p, PTE_PRESENT | PTE_USER | PTE_WRITABLE);
-        
-        uint32_t to_copy = (size - (i * 4096) > 4096) ? 4096 : (size - (i * 4096));
-        memcpy((void*)v, file_data + (i * 4096), to_copy);
+      uint64_t v = target_virt + (i * 4096);
+      void *p = pmm_alloc();
+      memset((void *)VIRT(p), 0, 4096);
+      vmm_map(pml4, v, (uintptr_t)p, PTE_PRESENT | PTE_USER | PTE_WRITABLE);
+
+      uint32_t to_copy =
+          (size - (i * 4096) > 4096) ? 4096 : (size - (i * 4096));
+      memcpy((void *)v, file_data + (i * 4096), to_copy);
     }
 
     kfree(file_data);
@@ -391,6 +397,78 @@ void syscall_handler(syscall_regs_t *regs) {
     regs->rbx = screen_width;
     regs->rcx = screen_height;
     regs->rdx = screen_pitch;
+    break;
+  }
+  case 40: { // SYS_NET_DNS_RESOLVE
+    const char *hostname = (const char *)regs->rdi;
+    net_interface_t *iface = net_get_primary_interface();
+    if (!iface) {
+      regs->rax = 0;
+      break;
+    }
+
+    // Enable interrupts so network_thread can process packets
+    __asm__ volatile("sti");
+
+    dns_query(iface, hostname);
+
+    // Wait for resolution — interrupts MUST be on for network_thread
+    uint32_t timeout = 1000;
+    while (timeout > 0) {
+      uint32_t ip = dns_get_result(hostname);
+      if (ip != 0) {
+        __asm__ volatile("cli");
+        regs->rax = ip;
+        goto dns_done;
+      }
+      __asm__ volatile("hlt"); // sleep until next interrupt (timer)
+      timeout--;
+    }
+    __asm__ volatile("cli");
+    regs->rax = 0;
+  dns_done:
+    break;
+  }
+  case 41: { // SYS_NET_HTTP_GET
+    uint32_t ip = (uint32_t)regs->rdi;
+    net_interface_t *iface = net_get_primary_interface();
+    if (!iface) {
+      regs->rax = 0;
+      break;
+    }
+
+    extern uint8_t *http_response_buf;
+    extern uint32_t http_response_len;
+    extern bool http_finished;
+
+    http_finished = false;
+    if (http_response_buf) {
+      kfree(http_response_buf);
+      http_response_buf = NULL;
+    }
+    http_response_len = 0;
+
+    // Enable interrupts so network_thread can process TCP packets
+    __asm__ volatile("sti");
+
+    net_wget(iface, ip);
+
+    // Wait for finish — interrupts MUST be on for network_thread
+    uint32_t timeout = 2000;
+    while (timeout > 0 && !http_finished) {
+      __asm__ volatile("hlt"); // sleep until next interrupt (timer)
+      timeout--;
+    }
+
+    __asm__ volatile("cli");
+
+    if (http_finished && http_response_buf) {
+      regs->rax = copy_to_user(http_response_buf, http_response_len);
+      if (regs->rsi)
+        *(uint32_t *)regs->rsi = http_response_len;
+    } else {
+      regs->rax = 0;
+    }
     break;
   }
   default:
