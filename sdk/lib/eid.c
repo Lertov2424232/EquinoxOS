@@ -149,3 +149,24 @@ void eid_end(eid_ctx_t *ctx, int win_x, int win_y) {
   _syscall(SYS_DRAW_BUFFER, win_x, win_y, ctx->win_w, ctx->win_h,
            (uint64_t)ctx->fb);
 }
+
+void eid_draw_gradient_rect(uint32_t *fb, int win_w, int win_h, int x, int y,
+                            int w, int h, uint32_t col1, uint32_t col2,
+                            bool vertical) {
+  for (int i = 0; i < h; i++) {
+    float t = (float)i / (float)h;
+    // Линейная интерполяция цветов
+    uint8_t r = (uint8_t)((1.0f - t) * ((col1 >> 16) & 0xFF) +
+                          t * ((col2 >> 16) & 0xFF));
+    uint8_t g =
+        (uint8_t)((1.0f - t) * ((col1 >> 8) & 0xFF) + t * ((col2 >> 8) & 0xFF));
+    uint8_t b = (uint8_t)((1.0f - t) * (col1 & 0xFF) + t * (col2 & 0xFF));
+    uint32_t color = (r << 16) | (g << 8) | b;
+
+    if (vertical) {
+      eid_draw_rect(fb, win_w, win_h, x, y + i, w, 1, color);
+    } else {
+      // Для горизонтального градиента логика такая же, только по J
+    }
+  }
+}
