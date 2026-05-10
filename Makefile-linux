@@ -9,7 +9,7 @@ ISO_ROOT = iso_root
 
 # --- ФЛАГИ ЯДРА ---
 CFLAGS = -ffreestanding -O2 -Wall -Wextra -fno-exceptions -std=c11 \
-         -Isrc -Isrc/drivers -Isrc/shell -Isrc/boot/limine \
+         -Isrc -Isrc/drivers -Isrc/shell -Isrc/boot/limine -Isrc/net \
          -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 \
          -fno-stack-protector -fno-pic -g
 
@@ -22,7 +22,8 @@ USER_CFLAGS = -ffreestanding -mcmodel=small -mno-red-zone -fno-stack-protector -
 
 # Объекты SDK
 SDK_OBJS = $(SDK_LIB_DIR)/crt0.o $(SDK_LIB_DIR)/stdio.o $(SDK_LIB_DIR)/string.o \
-           $(SDK_LIB_DIR)/eid.o $(SDK_LIB_DIR)/posix.o $(SDK_LIB_DIR)/malloc.o
+           $(SDK_LIB_DIR)/eid.o $(SDK_LIB_DIR)/posix.o $(SDK_LIB_DIR)/malloc.o \
+           $(SDK_LIB_DIR)/math.o $(SDK_LIB_DIR)/font_ttf.o
 
 # Объекты Ядра
 OBJ = $(OBJ_DIR)/kernel.o $(OBJ_DIR)/io.o $(OBJ_DIR)/keyboard.o $(OBJ_DIR)/rtl8139.o \
@@ -33,7 +34,8 @@ OBJ = $(OBJ_DIR)/kernel.o $(OBJ_DIR)/io.o $(OBJ_DIR)/keyboard.o $(OBJ_DIR)/rtl81
       $(OBJ_DIR)/task.o $(OBJ_DIR)/fat32.o $(OBJ_DIR)/serial.o $(OBJ_DIR)/memory.o \
       $(OBJ_DIR)/fs.o $(OBJ_DIR)/vesa.o $(OBJ_DIR)/mouse.o $(OBJ_DIR)/string.o \
       $(OBJ_DIR)/panic.o $(OBJ_DIR)/vmm.o $(OBJ_DIR)/gdt.o $(OBJ_DIR)/pcspeaker.o \
-      $(OBJ_DIR)/terminal.o $(OBJ_DIR)/ext2.o $(OBJ_DIR)/ext2_tests.o
+      $(OBJ_DIR)/terminal.o $(OBJ_DIR)/ext2.o $(OBJ_DIR)/ext2_tests.o $(OBJ_DIR)/shm.o \
+      $(OBJ_DIR)/net.o $(OBJ_DIR)/arp.o $(OBJ_DIR)/ipv4.o $(OBJ_DIR)/udp.o $(OBJ_DIR)/tcp.o $(OBJ_DIR)/icmp.o $(OBJ_DIR)/dns.o
 
 all: setup kernel.elf compile_app create_hdd iso
 
@@ -50,6 +52,9 @@ $(OBJ_DIR)/%.o: src/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(OBJ_DIR)/%.o: src/system/%.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(OBJ_DIR)/%.o: src/net/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(OBJ_DIR)/%.o: src/drivers/audio/%.c

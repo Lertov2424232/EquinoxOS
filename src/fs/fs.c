@@ -16,7 +16,7 @@ void init_fs() {
     if (!zero_sector) return; // Защита от нехватки памяти
 
     memset(zero_sector, 0, 512); // Быстрая очистка нулями
-    write_sectors_ata_pio(FS_ROOT_DIR_LBA, 1, (uint16_t*)zero_sector);
+    write_sectors_ata_pio((uintptr_t)zero_sector, FS_ROOT_DIR_LBA, 1);
     
     kfree(zero_sector); // ИСПРАВЛЕНИЕ: Возвращаем память ОС!
     term_print("FS Initialized (Formatted).\n");
@@ -73,8 +73,8 @@ void create_file(char* name, char* content) {
             }
             
             // 3. Пишем на диск
-            write_sectors_ata_pio(dir[i].start_lba, 1, (uint16_t*)data);
-            write_sectors_ata_pio(FS_ROOT_DIR_LBA, 1, (uint16_t*)dir);
+            write_sectors_ata_pio((uintptr_t)data, dir[i].start_lba, 1);
+            write_sectors_ata_pio((uintptr_t)dir, FS_ROOT_DIR_LBA, 1);
             
             // 4. Очищаем за собой память
             kfree(data);
