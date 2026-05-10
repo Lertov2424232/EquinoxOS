@@ -1,51 +1,58 @@
 // src/system/shm.c
+#include "shm.h"
+#include "../libc/stdio.h"
 #include "../libc/string.h"
 #include "memory.h"
 #include "pmm.h"
+#include "task.h"
 #include "vmm.h"
 
 
-#define MAX_SHM_SEGMENTS 64
+#define MAX_SHM_SEGMENTS 128
+#define SHM_START_VADDR 0xD0000000000 // Высокий адрес в юзерспейсе для SHM
 
 typedef struct {
-  int key;
-  uint64_t phys_addr;
-  uint32_t pages;
-  int ref_count;
+  uint32_t key;       // Уникальный ID (например, PID процесса)
+  uint64_t phys_addr; // Начальный физический адрес
+  uint32_t page_count;
+  bool used;
 } shm_segment_t;
 
 static shm_segment_t shm_table[MAX_SHM_SEGMENTS];
 
-void shm_init() { memset(shm_table, 0, sizeof(shm_table)); }
+void shm_init() {
+  memset(shm_table, 0, sizeof(shm_table));
+  term_print("[SHM] Shared Memory Subsystem initialized.\n");
+}
 
-// Мапит общую память в текущее адресное пространство
-uint64_t sys_shm_get(int key, uint32_t size) {
-  uint32_t pages_needed = (size + 4095) / 4096;
+// Поиск или создание сегмента
+uint64_t sys_shm_get(uint32_t key, uint32_t size) {
+  uint32_t pages = (size + 4095) / 4096;
   int slot = -1;
 
-  // 1. Ищем существующий сегмент
+  // 1. Ищем, не создан ли уже такой ключ
   for (int i = 0; i < MAX_SHM_SEGMENTS; i++) {
-    if (shm_table[i].key == key) {
+    if (shm_table[i].used && shm_table[i].key == key) {
       slot = i;
       break;
     }
   }
 
-  // 2. Если не нашли — создаем новый
+  // 2. Если не нашли — создаем новый сегмент
   if (slot == -1) {
     for (int i = 0; i < MAX_SHM_SEGMENTS; i++) {
-      if (shm_table[i].key == 0) {
-        void *phys = pmm_alloc_continuous(pages_needed);
+      if (!shm_table[i].used) {
+        void *phys = pmm_alloc_continuous(pages);
         if (!phys)
           return 0;
 
         shm_table[i].key = key;
         shm_table[i].phys_addr = (uint64_t)phys;
-        shm_table[i].pages = pages_needed;
-        shm_table[i].ref_count = 0;
+        shm_table[i].page_count = pages;
+        shm_table[i].used = true;
 
-        // Обнуляем память через HHDM
-        memset((void *)VIRT(phys), 0, pages_needed * 4096);
+        // Обнуляем память, чтобы не было мусора от прошлых программ
+        memset((void *)VIRT(phys), 0, pages * 4096);
         slot = i;
         break;
       }
@@ -55,22 +62,18 @@ uint64_t sys_shm_get(int key, uint32_t size) {
   if (slot == -1)
     return 0;
 
-  // 3. Мапим в текущий процесс
-  // Используем фиксированный диапазон для SHM в юзерспейсе (например, с
-  // 0xD0000000)
-  static uint64_t next_shm_vaddr = 0xD0000000;
-  uint64_t vaddr = next_shm_vaddr;
-  next_shm_vaddr += (shm_table[slot].pages * 4096);
+  // 3. Мапим этот сегмент в текущий процесс
+  // Мы выделяем виртуальный адрес внутри процесса
+  uint64_t virt_addr =
+      SHM_START_VADDR +
+      (slot * 0x1000000); // Даем по 16МБ зазора между сегментами
 
-  uint64_t cr3;
-  __asm__ volatile("mov %%cr3, %0" : "=r"(cr3));
-
-  for (uint32_t i = 0; i < shm_table[slot].pages; i++) {
-    vmm_map((page_table_t *)VIRT(cr3), vaddr + (i * 4096),
-            shm_table[slot].phys_addr + (i * 4096),
+  page_table_t *pml4 = (page_table_t *)VIRT(current_task->cr3);
+  for (uint32_t p = 0; p < shm_table[slot].page_count; p++) {
+    vmm_map(pml4, virt_addr + (p * 4096),
+            shm_table[slot].phys_addr + (p * 4096),
             PTE_PRESENT | PTE_USER | PTE_WRITABLE);
   }
 
-  shm_table[slot].ref_count++;
-  return vaddr;
+  return virt_addr;
 }
