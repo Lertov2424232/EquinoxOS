@@ -16,6 +16,7 @@
 #include "system/memory.h"
 #include "system/pic.h"
 #include "system/pmm.h"
+#include "system/shm.h"
 #include "system/task.h"
 #include "system/timer.h"
 #include "system/vmm.h"
@@ -762,7 +763,7 @@ void kmain(void) {
     // Даем таймеру "прокашляться" (небольшая задержка)
     for (volatile int i = 0; i < 2000000; i++)
         ;
-
+    shm_init();
     // 4. ЗАПУСКАЕМ ТЕСТЫ (Теперь Цербер увидит тикающий таймер)
     serial_puts(COM1, "Running kernel tests...\n");
     extern bool eqstart_perform_tests();
