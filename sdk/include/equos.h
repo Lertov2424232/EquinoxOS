@@ -19,6 +19,9 @@
 #define SYS_WRITE 16
 #define SYS_AUDIO_PLAY 20
 #define SYS_AUDIO_SET_RATE 21
+#define SYS_MAP_PHYS 30
+#define SYS_SHM_GET 31
+#define SYS_GET_VESA_INFO 32
 
 // Переименовали в _syscall и всегда принимаем 5 аргументов + номер
 static inline uint64_t _syscall(uint64_t num, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5) {

@@ -50,4 +50,9 @@ void eid_draw_line(uint32_t *fb, int win_w, int win_h, int x1, int y1, int x2,
 void eid_draw_gradient_rect(uint32_t *fb, int win_w, int win_h, int x, int y,
                             int w, int h, uint32_t col1, uint32_t col2,
                             bool vertical);
+
+typedef struct eid_font eid_font_t; // Непрозрачная структура
+eid_font_t *eid_load_font(unsigned char *ttf_data, float size);
+void eid_draw_text_ttf(eid_ctx_t *ctx, eid_font_t *font, int x, int y,
+                       const char *text, uint32_t color);
 #endif

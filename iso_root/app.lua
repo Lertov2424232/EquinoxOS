@@ -1,7 +1,7 @@
 -- Глобальные константы
 local SCREEN_W = 640
 local SCREEN_H = 480
-
+load_font("Inter.ttf", 24)
 -- Состояние системы: "menu" (главное меню) или "transition" (анимация перехода)
 local state = "menu"
 local transition_start_time = 0
@@ -30,7 +30,6 @@ local function rgb_to_hex(r, g, b)
     b = math.max(0, math.min(255, math.floor(b)))
     return r * 65536 + g * 256 + b
 end
-
 -- Главная функция обновления (вызывается 60 раз в секунду)
 function on_update()
     local t = os.clock()
@@ -85,6 +84,7 @@ function on_update()
             state = "transition"
             transition_start_time = t
         end
+        draw_text("Beautiful Vector Text", 100, 100, 0xFFFFFF)
 
     ---------------------------------------------------------
     -- 4. АНИМАЦИЯ ПЕРЕХОДА

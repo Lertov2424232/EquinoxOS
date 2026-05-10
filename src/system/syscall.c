@@ -356,6 +356,43 @@ void syscall_handler(syscall_regs_t *regs) {
     ac97_set_rate((uint32_t)regs->rdi);
     break;
   }
+  case 30: { // SYS_MAP_PHYS (Только для "белых" процессов)
+    uint64_t phys = regs->rdi;
+    uint32_t size = regs->rsi;
+    uint32_t pages = (size + 4095) / 4096;
+
+    // В идеале тут проверка: только PID Композитора может это делать
+    static uint64_t phys_map_vaddr = 0xE0000000;
+    uint64_t virt = phys_map_vaddr;
+    phys_map_vaddr += (pages * 4096);
+
+    uint64_t cr3;
+    __asm__ volatile("mov %%cr3, %0" : "=r"(cr3));
+    for (uint32_t i = 0; i < pages; i++) {
+      vmm_map((page_table_t *)VIRT(cr3), virt + (i * 4096), phys + (i * 4096),
+              PTE_PRESENT | PTE_USER | PTE_WRITABLE);
+    }
+    regs->rax = virt;
+    break;
+  }
+
+  case 31: { // SYS_SHM_GET
+    extern uint64_t sys_shm_get(int key, uint32_t size);
+    regs->rax = sys_shm_get((int)regs->rdi, (uint32_t)regs->rsi);
+    break;
+  }
+
+  case 32: { // SYS_GET_VESA_INFO
+    extern uintptr_t fb_base_addr;
+    extern uint32_t screen_width, screen_height, screen_pitch;
+
+    // Возвращаем структуру через регистры (HAL в чистом виде)
+    regs->rax = fb_base_addr;
+    regs->rbx = screen_width;
+    regs->rcx = screen_height;
+    regs->rdx = screen_pitch;
+    break;
+  }
   default:
     break;
   }

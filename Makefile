@@ -31,7 +31,8 @@ SDK_OBJS = $(SDK_LIB_DIR)/crt0.o \
            $(SDK_LIB_DIR)/eid.o \
            $(SDK_LIB_DIR)/posix.o \
            $(SDK_LIB_DIR)/malloc.o \
-		   $(SDK_LIB_DIR)/math.o 
+		   $(SDK_LIB_DIR)/math.o \
+		   $(SDK_LIB_DIR)/font_ttf.o
 
 # --- ОБЪЕКТЫ ЯДРА ---
 KERNEL_OBJS = $(OBJ_DIR)/kernel.o $(OBJ_DIR)/io.o $(OBJ_DIR)/keyboard.o $(OBJ_DIR)/rtl8139.o \
@@ -42,7 +43,7 @@ KERNEL_OBJS = $(OBJ_DIR)/kernel.o $(OBJ_DIR)/io.o $(OBJ_DIR)/keyboard.o $(OBJ_DI
               $(OBJ_DIR)/task.o $(OBJ_DIR)/fat32.o $(OBJ_DIR)/serial.o $(OBJ_DIR)/memory.o \
               $(OBJ_DIR)/fs.o $(OBJ_DIR)/vesa.o $(OBJ_DIR)/mouse.o $(OBJ_DIR)/string.o \
               $(OBJ_DIR)/panic.o $(OBJ_DIR)/vmm.o $(OBJ_DIR)/gdt.o $(OBJ_DIR)/pcspeaker.o \
-              $(OBJ_DIR)/terminal.o $(OBJ_DIR)/ext2.o $(OBJ_DIR)/ext2_tests.o
+              $(OBJ_DIR)/terminal.o $(OBJ_DIR)/ext2.o $(OBJ_DIR)/ext2_tests.o $(OBJ_DIR)/shm.o
 
 # --- НАСТРОЙКИ LUA ---
 LUA_DIR = sdk/lua

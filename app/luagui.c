@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+static eid_font_t *current_lua_font = NULL;
 
 static eid_ctx_t ctx;
 static uint32_t *fb;
@@ -45,6 +46,38 @@ static int l_button(lua_State *L) {
   return 1;
 }
 
+static int l_load_font(lua_State *L) {
+  const char *path = luaL_checkstring(L, 1);
+  float size = luaL_checknumber(L, 2);
+
+  uint32_t fsize = 0;
+  unsigned char *data = (unsigned char *)_syscall(
+      2, (uint64_t)path, (uint64_t)&fsize, 0, 0, 0); // Твой SYS_READ_FILE
+
+  if (data) {
+    current_lua_font = eid_load_font(data, size);
+    lua_pushboolean(L, true);
+  } else {
+    lua_pushboolean(L, false);
+  }
+  return 1;
+}
+
+static int l_draw_text(lua_State *L) {
+  const char *str = luaL_checkstring(L, 1);
+  int x = luaL_checkinteger(L, 2);
+  int y = luaL_checkinteger(L, 3);
+  uint32_t color = (uint32_t)luaL_checkinteger(L, 4);
+
+  if (current_lua_font) {
+    eid_draw_text_ttf(&ctx, current_lua_font, x, y, str, color);
+  } else {
+    // Если шрифт не загружен, рисуем старым PSF
+    eid_draw_text(fb, W, H, x, y, str, color);
+  }
+  return 0;
+}
+
 int main(int argc, char **argv) {
   if (argc < 2) {
     printf("Usage: luagui.elf script.lua\n");
@@ -59,7 +92,8 @@ int main(int argc, char **argv) {
   // Регистрируем команды EID в Lua
   lua_register(L, "draw_rect", l_draw_rect);
   lua_register(L, "button", l_button);
-
+  lua_register(L, "load_font", l_load_font);
+  lua_register(L, "draw_text", l_draw_text);
   // 1. ЗАГРУЖАЕМ И ВЫПОЛНЯЕМ ФАЙЛ ТОЛЬКО ОДИН РАЗ
   if (luaL_dofile(L, argv[1])) {
     printf("Lua Error: %s\n", lua_tostring(L, -1));
