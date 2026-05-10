@@ -11,20 +11,62 @@
 #define CONTENT_Y 56
 #define CONTENT_W (WIN_W - 36)
 #define LINE_H 18
-#define MAX_LINES 256
+#define MAX_LINES 512
 #define LINE_CHARS 74
 
-#define CLR_BG 0xF6F7F9
-#define CLR_CHROME 0x20242C
-#define CLR_CHROME_2 0x2E3542
-#define CLR_TEXT 0x1B1F24
-#define CLR_MUTED 0x657080
-#define CLR_H1 0x0A5C7A
-#define CLR_H2 0x22624A
-#define CLR_LINK 0x135CC8
-#define CLR_CODE_BG 0xE9EEF3
-#define CLR_CODE 0x7A2E12
-#define CLR_BORDER 0xC9D1D9
+#define CLR_BG 0xFDFCFC
+#define CLR_CHROME 0x1A1C1E
+#define CLR_CHROME_2 0x2C2F33
+#define CLR_TEXT 0x202124
+#define CLR_MUTED 0x5F6368
+#define CLR_H1 0x174EA6
+#define CLR_H2 0x188038
+#define CLR_LINK 0x1A73E8
+#define CLR_CODE_BG 0xF1F3F4
+#define CLR_CODE 0xB04214
+#define CLR_BORDER 0xDADCE0
+#define CLR_ACCENT 0x4285F4
+
+/* ── Forward Declarations ────────────────────────────────────── */
+static void load_page(const char *url);
+static void render(const char *filename);
+static void blank_line(void);
+static void parse_css_declarations_to_state(const char *decl);
+
+/* ── CSS Engine ────────────────────────────────────────────────── */
+
+#define MAX_CSS_RULES 128
+#define MAX_SELECTOR 64
+#define MAX_CSS_CLASS 128
+
+typedef enum { ALIGN_LEFT, ALIGN_CENTER, ALIGN_RIGHT } text_align_t;
+
+typedef struct {
+  char selector[MAX_SELECTOR]; /* e.g. "h1", ".intro", "#main" */
+  uint32_t color;              /* text colour        (0 = unset) */
+  uint32_t bg_color;           /* background colour  (0 = unset) */
+  bool underline;              /* text-decoration: underline      */
+  int margin_top;              /* blank lines before (0-2)        */
+  int margin_bottom;           /* blank lines after  (0-2)        */
+  bool bold;                   /* font-weight: bold               */
+  text_align_t align;          /* text-align property             */
+  bool has_color;
+  bool has_bg;
+  bool has_align;
+  bool display_none;
+  bool block_bg; /* Background should fill full width */
+  int padding;   /* padding in line-units (0-6)       */
+  bool has_padding;
+  int max_width;  /* max-width in pixels (0 = unset)   */
+  int font_size;  /* font-size hint: 0=normal, 1=large, 2=xlarge */
+  bool uppercase; /* text-transform: uppercase         */
+} css_rule_t;
+
+static css_rule_t css_rules[MAX_CSS_RULES];
+static int css_rule_count = 0;
+static uint32_t body_bg = CLR_BG;
+
+/* ── Line model (extended) ─────────────────────────────────────── */
 
 typedef enum {
   STYLE_NORMAL,
@@ -33,13 +75,25 @@ typedef enum {
   STYLE_LINK,
   STYLE_CODE,
   STYLE_MUTED,
-  STYLE_BULLET
+  STYLE_BULLET,
+  STYLE_HR
 } line_style_t;
 
 typedef struct {
   char text[LINE_CHARS + 1];
   line_style_t style;
   bool indent;
+  /* CSS overrides – per line */
+  uint32_t css_color; /* 0 = use default from style */
+  uint32_t css_bg;    /* 0 = none                   */
+  bool css_underline;
+  bool css_bold;
+  text_align_t css_align;
+  bool full_width_bg;
+  int padding;    /* padding hint (line-units) */
+  int font_size;  /* 0=normal, 1=large, 2=xlarge */
+  bool uppercase; /* text-transform: uppercase */
+  char link_url[128];
 } line_t;
 
 static uint32_t fb[WIN_W * WIN_H];
@@ -48,6 +102,86 @@ static line_t lines[MAX_LINES];
 static int line_count = 0;
 static int scroll_line = 0;
 static char page_title[64] = "index.html";
+static char current_url[128] = "index.html";
+static char history[16][128];
+static int history_ptr = -1;
+static bool is_navigating_history = false;
+static bool is_typing_url = false;
+static int url_cursor = 0;
+
+static void push_history(const char *url) {
+  if (history_ptr < 15) {
+    history_ptr++;
+    strcpy(history[history_ptr], url);
+  }
+}
+
+/* ── Style Stack ────────────────────────────────────────────────── */
+
+typedef struct {
+  uint32_t color;
+  uint32_t bg;
+  bool underline;
+  bool bold;
+  text_align_t align;
+  bool display_none;
+  bool full_width_bg;
+  int padding;
+  int max_width;
+  int font_size;
+  bool uppercase;
+} style_state_t;
+
+static eid_font_t *h_font = NULL;
+static eid_font_t *h_font_large = NULL;
+
+#define MAX_STYLE_STACK 64
+static style_state_t style_stack[MAX_STYLE_STACK];
+static int style_depth = 0;
+
+static void reset_style_stack(void) {
+  style_depth = 0;
+  memset(&style_stack[0], 0, sizeof(style_state_t));
+  style_stack[0].align = ALIGN_LEFT;
+}
+
+static void push_style_state(void) {
+  if (style_depth < MAX_STYLE_STACK - 1) {
+    style_stack[style_depth + 1] = style_stack[style_depth];
+    style_depth++;
+  }
+}
+
+static void apply_css_to_current_state(const css_rule_t *r) {
+  if (r->has_color)
+    style_stack[style_depth].color = r->color;
+  if (r->has_bg) {
+    style_stack[style_depth].bg = r->bg_color;
+    style_stack[style_depth].full_width_bg = true;
+  }
+  if (r->underline)
+    style_stack[style_depth].underline = true;
+  if (r->bold)
+    style_stack[style_depth].bold = true;
+  if (r->has_align)
+    style_stack[style_depth].align = r->align;
+  if (r->display_none)
+    style_stack[style_depth].display_none = true;
+  if (r->has_padding && r->padding > 0)
+    style_stack[style_depth].padding = r->padding;
+  if (r->max_width > 0)
+    style_stack[style_depth].max_width = r->max_width;
+  if (r->font_size > 0)
+    style_stack[style_depth].font_size = r->font_size;
+  if (r->uppercase)
+    style_stack[style_depth].uppercase = true;
+}
+
+static void pop_style_state(void) {
+  if (style_depth > 0) {
+    style_depth--;
+  }
+}
 
 static void print(const char *s) {
   _syscall(SYS_PRINT, (uint64_t)s, 0, 0, 0, 0);
@@ -63,6 +197,485 @@ static char ascii_lower(char c) {
   return c;
 }
 
+static char scancode_to_ascii(uint8_t scancode) {
+  const char table[] = {0,    27,  '1', '2',  '3', '4', '5', '6', '7', '8',
+                        '9',  '0', '-', '=',  0,   0,   'q', 'w', 'e', 'r',
+                        't',  'y', 'u', 'i',  'o', 'p', '[', ']', 0,   0,
+                        'a',  's', 'd', 'f',  'g', 'h', 'j', 'k', 'l', ';',
+                        '\'', '`', 0,   '\\', 'z', 'x', 'c', 'v', 'b', 'n',
+                        'm',  ',', '.', '/',  0,   '*', 0,   ' '};
+  if (scancode >= sizeof(table))
+    return 0;
+  return table[scancode];
+}
+
+/* ── CSS: colour parser (hex, rgb, rgba, named) ──────────────── */
+
+static int hex_digit(char c) {
+  if (c >= '0' && c <= '9')
+    return c - '0';
+  if (c >= 'a' && c <= 'f')
+    return 10 + c - 'a';
+  if (c >= 'A' && c <= 'F')
+    return 10 + c - 'A';
+  return -1;
+}
+
+static int parse_int_from(const char *s, const char **next) {
+  int val = 0;
+  while (*s == ' ')
+    s++;
+  while (*s >= '0' && *s <= '9') {
+    val = val * 10 + (*s - '0');
+    s++;
+  }
+  if (next)
+    *next = s;
+  return val;
+}
+
+static uint32_t parse_css_color(const char *s) {
+  /* Skip leading whitespace */
+  while (*s == ' ')
+    s++;
+
+  /* rgb(r, g, b) or rgba(r, g, b, a) */
+  if (strncmp(s, "rgb", 3) == 0) {
+    const char *p = s + 3;
+    if (*p == 'a')
+      p++;
+    if (*p == '(')
+      p++;
+    const char *next;
+    int r = parse_int_from(p, &next);
+    p = next;
+    while (*p == ' ' || *p == ',')
+      p++;
+    int g = parse_int_from(p, &next);
+    p = next;
+    while (*p == ' ' || *p == ',')
+      p++;
+    int b = parse_int_from(p, &next);
+    if (r > 255)
+      r = 255;
+    if (g > 255)
+      g = 255;
+    if (b > 255)
+      b = 255;
+    uint32_t c = ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
+    return c ? c : 0x000001; /* avoid 0 = unset */
+  }
+
+  /* Hex color: find '#' anywhere in the string */
+  const char *hash = s;
+  while (*hash && *hash != '#')
+    hash++;
+  if (*hash == '#') {
+    hash++;
+    int len = 0;
+    const char *p = hash;
+    while (*p && hex_digit(*p) >= 0) {
+      len++;
+      p++;
+    }
+
+    if (len == 6) {
+      uint32_t r = (hex_digit(hash[0]) << 4) | hex_digit(hash[1]);
+      uint32_t g = (hex_digit(hash[2]) << 4) | hex_digit(hash[3]);
+      uint32_t b = (hex_digit(hash[4]) << 4) | hex_digit(hash[5]);
+      uint32_t c = (r << 16) | (g << 8) | b;
+      return c ? c : 0x000001;
+    }
+    if (len == 3) {
+      uint32_t r = hex_digit(hash[0]);
+      r = (r << 4) | r;
+      uint32_t g = hex_digit(hash[1]);
+      g = (g << 4) | g;
+      uint32_t b = hex_digit(hash[2]);
+      b = (b << 4) | b;
+      uint32_t c = (r << 16) | (g << 8) | b;
+      return c ? c : 0x000001;
+    }
+  }
+
+  /* Named CSS colours */
+  struct {
+    const char *name;
+    uint32_t val;
+  } named[] = {
+      {"red", 0xE53935},           {"green", 0x43A047},
+      {"blue", 0x1E88E5},          {"white", 0xFFFFFF},
+      {"black", 0x000001},         {"gray", 0x808080},
+      {"grey", 0x808080},          {"yellow", 0xFDD835},
+      {"orange", 0xFB8C00},        {"purple", 0x8E24AA},
+      {"pink", 0xD81B60},          {"cyan", 0x00BCD4},
+      {"brown", 0x6D4C41},         {"navy", 0x1A237E},
+      {"teal", 0x00897B},          {"coral", 0xFF7043},
+      {"gold", 0xFFD600},          {"silver", 0xBDBDBD},
+      {"maroon", 0x880E4F},        {"olive", 0x827717},
+      {"lime", 0xC6FF00},          {"darkgray", 0x555555},
+      {"darkgrey", 0x555555},      {"lightgray", 0xD3D3D3},
+      {"lightgrey", 0xD3D3D3},     {"darkgreen", 0x006400},
+      {"darkblue", 0x00008B},      {"darkred", 0x8B0000},
+      {"darkslategray", 0x2F4F4F}, {"slategray", 0x708090},
+      {"dimgray", 0x696969},       {"whitesmoke", 0xF5F5F5},
+      {"ghostwhite", 0xF8F8FF},    {"ivory", 0xFFFFF0},
+      {"beige", 0xF5F5DC},         {"limegreen", 0x32CD32},
+      {"forestgreen", 0x228B22},   {"steelblue", 0x4682B4},
+      {"royalblue", 0x4169E1},     {"tomato", 0xFF6347},
+      {"salmon", 0xFA8072},        {"crimson", 0xDC143C},
+      {"indigo", 0x4B0082},        {"violet", 0xEE82EE},
+      {"plum", 0xDDA0DD},          {"chocolate", 0xD2691E},
+      {"sienna", 0xA0522D},        {"tan", 0xD2B48C},
+      {"khaki", 0xF0E68C},         {"aqua", 0x00FFFF},
+      {"fuchsia", 0xFF00FF},       {"transparent", 0},
+  };
+  for (int i = 0; i < (int)(sizeof(named) / sizeof(named[0])); i++) {
+    int nlen = strlen(named[i].name);
+    if (strncmp(s, named[i].name, nlen) == 0 &&
+        (s[nlen] == '\0' || s[nlen] == ' ' || s[nlen] == ';' ||
+         s[nlen] == '!')) {
+      return named[i].val;
+    }
+  }
+
+  return 0; /* unknown */
+}
+
+/* ── CSS: skip whitespace ────────────────────────────────────── */
+static const char *skip_ws(const char *p) {
+  while (*p && ascii_isspace(*p))
+    p++;
+  return p;
+}
+
+/* ── CSS: parse a single property: value pair ────────────────── */
+static void apply_css_property(css_rule_t *rule, const char *prop,
+                               const char *val) {
+  if (strncmp(prop, "color", 5) == 0 && prop[5] == '\0') {
+    uint32_t c = parse_css_color(val);
+    if (c) {
+      rule->color = c;
+      rule->has_color = true;
+    }
+  } else if (strncmp(prop, "background-color", 16) == 0 ||
+             (strncmp(prop, "background", 10) == 0 && prop[10] == '\0')) {
+    uint32_t c = parse_css_color(val);
+    if (c) {
+      rule->bg_color = c;
+      rule->has_bg = true;
+    }
+  } else if (strncmp(prop, "text-decoration", 15) == 0) {
+    if (strstr(val, "underline"))
+      rule->underline = true;
+  } else if (strncmp(prop, "font-weight", 11) == 0) {
+    if (strstr(val, "bold") || strstr(val, "700") || strstr(val, "800") ||
+        strstr(val, "900"))
+      rule->bold = true;
+  } else if (strncmp(prop, "text-align", 10) == 0) {
+    if (strstr(val, "center")) {
+      rule->align = ALIGN_CENTER;
+      rule->has_align = true;
+    } else if (strstr(val, "right")) {
+      rule->align = ALIGN_RIGHT;
+      rule->has_align = true;
+    } else if (strstr(val, "left")) {
+      rule->align = ALIGN_LEFT;
+      rule->has_align = true;
+    }
+  } else if (strncmp(prop, "display", 7) == 0) {
+    if (strstr(val, "none")) {
+      rule->display_none = true;
+    }
+  } else if (strncmp(prop, "padding", 7) == 0 && prop[7] == '\0') {
+    /* Convert px to line-units: rough heuristic */
+    int px = 0;
+    const char *v = val;
+    while (*v >= '0' && *v <= '9') {
+      px = px * 10 + (*v - '0');
+      v++;
+    }
+    if (px > 0) {
+      rule->padding = (px + 8) / LINE_H;
+      if (rule->padding > 6)
+        rule->padding = 6;
+      rule->has_padding = true;
+    }
+  } else if (strncmp(prop, "max-width", 9) == 0) {
+    int px = 0;
+    const char *v = val;
+    while (*v >= '0' && *v <= '9') {
+      px = px * 10 + (*v - '0');
+      v++;
+    }
+    if (px > 0)
+      rule->max_width = px;
+  } else if (strncmp(prop, "font-size", 9) == 0) {
+    int px = 0;
+    const char *v = val;
+    while (*v >= '0' && *v <= '9') {
+      px = px * 10 + (*v - '0');
+      v++;
+    }
+    if (px >= 24)
+      rule->font_size = 2;
+    else if (px >= 18)
+      rule->font_size = 1;
+  } else if (strncmp(prop, "text-transform", 14) == 0) {
+    if (strstr(val, "uppercase"))
+      rule->uppercase = true;
+  } else if (strncmp(prop, "margin", 6) == 0 && prop[6] == '\0') {
+    if (strstr(val, "auto")) {
+      rule->align = ALIGN_CENTER;
+      rule->has_align = true;
+    }
+    rule->margin_top = 1;
+    rule->margin_bottom = 1;
+  } else if (strncmp(prop, "margin-top", 10) == 0) {
+    rule->margin_top = 1;
+  } else if (strncmp(prop, "margin-bottom", 13) == 0) {
+    rule->margin_bottom = 1;
+  }
+}
+
+/* ── CSS: parse the declaration block between { and } ────────── */
+static void parse_css_declarations(css_rule_t *rule, const char *decl,
+                                   int dlen) {
+  char prop[48], val[48];
+  int pi = 0, vi = 0;
+  bool in_val = false;
+
+  for (int i = 0; i < dlen; i++) {
+    char c = decl[i];
+    if (c == ':') {
+      in_val = true;
+      vi = 0;
+      continue;
+    }
+    if (c == ';' || i == dlen - 1) {
+      if (i == dlen - 1 && c != ';') {
+        if (in_val && vi < 47)
+          val[vi++] = c;
+        else if (!in_val && pi < 47)
+          prop[pi++] = c;
+      }
+      prop[pi] = '\0';
+      val[vi] = '\0';
+
+      /* Trim leading spaces */
+      const char *pp = prop;
+      while (*pp == ' ')
+        pp++;
+      const char *vv = val;
+      while (*vv == ' ')
+        vv++;
+
+      if (pp[0] && vv[0])
+        apply_css_property(rule, pp, vv);
+
+      pi = 0;
+      vi = 0;
+      in_val = false;
+      continue;
+    }
+    if (in_val) {
+      if (vi < 47)
+        val[vi++] = ascii_lower(c);
+    } else {
+      if (pi < 47)
+        prop[pi++] = ascii_lower(c);
+    }
+  }
+}
+
+/* ── CSS: parse a full <style> block ─────────────────────────── */
+static void parse_css_block(const char *css, int css_len) {
+  const char *p = css;
+  const char *end = css + css_len;
+
+  while (p < end && css_rule_count < MAX_CSS_RULES) {
+    p = skip_ws(p);
+    if (p >= end)
+      break;
+
+    /* Skip CSS comments */
+    if (p + 1 < end && p[0] == '/' && p[1] == '*') {
+      p += 2;
+      while (p + 1 < end && !(p[0] == '*' && p[1] == '/'))
+        p++;
+      if (p + 1 < end)
+        p += 2;
+      continue;
+    }
+
+    /* Skip @-rules (@media, @keyframes, @font-face, @import, etc.) */
+    if (*p == '@') {
+      while (p < end && *p != '{' && *p != ';')
+        p++;
+      if (p >= end)
+        break;
+      if (*p == ';') {
+        p++;
+        continue;
+      }
+      /* Skip nested braces */
+      int depth = 1;
+      p++;
+      while (p < end && depth > 0) {
+        if (*p == '{')
+          depth++;
+        else if (*p == '}')
+          depth--;
+        p++;
+      }
+      continue;
+    }
+
+    /* Read selector (preserve spaces for compound selector splitting) */
+    char sel[MAX_SELECTOR];
+    int si = 0;
+    bool prev_space = false;
+    while (p < end && *p != '{' && si < MAX_SELECTOR - 1) {
+      if (ascii_isspace(*p)) {
+        if (si > 0)
+          prev_space = true;
+      } else {
+        if (prev_space && si > 0 && si < MAX_SELECTOR - 1)
+          sel[si++] = ' ';
+        prev_space = false;
+        sel[si++] = ascii_lower(*p);
+      }
+      p++;
+    }
+    sel[si] = '\0';
+    if (p >= end || *p != '{')
+      break;
+    p++; /* skip { */
+
+    /* Find closing } (handle nested braces) */
+    const char *brace = p;
+    int depth = 1;
+    while (brace < end && depth > 0) {
+      if (*brace == '{')
+        depth++;
+      else if (*brace == '}')
+        depth--;
+      if (depth > 0)
+        brace++;
+    }
+    if (brace >= end)
+      break;
+
+    int decl_len = (int)(brace - p);
+
+    /* Support comma-separated selectors: "h1, h2 { ... }" */
+    char *tok = sel;
+    while (*tok && css_rule_count < MAX_CSS_RULES) {
+      while (*tok == ',' || ascii_isspace(*tok))
+        tok++;
+      if (!*tok)
+        break;
+
+      char single[MAX_SELECTOR];
+      int qi = 0;
+      while (*tok && *tok != ',' && qi < MAX_SELECTOR - 1)
+        single[qi++] = *tok++;
+      /* Trim trailing spaces from selector string */
+      while (qi > 0 && ascii_isspace(single[qi - 1]))
+        qi--;
+      single[qi] = '\0';
+      if (qi == 0)
+        continue;
+
+      /* For compound selectors like '.header h1', use last segment */
+      char *last_space = NULL;
+      for (int s = 0; single[s]; s++) {
+        if (single[s] == ' ')
+          last_space = &single[s];
+      }
+      char *final_sel = last_space ? (last_space + 1) : single;
+
+      css_rule_t *r = &css_rules[css_rule_count];
+      memset(r, 0, sizeof(css_rule_t));
+      strncpy(r->selector, final_sel, MAX_SELECTOR - 1);
+
+      parse_css_declarations(r, p, decl_len);
+      css_rule_count++;
+    }
+
+    p = brace + 1; /* skip } */
+  }
+}
+
+/* ── CSS: extract all <style> blocks from HTML ───────────────── */
+static void extract_css(const char *html, uint32_t size) {
+  css_rule_count = 0;
+
+  for (uint32_t i = 0; i + 6 < size; i++) {
+    if (html[i] != '<')
+      continue;
+    /* Check for <style */
+    bool match = true;
+    const char *kw = "style";
+    for (int k = 0; kw[k]; k++) {
+      if (ascii_lower(html[i + 1 + k]) != kw[k]) {
+        match = false;
+        break;
+      }
+    }
+    if (!match)
+      continue;
+    char after = html[i + 6];
+    if (after != '>' && after != ' ' && after != '\t' && after != '\n')
+      continue;
+
+    /* Skip to end of <style ...> */
+    uint32_t start = i + 1;
+    while (start < size && html[start] != '>')
+      start++;
+    if (start >= size)
+      return;
+    start++;
+
+    /* Find </style> */
+    uint32_t end = start;
+    while (end + 8 < size) {
+      if (html[end] == '<' && html[end + 1] == '/' &&
+          ascii_lower(html[end + 2]) == 's' &&
+          ascii_lower(html[end + 3]) == 't' &&
+          ascii_lower(html[end + 4]) == 'y' &&
+          ascii_lower(html[end + 5]) == 'l' &&
+          ascii_lower(html[end + 6]) == 'e')
+        break;
+      end++;
+    }
+
+    parse_css_block(html + start, (int)(end - start));
+    i = end;
+  }
+}
+
+/* ── CSS: Helper to match multiple classes in class="..." ──────── */
+/* Moved from below */
+static void extract_attr(const char *tag, const char *attr, char *out, int max);
+static bool tag_eq(const char *tag, const char *name);
+
+static bool has_class(const char *classes, const char *cls) {
+  int clen = strlen(cls);
+  const char *p = classes;
+  while (*p) {
+    while (*p == ' ')
+      p++;
+    if (strncmp(p, cls, clen) == 0 && (p[clen] == ' ' || p[clen] == '\0'))
+      return true;
+    while (*p && *p != ' ')
+      p++;
+  }
+  return false;
+}
+
+/* ── HTML helpers ─────────────────────────────────────────────── */
+
 static bool tag_eq(const char *tag, const char *name) {
   int i = 0;
   while (name[i] != '\0') {
@@ -73,9 +686,235 @@ static bool tag_eq(const char *tag, const char *name) {
   return tag[i] == '\0' || tag[i] == ' ' || tag[i] == '/' || tag[i] == '>';
 }
 
-static int visible_lines(void) { return (WIN_H - CONTENT_Y - 20) / LINE_H; }
+static void extract_element_name(const char *tag, char *out, int max) {
+  int i = 0;
+  const char *p = tag;
+  if (*p == '/')
+    p++;
+  while (*p && *p != ' ' && *p != '>' && *p != '/' && i < max - 1) {
+    out[i++] = ascii_lower(*p++);
+  }
+  out[i] = '\0';
+}
 
-static void push_line(const char *text, int len, line_style_t style, bool indent) {
+static void extract_attr(const char *tag, const char *attr, char *out,
+                         int max) {
+  out[0] = '\0';
+  int alen = strlen(attr);
+  const char *p = tag;
+  while (*p) {
+    if (strncmp(p, attr, alen) == 0 &&
+        (p[alen] == '=' || p[alen] == ' ' || p[alen] == '\t')) {
+      const char *start = p;
+      p += alen;
+      while (*p == ' ' || *p == '\t')
+        p++;
+      if (*p == '=') {
+        p++;
+        while (*p == ' ' || *p == '\t')
+          p++;
+        char delim = '\0';
+        if (*p == '"' || *p == '\'') {
+          delim = *p;
+          p++;
+        }
+        int i = 0;
+        while (*p && i < max - 1) {
+          if (delim) {
+            if (*p == delim)
+              break;
+          } else {
+            if (*p == ' ' || *p == '\t' || *p == '>')
+              break;
+          }
+          out[i++] = *p++;
+        }
+        out[i] = '\0';
+        return;
+      }
+    }
+    p++;
+  }
+}
+
+/* ── Apply CSS overrides for the current element ─────────────── */
+static void apply_css_for_element(const char *tag) {
+  char elem[MAX_SELECTOR];
+  char cls[MAX_CSS_CLASS];
+  char id[MAX_CSS_CLASS];
+  char inline_style[256];
+
+  extract_element_name(tag, elem, MAX_SELECTOR);
+  extract_attr(tag, "class", cls, MAX_CSS_CLASS);
+  extract_attr(tag, "id", id, MAX_CSS_CLASS);
+  extract_attr(tag, "style", inline_style, sizeof(inline_style));
+
+  /* 1. Stylesheet rules (element, .class, #id, element.class selectors) */
+  for (int i = 0; i < css_rule_count; i++) {
+    const css_rule_t *r = &css_rules[i];
+    bool match = false;
+
+    if (r->selector[0] == '.') {
+      if (cls[0] && has_class(cls, r->selector + 1))
+        match = true;
+    } else if (r->selector[0] == '#') {
+      if (id[0] && strcmp(r->selector + 1, id) == 0)
+        match = true;
+    } else {
+      /* Element or Element.class or Element#id */
+      char sel_elem[MAX_SELECTOR];
+      int dot_idx = -1;
+      int hash_idx = -1;
+      for (int k = 0; r->selector[k]; k++) {
+        if (r->selector[k] == '.') {
+          dot_idx = k;
+          break;
+        }
+        if (r->selector[k] == '#') {
+          hash_idx = k;
+          break;
+        }
+      }
+
+      if (dot_idx != -1) {
+        strncpy(sel_elem, r->selector, dot_idx);
+        sel_elem[dot_idx] = '\0';
+        if (strcmp(sel_elem, elem) == 0 &&
+            has_class(cls, r->selector + dot_idx + 1))
+          match = true;
+      } else if (hash_idx != -1) {
+        strncpy(sel_elem, r->selector, hash_idx);
+        sel_elem[hash_idx] = '\0';
+        if (strcmp(sel_elem, elem) == 0 &&
+            strcmp(id, r->selector + hash_idx + 1) == 0)
+          match = true;
+      } else {
+        if (elem[0] && strcmp(r->selector, elem) == 0)
+          match = true;
+      }
+    }
+
+    if (match) {
+      apply_css_to_current_state(r);
+      if (r->margin_top > 0)
+        blank_line();
+    }
+  }
+
+  /* 2. Inline style attribute */
+  if (inline_style[0]) {
+    parse_css_declarations_to_state(inline_style);
+  }
+}
+
+static void parse_css_declarations_to_state(const char *decl) {
+  css_rule_t tmp;
+  memset(&tmp, 0, sizeof(tmp));
+  parse_css_declarations(&tmp, decl, (int)strlen(decl));
+  apply_css_to_current_state(&tmp);
+}
+
+static void resolve_url(const char *base, const char *rel, char *out) {
+  if (strstr(rel, "://")) {
+    strcpy(out, rel);
+    return;
+  }
+  if (rel[0] == '/') {
+    /* Absolute path on same host */
+    const char *p = strstr(base, "://");
+    if (p) {
+      p += 3;
+      while (*p && *p != '/')
+        p++;
+      int len = (int)(p - base);
+      strncpy(out, base, len);
+      strcpy(out + len, rel);
+    } else {
+      strcpy(out, rel);
+    }
+    return;
+  }
+  /* Relative path */
+  strcpy(out, base);
+  char *last_slash = strrchr(out, '/');
+  if (last_slash) {
+    if (last_slash < strstr(out, "://") + 3) {
+      strcpy(last_slash + 1, rel);
+    } else {
+      strcpy(last_slash + 1, rel);
+    }
+  } else {
+    strcpy(out, rel);
+  }
+}
+
+static char tag_context[256]; /* Current tag for link extraction */
+
+/* ── HTML Entity Decoder ──────────────────────────────────────── */
+static int decode_entity(const char *src, char *out) {
+  /* Returns number of chars consumed from src (including &..;) */
+  /* Writes decoded char to *out, returns 0 on failure */
+  if (src[0] != '&')
+    return 0;
+  const char *semi = src + 1;
+  while (*semi && *semi != ';' && (semi - src) < 12)
+    semi++;
+  if (*semi != ';')
+    return 0;
+  int elen = (int)(semi - src - 1);
+  const char *name = src + 1;
+
+  /* Numeric entities */
+  if (name[0] == '#') {
+    int val = 0;
+    if (name[1] == 'x' || name[1] == 'X') {
+      for (int i = 2; i < elen; i++) {
+        int d = hex_digit(name[i]);
+        if (d < 0)
+          break;
+        val = val * 16 + d;
+      }
+    } else {
+      for (int i = 1; i < elen; i++) {
+        if (name[i] >= '0' && name[i] <= '9')
+          val = val * 10 + (name[i] - '0');
+      }
+    }
+    if (val > 0 && val < 128) {
+      *out = (char)val;
+      return (int)(semi - src + 1);
+    }
+    if (val >= 128) {
+      *out = '?';
+      return (int)(semi - src + 1);
+    } /* non-ASCII placeholder */
+    return 0;
+  }
+
+  /* Named entities */
+  struct {
+    const char *n;
+    char c;
+  } ents[] = {
+      {"amp", '&'},    {"lt", '<'},     {"gt", '>'},    {"quot", '"'},
+      {"apos", '\''},  {"nbsp", ' '},   {"ndash", '-'}, {"mdash", '-'},
+      {"lsquo", '\''}, {"rsquo", '\''}, {"ldquo", '"'}, {"rdquo", '"'},
+      {"bull", '*'},   {"hellip", '.'}, {"copy", 'c'},  {"reg", 'r'},
+      {"trade", ' '},  {"laquo", '<'},  {"raquo", '>'}, {"times", 'x'},
+      {"divide", '/'}, {"cent", 'c'},   {"pound", '#'}, {"euro", 'E'},
+      {"yen", 'Y'},    {"deg", 'o'},
+  };
+  for (int i = 0; i < (int)(sizeof(ents) / sizeof(ents[0])); i++) {
+    if ((int)strlen(ents[i].n) == elen && strncmp(name, ents[i].n, elen) == 0) {
+      *out = ents[i].c;
+      return (int)(semi - src + 1);
+    }
+  }
+  return 0; /* unknown entity, leave as-is */
+}
+
+static void push_line(const char *text, int len, line_style_t style,
+                      bool indent) {
   if (line_count >= MAX_LINES)
     return;
 
@@ -87,8 +926,34 @@ static void push_line(const char *text, int len, line_style_t style, bool indent
   for (int i = 0; i < len; i++)
     lines[line_count].text[i] = text[i];
   lines[line_count].text[len] = '\0';
+
+  /* Apply text-transform: uppercase */
+  if (style_stack[style_depth].uppercase) {
+    for (int i = 0; lines[line_count].text[i]; i++) {
+      char c = lines[line_count].text[i];
+      if (c >= 'a' && c <= 'z')
+        lines[line_count].text[i] = c - ('a' - 'A');
+    }
+  }
+
   lines[line_count].style = style;
   lines[line_count].indent = indent;
+  lines[line_count].css_color = style_stack[style_depth].color;
+  lines[line_count].css_bg = style_stack[style_depth].bg;
+  lines[line_count].css_underline = style_stack[style_depth].underline;
+  lines[line_count].css_bold = style_stack[style_depth].bold;
+  lines[line_count].css_align = style_stack[style_depth].align;
+  lines[line_count].full_width_bg = style_stack[style_depth].full_width_bg;
+  lines[line_count].padding = style_stack[style_depth].padding;
+  lines[line_count].font_size = style_stack[style_depth].font_size;
+  lines[line_count].uppercase = style_stack[style_depth].uppercase;
+
+  if (style == STYLE_LINK) {
+    extract_attr(tag_context, "href", lines[line_count].link_url, 127);
+  } else {
+    lines[line_count].link_url[0] = '\0';
+  }
+
   line_count++;
 }
 
@@ -132,7 +997,8 @@ static void append_word(char *line, int *len, const char *word, int word_len,
     line[(*len)++] = word[i];
 }
 
-static void flush_current(char *line, int *len, line_style_t style, bool indent) {
+static void flush_current(char *line, int *len, line_style_t style,
+                          bool indent) {
   if (*len > 0) {
     push_line(line, *len, style, indent);
     *len = 0;
@@ -155,6 +1021,10 @@ static void read_tag(const char *html, uint32_t size, uint32_t *pos, char *tag,
 
   tag[len] = '\0';
 }
+
+static int visible_lines(void) { return (WIN_H - CONTENT_Y - 20) / LINE_H; }
+
+/* ── Apply CSS overrides for the current element ─────────────── */
 
 static void copy_title_from_html(const char *html, uint32_t size) {
   for (uint32_t i = 0; i + 7 < size; i++) {
@@ -194,6 +1064,9 @@ static void parse_html(const char *html, uint32_t size) {
   bool in_list = false;
   bool skipping_head = false;
   bool at_li_start = false;
+  bool in_style_tag = false;
+  bool in_script_tag = false;
+  bool in_noscript_tag = false;
 
   char current[LINE_CHARS + 1];
   char word[LINE_CHARS + 1];
@@ -201,29 +1074,132 @@ static void parse_html(const char *html, uint32_t size) {
   int word_len = 0;
 
   copy_title_from_html(html, size);
+  extract_css(html, size);
+  reset_style_stack();
+  body_bg = CLR_BG;
+
+  /* Debug: print CSS rule count to serial */
+  char dbg[64];
+  sprintf(dbg, "[CSS] Extracted %d rules\n", css_rule_count);
+  print(dbg);
+  for (int d = 0; d < css_rule_count && d < 10; d++) {
+    sprintf(dbg, "  [%d] sel='%s' c=%06x bg=%06x\n", d, css_rules[d].selector,
+            css_rules[d].color, css_rules[d].bg_color);
+    print(dbg);
+  }
 
   for (uint32_t i = 0; i < size;) {
     char c = html[i];
 
     if (c == '<') {
-      char tag[64];
+      char tag[256]; /* larger to capture class/id attrs */
       read_tag(html, size, &i, tag, sizeof(tag));
+      strcpy(tag_context, tag);
 
       if (word_len > 0) {
         append_word(current, &current_len, word, word_len, style, in_list);
         word_len = 0;
       }
 
+      /* Skip explicit ignored blocks */
+      if (tag_eq(tag, "style")) {
+        in_style_tag = true;
+        continue;
+      }
+      if (tag_eq(tag, "/style")) {
+        in_style_tag = false;
+        continue;
+      }
+      if (tag_eq(tag, "script")) {
+        in_script_tag = true;
+        continue;
+      }
+      if (tag_eq(tag, "/script")) {
+        in_script_tag = false;
+        continue;
+      }
+      if (tag_eq(tag, "noscript")) {
+        in_noscript_tag = true;
+        continue;
+      }
+      if (tag_eq(tag, "/noscript")) {
+        in_noscript_tag = false;
+        continue;
+      }
       if (tag_eq(tag, "head")) {
         skipping_head = true;
-      } else if (tag_eq(tag, "/head")) {
+        continue;
+      }
+      if (tag_eq(tag, "/head")) {
         skipping_head = false;
-      } else if (tag_eq(tag, "body")) {
-        in_body = true;
-      } else if (tag_eq(tag, "/body")) {
-        in_body = false;
-      } else if (!skipping_head) {
-        if (tag_eq(tag, "h1")) {
+        continue;
+      }
+
+      bool is_self_closing =
+          (tag_eq(tag, "br") || tag_eq(tag, "img") || tag_eq(tag, "meta") ||
+           tag_eq(tag, "link") || tag_eq(tag, "hr") || tag_eq(tag, "input"));
+      bool is_close_tag = (tag[0] == '/');
+
+      /* Maintain styling stack */
+      if (!is_close_tag && !is_self_closing) {
+        push_style_state();
+        apply_css_for_element(tag);
+      } else if (is_close_tag) {
+        pop_style_state();
+      }
+
+      /* Still check for formatting tags (only affecting current line flow,
+       * display) */
+      if (!skipping_head && !style_stack[style_depth].display_none) {
+        if (tag_eq(tag, "body")) {
+          in_body = true;
+          /* Look for background-color in inline style or CSS */
+          apply_css_for_element(tag);
+          if (style_stack[style_depth].bg) {
+            body_bg = style_stack[style_depth].bg;
+          }
+        } else if (tag_eq(tag, "/body")) {
+          in_body = false;
+        } else if (tag_eq(tag, "center")) {
+          flush_current(current, &current_len, style, in_list);
+          style_stack[style_depth].align = ALIGN_CENTER;
+        } else if (tag_eq(tag, "/center")) {
+          flush_current(current, &current_len, style, in_list);
+        } else if (tag_eq(tag, "div") || tag_eq(tag, "p") ||
+                   tag_eq(tag, "header") || tag_eq(tag, "footer") ||
+                   tag_eq(tag, "section") || tag_eq(tag, "nav") ||
+                   tag_eq(tag, "article") || tag_eq(tag, "main") ||
+                   tag_eq(tag, "aside") || tag_eq(tag, "blockquote")) {
+          flush_current(current, &current_len, style, in_list);
+          if (line_count > 0)
+            blank_line();
+        } else if (tag_eq(tag, "hr")) {
+          flush_current(current, &current_len, style, in_list);
+          push_line("", 0, STYLE_HR, false);
+        } else if (tag_eq(tag, "img")) {
+          flush_current(current, &current_len, style, in_list);
+          push_line("[ IMAGE ]", 9, STYLE_MUTED, in_list);
+        } else if (tag_eq(tag, "link")) {
+          char rel[32], href[128];
+          extract_attr(tag, "rel", rel, 31);
+          extract_attr(tag, "href", href, 127);
+          if (strstr(rel, "stylesheet") && href[0]) {
+            /* External CSS fetch placeholder - simplified relative path
+             * handling */
+            uint32_t css_size = 0;
+            void *css_data = NULL;
+            if (strstr(href, "http")) {
+              /* Fetch absolute HTTP CSS later? */
+            } else {
+              /* Relative path or local file */
+              css_data = (void *)_syscall(SYS_READ_FILE, (uint64_t)href,
+                                          (uint64_t)&css_size, 0, 0, 0);
+              if (css_data) {
+                parse_css_block((const char *)css_data, css_size);
+              }
+            }
+          }
+        } else if (tag_eq(tag, "h1")) {
           flush_current(current, &current_len, style, in_list);
           blank_line();
           style = STYLE_H1;
@@ -231,20 +1207,46 @@ static void parse_html(const char *html, uint32_t size) {
           flush_current(current, &current_len, style, false);
           style = STYLE_NORMAL;
           blank_line();
-        } else if (tag_eq(tag, "h2") || tag_eq(tag, "h3")) {
+        } else if (tag_eq(tag, "h2") || tag_eq(tag, "h3") ||
+                   tag_eq(tag, "h4") || tag_eq(tag, "h5") ||
+                   tag_eq(tag, "h6")) {
           flush_current(current, &current_len, style, in_list);
           blank_line();
           style = STYLE_H2;
-        } else if (tag_eq(tag, "/h2") || tag_eq(tag, "/h3")) {
+          style_stack[style_depth].bold = true;
+        } else if (tag_eq(tag, "/h2") || tag_eq(tag, "/h3") ||
+                   tag_eq(tag, "/h4") || tag_eq(tag, "/h5") ||
+                   tag_eq(tag, "/h6")) {
           flush_current(current, &current_len, style, false);
           style = STYLE_NORMAL;
           blank_line();
-        } else if (tag_eq(tag, "p") || tag_eq(tag, "div") || tag_eq(tag, "section")) {
+        } else if (tag_eq(tag, "p") || tag_eq(tag, "div") ||
+                   tag_eq(tag, "section") || tag_eq(tag, "header") ||
+                   tag_eq(tag, "footer") || tag_eq(tag, "article") ||
+                   tag_eq(tag, "main") || tag_eq(tag, "nav") ||
+                   tag_eq(tag, "aside") || tag_eq(tag, "blockquote")) {
           flush_current(current, &current_len, style, in_list);
-          blank_line();
-        } else if (tag_eq(tag, "/p") || tag_eq(tag, "/div") || tag_eq(tag, "/section")) {
+          /* Add padding blank lines if CSS padding is set */
+          int pad = style_stack[style_depth].padding;
+          if (pad > 0) {
+            for (int p = 0; p < pad; p++)
+              push_line("", 0, STYLE_NORMAL, false);
+          } else {
+            blank_line();
+          }
+        } else if (tag_eq(tag, "/p") || tag_eq(tag, "/div") ||
+                   tag_eq(tag, "/section") || tag_eq(tag, "/header") ||
+                   tag_eq(tag, "/footer") || tag_eq(tag, "/article") ||
+                   tag_eq(tag, "/main") || tag_eq(tag, "/nav") ||
+                   tag_eq(tag, "/aside") || tag_eq(tag, "/blockquote")) {
           flush_current(current, &current_len, style, in_list);
-          blank_line();
+          int pad = style_stack[style_depth].padding;
+          if (pad > 0) {
+            for (int p = 0; p < pad; p++)
+              push_line("", 0, STYLE_NORMAL, false);
+          } else {
+            blank_line();
+          }
         } else if (tag_eq(tag, "br")) {
           flush_current(current, &current_len, style, in_list);
         } else if (tag_eq(tag, "ul") || tag_eq(tag, "ol")) {
@@ -262,8 +1264,18 @@ static void parse_html(const char *html, uint32_t size) {
           flush_current(current, &current_len, style, true);
           style = STYLE_NORMAL;
           at_li_start = false;
+        } else if (tag_eq(tag, "b") || tag_eq(tag, "strong")) {
+          style_stack[style_depth].bold = true;
+        } else if (tag_eq(tag, "/b") || tag_eq(tag, "/strong")) {
+          /* pop handled by logic below */
+        } else if (tag_eq(tag, "i") || tag_eq(tag, "em")) {
+          /* no italic font, just mark it? */
+          style_stack[style_depth].color = CLR_MUTED;
+        } else if (tag_eq(tag, "u")) {
+          style_stack[style_depth].underline = true;
         } else if (tag_eq(tag, "a")) {
           style = STYLE_LINK;
+          style_stack[style_depth].underline = true;
         } else if (tag_eq(tag, "/a")) {
           style = in_list ? STYLE_BULLET : STYLE_NORMAL;
         } else if (tag_eq(tag, "code") || tag_eq(tag, "pre")) {
@@ -275,6 +1287,13 @@ static void parse_html(const char *html, uint32_t size) {
           in_pre = false;
         }
       }
+      continue;
+    }
+
+    /* Skip content if hidden or in metadata tags */
+    if (in_style_tag || in_script_tag || in_noscript_tag ||
+        style_stack[style_depth].display_none) {
+      i++;
       continue;
     }
 
@@ -300,6 +1319,18 @@ static void parse_html(const char *html, uint32_t size) {
       flush_current(current, &current_len, style, in_list);
       i++;
       continue;
+    }
+
+    /* HTML entity decoding */
+    if (c == '&') {
+      char decoded;
+      int consumed = decode_entity(html + i, &decoded);
+      if (consumed > 0) {
+        if (word_len < LINE_CHARS)
+          word[word_len++] = decoded;
+        i += consumed;
+        continue;
+      }
     }
 
     if (ascii_isspace(c)) {
@@ -336,49 +1367,149 @@ static uint32_t color_for_style(line_style_t style) {
     return CLR_MUTED;
   case STYLE_BULLET:
     return CLR_TEXT;
+  case STYLE_HR:
+    return CLR_BORDER;
   default:
     return CLR_TEXT;
   }
 }
 
-static void draw_text_line(int x, int y, const char *text, line_style_t style) {
-  if (style == STYLE_CODE) {
-    int w = strlen(text) * 8 + 8;
-    if (w < 24)
-      w = 24;
-    if (w > CONTENT_W)
-      w = CONTENT_W;
-    // ИЗМЕНЕНИЕ: Добавлен WIN_H
-    eid_draw_rect(fb, WIN_W, WIN_H, x - 4, y - 2, w, LINE_H, CLR_CODE_BG);
+static void draw_text_line(int x, int y, const line_t *ln) {
+  line_style_t style = ln->style;
+  const char *text = ln->text;
+
+  int w = strlen(text) * 8;
+  /* Use TTF width estimate if using TTF font */
+  bool use_ttf = false;
+  eid_font_t *draw_font = NULL;
+  if (style == STYLE_H1 && h_font_large) {
+    use_ttf = true;
+    draw_font = h_font_large;
+    w = strlen(text) * 11; /* approximate TTF width */
+  } else if ((style == STYLE_H1 || style == STYLE_H2) && h_font) {
+    use_ttf = true;
+    draw_font = h_font;
+    w = strlen(text) * 9;
+  } else if (ln->font_size >= 2 && h_font_large) {
+    use_ttf = true;
+    draw_font = h_font_large;
+    w = strlen(text) * 11;
+  } else if (ln->font_size >= 1 && h_font) {
+    use_ttf = true;
+    draw_font = h_font;
+    w = strlen(text) * 9;
   }
 
-  // ИЗМЕНЕНИЕ: Добавлен WIN_H
-  eid_draw_text(fb, WIN_W, WIN_H, x, y, text, color_for_style(style));
+  if (ln->css_align == ALIGN_CENTER) {
+    x = CONTENT_X + (CONTENT_W - w) / 2;
+  } else if (ln->css_align == ALIGN_RIGHT) {
+    x = CONTENT_X + CONTENT_W - w;
+  }
 
-  if (style == STYLE_H1)
-    // ИЗМЕНЕНИЕ: Добавлен WIN_H
-    eid_draw_line(fb, WIN_W, WIN_H, x, y + 17, x + 220, y + 17, 0x7EB9CC);
+  uint32_t color = ln->css_color ? ln->css_color : color_for_style(style);
 
-  if (style == STYLE_LINK)
-    // ИЗМЕНЕНИЕ: Добавлен WIN_H
-    eid_draw_line(fb, WIN_W, WIN_H, x, y + 15, x + strlen(text) * 8, y + 15,
-                  CLR_LINK);
+  /* CSS background override */
+  if (ln->css_bg) {
+    if (ln->full_width_bg) {
+      /* Fill the entire window width for block-level backgrounds */
+      eid_draw_rect(fb, WIN_W, WIN_H, 0, y - 2, WIN_W, LINE_H, ln->css_bg);
+    } else {
+      int bg_w = w + 12;
+      if (bg_w < 24)
+        bg_w = 24;
+      eid_draw_rect(fb, WIN_W, WIN_H, x - 4, y - 2, bg_w, LINE_H, ln->css_bg);
+    }
+  } else if (style == STYLE_CODE) {
+    int bg_w = w + 8;
+    if (bg_w < 24)
+      bg_w = 24;
+    if (bg_w > CONTENT_W)
+      bg_w = CONTENT_W;
+    eid_draw_rect(fb, WIN_W, WIN_H, x - 4, y - 2, bg_w, LINE_H, CLR_CODE_BG);
+  }
+
+  if (style == STYLE_HR) {
+    eid_draw_line(fb, WIN_W, WIN_H, CONTENT_X, y + 8, CONTENT_X + CONTENT_W,
+                  y + 8, CLR_BORDER);
+    return;
+  }
+
+  /* Bold: draw twice with offset if we don't have a bold font */
+  if (ln->css_bold) {
+    if (use_ttf && draw_font) {
+      eid_draw_text_ttf(&ui, draw_font, x + 1, y, text, color);
+    } else {
+      eid_draw_text(fb, WIN_W, WIN_H, x + 1, y, text, color);
+    }
+  }
+
+  if (use_ttf && draw_font) {
+    eid_draw_text_ttf(&ui, draw_font, x, y, text, color);
+  } else {
+    eid_draw_text(fb, WIN_W, WIN_H, x, y, text, color);
+  }
+
+  /* Underline: from CSS or from default style rules */
+  if (ln->css_underline || style == STYLE_LINK) {
+    uint32_t ul_color = ln->css_color ? ln->css_color : CLR_LINK;
+    eid_draw_line(fb, WIN_W, WIN_H, x, y + 15, x + w, y + 15, ul_color);
+  }
 }
 
 static void render(const char *filename) {
-  // 1. Очистка фона и отрисовка "шапки" (добавлен WIN_H)
-  eid_draw_rect(fb, WIN_W, WIN_H, 0, 0, WIN_W, WIN_H, CLR_BG);
+  /* Main background (page) */
+  eid_draw_rect(fb, WIN_W, WIN_H, 0, 0, WIN_W, WIN_H, body_bg);
+
+  /* Browser Chrome (Header) */
   eid_draw_rect(fb, WIN_W, WIN_H, 0, 0, WIN_W, 42, CLR_CHROME);
-  eid_draw_rect(fb, WIN_W, WIN_H, 0, 42, WIN_W, 1, CLR_BORDER);
+  eid_draw_line(fb, WIN_W, WIN_H, 0, 42, WIN_W, 42, CLR_BORDER);
 
-  eid_draw_text(fb, WIN_W, WIN_H, 14, 12, "Equinox HTML Viewer", 0xFFFFFF);
-  eid_draw_rect(fb, WIN_W, WIN_H, 210, 9, WIN_W - 230, 24, CLR_CHROME_2);
-  eid_draw_text(fb, WIN_W, WIN_H, 220, 15, filename, 0xDCE6EF);
+  /* Title Bar and Navigation */
+  eid_draw_text(fb, WIN_W, WIN_H, 14, 12, "EQX", CLR_ACCENT);
 
-  eid_draw_text(fb, WIN_W, WIN_H, CONTENT_X, 48, page_title, CLR_MUTED);
+  /* Back Button */
+  uint32_t back_id = eid_get_id("back", 60, 10);
+  uint32_t back_state = eid_process_interaction(&ui, back_id, 60, 10, 24, 22);
+  eid_draw_rect(fb, WIN_W, WIN_H, 60, 10, 24, 22,
+                (back_state & EID_STATE_HOVER) ? 0x3C4043 : CLR_CHROME_2);
+  eid_draw_text(fb, WIN_W, WIN_H, 68, 15, "<", 0xFFFFFF);
+  if (back_state & EID_STATE_CLICKED && history_ptr > 0) {
+    history_ptr--;
+    is_navigating_history = true;
+    strcpy(current_url, history[history_ptr]);
+    load_page(current_url);
+    is_navigating_history = false;
+  }
 
-  // 2. Расчет скролла (объявляем переменную здесь, чтобы она была видна всей
-  // функции)
+  /* Refresh Button */
+  uint32_t re_id = eid_get_id("refresh", 90, 10);
+  uint32_t re_state = eid_process_interaction(&ui, re_id, 90, 10, 24, 22);
+  eid_draw_rect(fb, WIN_W, WIN_H, 90, 10, 24, 22,
+                (re_state & EID_STATE_HOVER) ? 0x3C4043 : CLR_CHROME_2);
+  eid_draw_text(fb, WIN_W, WIN_H, 98, 15, "R", 0xFFFFFF);
+  if (re_state & EID_STATE_CLICKED) {
+    load_page(current_url);
+  }
+
+  /* URL Bar */
+  int url_w = WIN_W - 180;
+  eid_draw_rect(fb, WIN_W, WIN_H, 140, 8, url_w, 26, CLR_CHROME_2);
+  eid_draw_rect(fb, WIN_W, WIN_H, 140, 8, url_w, 1,
+                0x3C4043); /* inner shadow hint */
+
+  char url_display[140];
+  if (is_typing_url) {
+    sprintf(url_display, "%s_", current_url);
+    eid_draw_text(fb, WIN_W, WIN_H, 150, 14, url_display, 0xFFFFFF);
+  } else {
+    eid_draw_text(fb, WIN_W, WIN_H, 150, 14, current_url, 0xBDC1C6);
+  }
+
+  /* Page Title Bar */
+  eid_draw_rect(fb, WIN_W, WIN_H, 0, 43, WIN_W, 22, 0xEDF2FA);
+  eid_draw_text(fb, WIN_W, WIN_H, CONTENT_X, 47, page_title, 0x444746);
+  eid_draw_line(fb, WIN_W, WIN_H, 0, 65, WIN_W, 65, CLR_BORDER);
+
   int v_lines = visible_lines();
   int max_scroll = line_count - v_lines;
   if (max_scroll < 0)
@@ -386,74 +1517,139 @@ static void render(const char *filename) {
   if (scroll_line > max_scroll)
     scroll_line = max_scroll;
 
-  // 3. Цикл отрисовки текста
-  int cur_y = CONTENT_Y;
+  int cur_y = CONTENT_Y + 14; /* Offset for the page title bar */
   for (int i = 0; i < v_lines; i++) {
-    int idx = scroll_line + i; // Объявляем idx внутри цикла
+    int idx = scroll_line + i;
     if (idx >= line_count)
       break;
 
-    // Смещение для списков (indent)
     int cur_x = CONTENT_X + (lines[idx].indent ? 18 : 0);
+    draw_text_line(cur_x, cur_y, &lines[idx]);
 
-    // Вызов отрисовки строки (убедись, что draw_text_line принимает нужные
-    // аргументы)
-    draw_text_line(cur_x, cur_y, lines[idx].text, lines[idx].style);
+    /* Handle link interaction */
+    if (lines[idx].style == STYLE_LINK && lines[idx].link_url[0]) {
+      uint32_t id = eid_get_id(lines[idx].link_url, cur_x, cur_y);
+      uint32_t state = eid_process_interaction(
+          &ui, id, cur_x, cur_y, strlen(lines[idx].text) * 8, LINE_H);
+      if (state & EID_STATE_CLICKED) {
+        char resolved[128];
+        resolve_url(current_url, lines[idx].link_url, resolved);
+        strcpy(current_url, resolved);
+        load_page(current_url);
+        return; /* Avoid drawing more in this frame */
+      }
+    }
+
     cur_y += LINE_H;
   }
 
-  // 4. Отрисовка скроллбара (используем max_scroll, который объявили выше)
-  eid_draw_rect(fb, WIN_W, WIN_H, WIN_W - 12, CONTENT_Y, 4,
-                WIN_H - CONTENT_Y - 18, 0xD5DCE4);
+  /* Scrollbar */
+  int scroll_track_y = 66;
+  int scroll_track_h = WIN_H - scroll_track_y - 20;
+  eid_draw_rect(fb, WIN_W, WIN_H, WIN_W - 10, scroll_track_y, 4, scroll_track_h,
+                0xE8EAED);
 
   if (line_count > v_lines) {
-    int track_h = WIN_H - CONTENT_Y - 18;
-    int knob_h = (v_lines * track_h) / line_count;
-    if (knob_h < 16)
-      knob_h = 16;
+    int knob_h = (v_lines * scroll_track_h) / line_count;
+    if (knob_h < 12)
+      knob_h = 12;
 
     int denom = (max_scroll > 0) ? max_scroll : 1;
-    int knob_y = CONTENT_Y + (scroll_line * (track_h - knob_h)) / denom;
+    int knob_y =
+        scroll_track_y + (scroll_line * (scroll_track_h - knob_h)) / denom;
 
-    eid_draw_rect(fb, WIN_W, WIN_H, WIN_W - 12, knob_y, 4, knob_h, CLR_LINK);
+    eid_draw_rect(fb, WIN_W, WIN_H, WIN_W - 10, knob_y, 4, knob_h, 0x9AA0A6);
   }
 
-  // 5. Футер
-  eid_draw_text(fb, WIN_W, WIN_H, CONTENT_X, WIN_H - 16,
-                "Up/Down scroll  Esc close", CLR_MUTED);
+  /* Status Bar */
+  eid_draw_rect(fb, WIN_W, WIN_H, 0, WIN_H - 18, WIN_W, 18, 0xF1F3F4);
+  eid_draw_line(fb, WIN_W, WIN_H, 0, WIN_H - 18, WIN_W, WIN_H - 18, CLR_BORDER);
+  eid_draw_text(fb, WIN_W, WIN_H, CONTENT_X, WIN_H - 14,
+                "L: Edit URL  Up/Down: Scroll  Esc: Exit", CLR_MUTED);
+}
+
+static void load_page(const char *url) {
+  print("[BROWSER] Navigating to: ");
+  print(url);
+  print("\n");
+
+  char *html = NULL;
+  uint32_t size = 0;
+
+  if (strstr(url, "http://") || strchr(url, '.')) {
+    const char *host = url;
+    if (strncmp(url, "http://", 7) == 0)
+      host += 7;
+
+    char hostname[64];
+    int i = 0;
+    while (host[i] && host[i] != '/' && i < 63) {
+      hostname[i] = host[i];
+      i++;
+    }
+    hostname[i] = '\0';
+
+    print("[BROWSER] Resolving ");
+    print(hostname);
+    print("...\n");
+
+    uint32_t ip = net_dns_resolve(hostname);
+    if (ip == 0) {
+      line_count = 0;
+      push_line("DNS Resolution Failed", 21, STYLE_H1, false);
+      push_line(hostname, strlen(hostname), STYLE_MUTED, false);
+      return;
+    }
+
+    print("[BROWSER] Fetching from IP...\n");
+    html = (char *)net_http_get(ip, &size);
+  } else {
+    html = (char *)_syscall(SYS_READ_FILE, (uint64_t)url, (uint64_t)&size, 0, 0,
+                            0);
+  }
+
+  if (!html) {
+    line_count = 0;
+    push_line("404 Not Found / Connection Failed", 33, STYLE_H1, false);
+    push_line(url, strlen(url), STYLE_MUTED, false);
+  } else {
+    if (!is_navigating_history) {
+      push_history(url);
+    }
+    char *body = strstr(html, "\r\n\r\n");
+    if (body) {
+      body += 4;
+      parse_html(body, size - (body - html));
+    } else {
+      parse_html(html, size);
+    }
+  }
 }
 
 int main(int argc, char **argv) {
   eid_init();
 
-  const char *filename = "index.html";
-  if (argc > 1 && argv[1] != 0)
-    filename = argv[1];
+  /* Load header font */
+  uint32_t fsize = 0;
+  void *f_data = (void *)_syscall(SYS_READ_FILE, (uint64_t)"Inter.ttf",
+                                  (uint64_t)&fsize, 0, 0, 0);
+  if (f_data) {
+    h_font = eid_load_font((unsigned char *)f_data, 16.0f);
+    h_font_large = eid_load_font((unsigned char *)f_data, 22.0f);
+  }
 
-  print("[HTMLVIEW] Loading ");
-  print(filename);
-  print("\n");
-
-  uint32_t size = 0;
-  char *html = (char *)_syscall(SYS_READ_FILE, (uint64_t)filename,
-                                (uint64_t)&size, 0, 0, 0);
+  if (argc > 1 && argv[1] != 0) {
+    strcpy(current_url, argv[1]);
+  }
 
   for (int i = 0; i < WIN_W * WIN_H; i++)
     fb[i] = CLR_BG;
 
-  if (!html) {
-    line_count = 0;
-    push_line("Could not open HTML file.", 25, STYLE_H2, false);
-    push_line(filename, strlen(filename), STYLE_MUTED, false);
-    print("[HTMLVIEW] File not found\n");
-  } else {
-    parse_html(html, size);
-    print("[HTMLVIEW] Parsed document\n");
-  }
+  load_page(current_url);
 
   while (1) {
     eid_begin(&ui, fb, WIN_W, WIN_H);
-    ui.mx -= 120; // 120 - это WIN_X из вызова eid_end
+    ui.mx -= 120;
     ui.my -= 90;
 
     uint8_t key = ui.last_key;
@@ -463,26 +1659,46 @@ int main(int argc, char **argv) {
 
     if (key == 0x01)
       break;
-    if ((key == 0x50 || key == 0x1F) && scroll_line < max_scroll)
-      scroll_line++;
-    if ((key == 0x48 || key == 0x11) && scroll_line > 0)
-      scroll_line--;
-    if (key == 0x51) {
-      scroll_line += visible_lines();
-      if (scroll_line > max_scroll)
-        scroll_line = max_scroll;
-    }
-    if (key == 0x49) {
-      scroll_line -= visible_lines();
-      if (scroll_line < 0)
-        scroll_line = 0;
-    }
-    if (key == 0x47)
-      scroll_line = 0;
-    if (key == 0x4F)
-      scroll_line = max_scroll;
 
-    render(filename);
+    if (is_typing_url) {
+      if (key == 0x1C) {
+        is_typing_url = false;
+        load_page(current_url);
+      } else if (key == 0x0E) {
+        if (url_cursor > 0) {
+          url_cursor--;
+          current_url[url_cursor] = '\0';
+        }
+      } else {
+        char c = scancode_to_ascii(key);
+        if (c >= 32 && c < 127 && url_cursor < 120) {
+          current_url[url_cursor++] = c;
+          current_url[url_cursor] = '\0';
+        }
+      }
+    } else {
+      if (key == 0x26) {
+        is_typing_url = true;
+        url_cursor = 0;
+        current_url[0] = '\0';
+      }
+      if ((key == 0x50 || key == 0x1F) && scroll_line < max_scroll)
+        scroll_line++;
+      if ((key == 0x48 || key == 0x11) && scroll_line > 0)
+        scroll_line--;
+      if (key == 0x51) {
+        scroll_line += visible_lines();
+        if (scroll_line > max_scroll)
+          scroll_line = max_scroll;
+      }
+      if (key == 0x49) {
+        scroll_line -= visible_lines();
+        if (scroll_line < 0)
+          scroll_line = 0;
+      }
+    }
+
+    render(current_url);
     eid_end(&ui, 120, 90);
     sleep(20);
   }
