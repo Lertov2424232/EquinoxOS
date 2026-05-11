@@ -2,6 +2,7 @@
 #define NET_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 #define HTONS(n) ((((uint16_t)(n) & 0xFF00) >> 8) | (((uint16_t)(n) & 0x00FF) << 8))
 #define HTONL(n) ((((uint32_t)(n) & 0xFF000000) >> 24) | \
@@ -79,4 +80,24 @@ typedef struct {
 #define TCP_PSH  0x08
 #define TCP_ACK  0x10
 
-#endif // <--- ТЕПЕРЬ ОН ТУТ!
+typedef struct net_interface {
+    char name[16];
+    uint8_t mac[6];
+    uint32_t ip;
+    uint32_t subnet_mask;
+    uint32_t gateway_ip;
+    void (*send)(void* data, uint32_t len);
+} net_interface_t;
+
+// --- Net Interface ---
+void net_register_interface(net_interface_t* iface);
+net_interface_t* net_get_interface(const char* name);
+net_interface_t* net_get_primary_interface(void);
+
+void net_handle_packet(net_interface_t* iface, uint8_t* packet, uint16_t length);
+void net_send_packet(net_interface_t* iface, uint8_t* dest_mac, uint16_t ethertype, uint8_t* payload, uint32_t payload_len);
+
+// --- Globals ---
+// Removed global mac_addr/local_ip. Use net_get_primary_interface().
+
+#endif

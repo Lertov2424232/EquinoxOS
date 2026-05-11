@@ -58,6 +58,7 @@ uint32_t fat32_vfs_read(vfs_node_t* node, uint32_t offset, uint32_t size, uint8_
 }
 
 uint32_t fat32_vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
+    (void)offset;
     if (!fat32_ready) return 0;
     // Bridging to existing save_file (which handles allocation/overwriting)
     fat32_save_file(node->name, (char*)buffer, size);
@@ -65,6 +66,7 @@ uint32_t fat32_vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size, uint8
 }
 
 struct vfs_dirent* fat32_vfs_readdir(vfs_node_t* node, uint32_t index) {
+    (void)node;
     if (bpb->sectors_per_cluster == 0) return NULL;
 
     uint8_t* buf = kmalloc(bpb->sectors_per_cluster * 512);
@@ -270,7 +272,7 @@ void fat32_list_files() {
         fat32_entry_t* entries = (fat32_entry_t*)buf;
         for (int i = 0; i < (bpb->sectors_per_cluster * 512 / 32); i++) {
             if (entries[i].name[0] == 0) break; // Конец списка
-            if (entries[i].name[0] == 0xE5) continue; // Удален
+            if ((uint8_t)entries[i].name[0] == 0xE5) continue; // Удален
             if (entries[i].attr & 0x08) continue; // Метка тома (Volume ID)
 
             // Выводим имя файла (8.3 формат)
@@ -388,7 +390,7 @@ void fat32_set_cluster_entry(uint32_t cluster, uint32_t value) {
     uint8_t buf[512];
     read_sectors_ata_pio((uintptr_t)buf, fat_sector, 1);
     *(uint32_t*)&buf[ent_offset] = (value & 0x0FFFFFFF);
-    write_sectors_ata_pio(fat_sector, 1, (uint16_t*)buf);
+    write_sectors_ata_pio((uintptr_t)buf, fat_sector, 1);
 }
 
 void fat32_save_file(const char* name, const char* data, uint32_t size) {
@@ -452,7 +454,7 @@ found_slot:
     entries[target_idx].cluster_low = first_file_cluster & 0xFFFF;
     entries[target_idx].cluster_high = (first_file_cluster >> 16) & 0xFFFF;
 
-    write_sectors_ata_pio(target_cluster_lba, bpb->sectors_per_cluster, (uint16_t*)root_buf);
+    write_sectors_ata_pio((uintptr_t)root_buf, target_cluster_lba, bpb->sectors_per_cluster);
 
     // --- ШАГ 4: Запись данных файла ---
     uint32_t cluster_to_write = first_file_cluster;
@@ -467,7 +469,7 @@ found_slot:
         uint32_t to_copy = (bytes_left > cluster_size) ? cluster_size : bytes_left;
         memcpy(write_buf, data_ptr, to_copy);
         
-        write_sectors_ata_pio(lba, bpb->sectors_per_cluster, (uint16_t*)write_buf);
+        write_sectors_ata_pio((uintptr_t)write_buf, lba, bpb->sectors_per_cluster);
         
         data_ptr += to_copy;
         bytes_left -= to_copy;
