@@ -28,9 +28,18 @@ int vsprintf(char *buffer, const char *format, va_list args) {
       f++;
     }
 
-    if (*f == 'u' || *f == 'd') {
-      unsigned int val = va_arg(args, unsigned int);
-      itoa(val, 10, temp_buf);
+    if (*f == 'u' || *f == 'd' || *f == 'x' || *f == 'p') {
+      unsigned long long val;
+      if (*f == 'p') {
+          val = va_arg(args, unsigned long long);
+          itoa_hex(val, temp_buf);
+      } else if (*f == 'x') {
+          val = va_arg(args, unsigned int);
+          itoa_hex(val, temp_buf);
+      } else {
+          val = va_arg(args, unsigned int);
+          itoa(val, 10, temp_buf);
+      }
 
       int len = strlen(temp_buf);
       // Добавляем набивку (padding), если число короче нужной ширины
@@ -39,12 +48,6 @@ int vsprintf(char *buffer, const char *format, va_list args) {
         len++;
       }
 
-      char *t = temp_buf;
-      while (*t)
-        *ptr++ = *t++;
-    } else if (*f == 'x') {
-      unsigned long long val = va_arg(args, unsigned long long);
-      itoa_hex(val, temp_buf);
       char *t = temp_buf;
       while (*t)
         *ptr++ = *t++;

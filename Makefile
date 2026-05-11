@@ -9,7 +9,7 @@ ISO_ROOT = iso_root
 
 # --- ФЛАГИ ЯДРА ---
 CFLAGS = -ffreestanding -O2 -Wall -Wextra -fno-exceptions -std=c11 \
-         -Isrc -Isrc/drivers -Isrc/shell -Isrc/boot/limine \
+         -Isrc -Isrc/drivers -Isrc/shell -Isrc/boot/limine -Isrc/net \
          -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 \
          -fno-stack-protector -fno-pic -g
 
@@ -43,7 +43,8 @@ KERNEL_OBJS = $(OBJ_DIR)/kernel.o $(OBJ_DIR)/io.o $(OBJ_DIR)/keyboard.o $(OBJ_DI
               $(OBJ_DIR)/task.o $(OBJ_DIR)/fat32.o $(OBJ_DIR)/serial.o $(OBJ_DIR)/memory.o \
               $(OBJ_DIR)/fs.o $(OBJ_DIR)/vesa.o $(OBJ_DIR)/mouse.o $(OBJ_DIR)/string.o \
               $(OBJ_DIR)/panic.o $(OBJ_DIR)/vmm.o $(OBJ_DIR)/gdt.o $(OBJ_DIR)/pcspeaker.o \
-              $(OBJ_DIR)/terminal.o $(OBJ_DIR)/ext2.o $(OBJ_DIR)/ext2_tests.o $(OBJ_DIR)/shm.o
+              $(OBJ_DIR)/terminal.o $(OBJ_DIR)/ext2.o $(OBJ_DIR)/ext2_tests.o $(OBJ_DIR)/shm.o \
+              $(OBJ_DIR)/net.o $(OBJ_DIR)/arp.o $(OBJ_DIR)/ipv4.o $(OBJ_DIR)/udp.o $(OBJ_DIR)/tcp.o $(OBJ_DIR)/icmp.o $(OBJ_DIR)/dns.o
 
 # --- НАСТРОЙКИ LUA ---
 LUA_DIR = sdk/lua
@@ -73,7 +74,7 @@ $(OBJ_DIR)/%.o: src/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 $(OBJ_DIR)/%.o: src/system/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
-$(OBJ_DIR)/%.o: src/drivers/screen/%.c
+$(OBJ_DIR)/%.o: src/net/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 $(OBJ_DIR)/%.o: src/drivers/keyboard/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
