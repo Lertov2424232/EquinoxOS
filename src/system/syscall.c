@@ -11,6 +11,7 @@
 #include "../net/tcp.h"
 #include "memory.h"
 #include "pmm.h"
+#include "shm.h"
 #include "task.h"
 #include "vmm.h"
 #include <stdint.h>
@@ -362,20 +363,17 @@ void syscall_handler(syscall_regs_t *regs) {
     ac97_set_rate((uint32_t)regs->rdi);
     break;
   }
-  case 30: { // SYS_MAP_PHYS (Только для "белых" процессов)
+  case 30: { // SYS_MAP_PHYS (Для Композитора: мапим VESA LFB в юзерспейс)
     uint64_t phys = regs->rdi;
     uint32_t size = regs->rsi;
     uint32_t pages = (size + 4095) / 4096;
 
-    // В идеале тут проверка: только PID Композитора может это делать
-    static uint64_t phys_map_vaddr = 0xE0000000;
-    uint64_t virt = phys_map_vaddr;
-    phys_map_vaddr += (pages * 4096);
+    // ВНИМАНИЕ: Это опасный вызов. В будущем добавь проверку прав!
+    uint64_t virt = 0xFE000000000; // Фиксированный адрес для видеопамяти
 
-    uint64_t cr3;
-    __asm__ volatile("mov %%cr3, %0" : "=r"(cr3));
+    page_table_t *pml4 = (page_table_t *)VIRT(current_task->cr3);
     for (uint32_t i = 0; i < pages; i++) {
-      vmm_map((page_table_t *)VIRT(cr3), virt + (i * 4096), phys + (i * 4096),
+      vmm_map(pml4, virt + (i * 4096), phys + (i * 4096),
               PTE_PRESENT | PTE_USER | PTE_WRITABLE);
     }
     regs->rax = virt;
@@ -383,8 +381,7 @@ void syscall_handler(syscall_regs_t *regs) {
   }
 
   case 31: { // SYS_SHM_GET
-    extern uint64_t sys_shm_get(int key, uint32_t size);
-    regs->rax = sys_shm_get((int)regs->rdi, (uint32_t)regs->rsi);
+    regs->rax = sys_shm_get((uint32_t)regs->rdi, (uint32_t)regs->rsi);
     break;
   }
 

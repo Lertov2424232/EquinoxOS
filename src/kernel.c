@@ -16,6 +16,7 @@
 #include "system/memory.h"
 #include "system/pic.h"
 #include "system/pmm.h"
+#include "system/shm.h"
 #include "system/task.h"
 #include "system/timer.h"
 #include "system/vmm.h"
