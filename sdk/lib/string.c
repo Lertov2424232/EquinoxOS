@@ -266,3 +266,14 @@ char *strpbrk(const char *s, const char *accept) {
 // strcoll используется для сравнения строк с учетом локали.
 // У нас локаль одна - "C", поэтому просто вызываем strcmp.
 int strcoll(const char *s1, const char *s2) { return strcmp(s1, s2); }
+
+size_t strcspn(const char *s, const char *reject) {
+  size_t count = 0;
+  while (*s) {
+    if (strchr(reject, *s))
+      return count;
+    s++;
+    count++;
+  }
+  return count;
+}

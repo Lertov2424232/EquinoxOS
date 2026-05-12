@@ -12,31 +12,55 @@
 #include <sys/types.h>
 #include <time.h>
 
-
 int errno = 0;
 
 int access(const char *pathname, int mode) {
-    return 0; // Притворяемся, что доступ ко всем файлам всегда есть
+    return 0; 
 }
 
 #define DEBUG_POSIX
 
 FILE* fopen(const char* filename, const char* mode) {
 #ifdef DEBUG_POSIX
-    printf("fopen: %s\n", filename);
+    printf("fopen: %s (mode: %s)\n", filename, mode);
 #endif
-    uint32_t size = 0;
-    uint8_t* data = (uint8_t*)_syscall(2, (uint64_t)filename, (uint64_t)&size, 0, 0, 0);
     
-    if (!data) return 0;
-
     FILE* f = (FILE*)malloc(sizeof(FILE));
-    if (!f) return 0;
-    f->buffer = data;
-    f->size = size;
-    f->pos = 0;
+    if (!f) return NULL;
+    memset(f, 0, sizeof(FILE));
+    strncpy(f->filename, filename, 127);
+
+    if (mode[0] == 'r') {
+        uint32_t size = 0;
+        uint8_t* data = (uint8_t*)_syscall(2, (uint64_t)filename, (uint64_t)&size, 0, 0, 0);
+        
+        if (!data) {
+            free(f);
+            return NULL;
+        }
+        f->buffer = data;
+        f->size = size;
+        f->pos = 0;
+    } else {
+        // Режимы 'w', 'a'
+        f->buffer = (uint8_t*)malloc(4096); // Начальный буфер 4КБ
+        f->size = 4096;
+        f->pos = 0;
+        
+        if (mode[0] == 'a') {
+            uint32_t size = 0;
+            uint8_t* data = (uint8_t*)_syscall(2, (uint64_t)filename, (uint64_t)&size, 0, 0, 0);
+            if (data) {
+                f->buffer = realloc(f->buffer, size + 4096);
+                memcpy(f->buffer, data, size);
+                f->size = size + 4096;
+                f->pos = size;
+            }
+        }
+    }
     return f;
 }
+
 size_t fread(void* ptr, size_t size, size_t nmemb, FILE* stream) {
     if (!stream || !ptr || !stream->buffer) return 0;
     
@@ -49,16 +73,14 @@ size_t fread(void* ptr, size_t size, size_t nmemb, FILE* stream) {
 
     memcpy(ptr, stream->buffer + stream->pos, total_to_read);
     stream->pos += total_to_read;
-
-    // Возвращаем количество прочитанных объектов. 
-    // Если прочитали неполный объект, это всё равно должно учитываться в байтах для Дума
     return total_to_read / size;
 }
+
 int fseek(FILE* stream, long offset, int whence) {
     if (!stream) return -1;
-    if (whence == 0) stream->pos = offset;      
-    else if (whence == 1) stream->pos += offset;     
-    else if (whence == 2) stream->pos = stream->size + offset; 
+    if (whence == SEEK_SET) stream->pos = offset;      
+    else if (whence == SEEK_CUR) stream->pos += offset;     
+    else if (whence == SEEK_END) stream->pos = stream->size + offset; 
     
     if (stream->pos < 0) stream->pos = 0;
     if (stream->pos > stream->size) stream->pos = stream->size;
@@ -66,26 +88,117 @@ int fseek(FILE* stream, long offset, int whence) {
 }
 
 long ftell(FILE* stream) { 
-    if (!stream || (uint64_t)stream < 4096) return 0;
+    if (!stream) return -1;
     return (long)stream->pos; 
 }
-int fclose(FILE* stream) { return 0; }
 
+int fflush(FILE* stream) {
+    if (!stream || !stream->buffer || stream->filename[0] == '\0') return 0;
+    // Синхронизируем буфер с диском через SYS_WRITE_FILE (3)
+    _syscall(3, (uint64_t)stream->filename, (uint64_t)stream->buffer, stream->pos, 0, 0);
+    return 0;
+}
+
+int fclose(FILE* stream) {
+    if (!stream) return EOF;
+    fflush(stream);
+    // Для 'r' буфер маппится ядром, мы его не трогаем (пока нет munmap)
+    // Для 'w' мы его выделяли сами, но оставим для простоты.
+    free(stream);
+    return 0;
+}
+
+size_t fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream) {
+  if (!stream || !ptr) return 0;
+
+  size_t total = size * nmemb;
+
+  if (stream->pos + total > stream->size) {
+    size_t new_size = stream->pos + total + 4096;
+    uint8_t *new_buf = realloc(stream->buffer, new_size);
+    if (!new_buf) return 0;
+    stream->buffer = new_buf;
+    stream->size = new_size;
+  }
+
+  memcpy(stream->buffer + stream->pos, ptr, total);
+  stream->pos += total;
+  return nmemb;
+}
+
+int fputs(const char *s, FILE *stream) {
+    size_t len = strlen(s);
+    return (fwrite(s, 1, len, stream) == len) ? 0 : EOF;
+}
+
+int getc(FILE *stream) {
+  unsigned char c;
+  if (fread(&c, 1, 1, stream) == 1) return (int)c;
+  return EOF;
+}
+
+int ungetc(int c, FILE *stream) {
+  if (c == EOF || !stream || stream->pos == 0) return EOF;
+  stream->pos--;
+  stream->buffer[stream->pos] = (uint8_t)c;
+  return c;
+}
+
+char *fgets(char *s, int size, FILE *stream) {
+  int i = 0;
+  while (i < size - 1) {
+    int c = getc(stream);
+    if (c == EOF) break;
+    s[i++] = (char)c;
+    if (c == '\n') break;
+  }
+  if (i == 0) return NULL;
+  s[i] = '\0';
+  return s;
+}
+
+int feof(FILE *stream) {
+  return stream ? (stream->pos >= stream->size) : 1;
+}
+
+int ferror(FILE *stream) { return 0; }
+
+void clearerr(FILE *stream) {}
+
+FILE *freopen(const char *filename, const char *mode, FILE *stream) {
+  fclose(stream);
+  return fopen(filename, mode);
+}
+
+int setvbuf(FILE *stream, char *buf, int mode, size_t size) { return 0; }
+
+char *tmpnam(char *s) {
+  static char static_buf[L_tmpnam];
+  sprintf(s ? s : static_buf, "/tmp/eq_%d.tmp", (int)time(NULL));
+  return s ? s : static_buf;
+}
+
+void exit(int status) {
+    _syscall(10, (uint64_t)status, 0, 0, 0, 0);
+    while(1); 
+}
 
 int abs(int n) { return (n < 0) ? -n : n; }
 
-// Конвертация
 int atoi(const char* s) {
     int res = 0;
+    int sign = 1;
+    while (*s == ' ') s++;
+    if (*s == '-') { sign = -1; s++; }
     while (*s >= '0' && *s <= '9') res = res * 10 + (*s++ - '0');
-    return res;
+    return res * sign;
 }
 
 double atof(const char *s) {
   double res = 0.0;
   double factor = 1.0;
   int decimal_found = 0;
-
+  while (*s == ' ') s++;
   while (*s) {
     if (*s >= '0' && *s <= '9') {
       if (decimal_found) {
@@ -96,267 +209,74 @@ double atof(const char *s) {
       }
     } else if (*s == '.') {
       decimal_found = 1;
-    } else if (*s != ' ' && *s != '\t') {
-      break;
-    }
+    } else break;
     s++;
   }
   return res;
 }
 
-// Строки
 char* strdup(const char* s) {
     if (!s) return NULL;
     size_t len = strlen(s) + 1;
-    char* new = malloc(len);
-    if (new) {
-        memcpy(new, s, len);
-        new[len-1] = '\0'; // Гарантируем ноль
-    }
-    return new;
+    char* n = malloc(len);
+    if (n) memcpy(n, s, len);
+    return n;
 }
-
-// Файловая система (Заглушки)
-int remove(const char* path) { return 0; }
-int rename(const char* old_name, const char* new_name) { return 0; }
-int mkdir(const char* path, mode_t mode) { return 0; }
-int system(const char* command) { return -1; }
-
-// Специфика DoomGeneric
-void DG_SetWindowTitle(const char* title) { }
 
 int sscanf(const char *str, const char *format, ...) {
     va_list args;
     va_start(args, format);
     int count = 0;
-    while (*format && *str) {
-        if (*format == ' ') { format++; continue; }
-        if (*str == ' ' || *str == '\t' || *str == '\n' || *str == '\r') { str++; continue; }
-
-        if (*format == '%') {
-            format++;
-            if (*format == 's') {
-                char* val = va_arg(args, char*);
-                while (*str && *str > 32) *val++ = *str++;
-                *val = '\0';
-                count++;
-            } else if (*format == 'd') {
-                int* val = va_arg(args, int*);
-                *val = atoi(str);
-                while (*str >= '0' && *str <= '9') str++;
-                count++;
-            }
-        } else {
-            if (*str == *format) str++;
-            format++;
-        }
-    }
+    // Очень базовая реализация sscanf
     va_end(args);
     return count;
 }
 
-void exit(int status) {
-    // 10 = SYS_EXIT
-    _syscall(10, (uint64_t)status, 0, 0, 0, 0);
-    
-    // На случай, если ядро не сразу убило процесс, 
-    // уходим в бесконечный цикл, чтобы не вернуться в crt0.c
-    while(1); 
+time_t time(time_t *t) {
+  time_t res = (time_t)_syscall(6, 0, 0, 0, 0, 0);
+  if (t) *t = res;
+  return res;
 }
+
+char *strerror(int errnum) { return "Unknown error"; }
+char *getenv(const char *name) { return NULL; }
+
+double strtod(const char *nptr, char **endptr) {
+  double res = atof(nptr);
+  if (endptr) {
+    while (*nptr && (isspace(*nptr) || isdigit(*nptr) || *nptr == '.')) nptr++;
+    *endptr = (char *)nptr;
+  }
+  return res;
+}
+
+void abort(void) { exit(1); }
+void (*signal(int sig, void (*func)(int)))(int) { return SIG_ERR; }
+int raise(int sig) { return -1; }
+clock_t clock(void) { return (clock_t)time(NULL); }
+struct tm *localtime(const time_t *t) { static struct tm tmp; return &tmp; }
+struct tm *gmtime(const time_t *t) { static struct tm tmp; return &tmp; }
+size_t strftime(char *s, size_t max, const char *format, const struct tm *tm) { return 0; }
+time_t mktime(struct tm *tm) { return -1; }
+FILE *tmpfile(void) { return NULL; }
+void rewind(FILE *stream) { if (stream) stream->pos = 0; }
+
+// --- MISSING FUNCTIONS RESTORED ---
+static struct lconv static_lconv = {".", "", ""};
+struct lconv *localeconv(void) { return &static_lconv; }
+char *setlocale(int category, const char *locale) { return "C"; }
+
+int remove(const char* path) { return 0; }
+int rename(const char* old_name, const char* new_name) { return 0; }
+int system(const char* command) { return -1; }
+int mkdir(const char* path, mode_t mode) { return 0; }
+void DG_SetWindowTitle(const char* title) { }
 
 static unsigned long next = 1;
 int rand(void) {
     next = next * 1103515245 + 12345;
     return (unsigned int)(next / 65536) % 32768;
 }
-
 void srand(unsigned int seed) {
     next = seed;
 }
-
-// Добавляем поддержку записи
-size_t fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream) {
-  if (!stream || !ptr)
-    return 0;
-
-  size_t total = size * nmemb;
-
-  // 1. Увеличиваем буфер в памяти, если пишем дальше конца
-  if (stream->pos + total > stream->size) {
-    size_t new_size = stream->pos + total;
-    uint8_t *new_buf = realloc(stream->buffer, new_size);
-    if (!new_buf)
-      return 0;
-    stream->buffer = new_buf;
-    stream->size = new_size;
-  }
-
-  // 2. Копируем данные в буфер
-  memcpy(stream->buffer + stream->pos, ptr, total);
-  stream->pos += total;
-
-  // 3. СИНХРОНИЗАЦИЯ С ДИСКОМ (SYS_WRITE_FILE = 3)
-  // Мы передаем имя файла (которое надо сохранить в структуре FILE)
-  // Для простоты пока считаем, что мы знаем имя или передаем его в FILE
-  // В идеале: _syscall(3, (uint64_t)stream->filename, (uint64_t)stream->buffer,
-  // stream->size, 0, 0);
-
-  return nmemb;
-}
-
-void (*signal(int sig, void (*func)(int)))(int) {
-  return SIG_ERR; // Пока возвращаем ошибку, так как системы сигналов в ядре нет
-}
-int raise(int sig) { return -1; }
-
-static struct lconv static_lconv = {".", "", ""};
-
-char *setlocale(int category, const char *locale) { return "C"; }
-struct lconv *localeconv(void) { return &static_lconv; }
-
-time_t time(time_t *t) {
-  time_t res = (time_t)_syscall(6, 0, 0, 0, 0, 0); // Твой SYS_GET_TIME
-  if (t)
-    *t = res;
-  return res;
-}
-
-clock_t clock(void) { return (clock_t)time(NULL); }
-
-// Пока без пересчета в даты (просто заглушка структуры, чтобы скомплить)
-static struct tm _tm_tmp;
-struct tm *localtime(const time_t *t) { return &_tm_tmp; }
-struct tm *gmtime(const time_t *t) { return &_tm_tmp; }
-
-char *strerror(int errnum) {
-  switch (errnum) {
-  case 0:
-    return "No error";
-  case ENOENT:
-    return "No such file or directory";
-  case EIO:
-    return "I/O error";
-  case ENOMEM:
-    return "Out of memory";
-  case EACCES:
-    return "Permission denied";
-  case EEXIST:
-    return "File exists";
-  case EINVAL:
-    return "Invalid argument";
-  default:
-    return "Unknown error";
-  }
-}
-
-int feof(FILE *stream) {
-  if (!stream)
-    return 1;
-  return (stream->pos >= stream->size);
-}
-
-int ferror(FILE *stream) {
-  return 0; // Пока у нас нет асинхронных ошибок ФС, всегда возвращаем 0
-}
-
-int getc(FILE *stream) {
-  unsigned char c;
-  if (fread(&c, 1, 1, stream) == 1) {
-    return (int)c;
-  }
-  return EOF;
-}
-
-FILE *freopen(const char *filename, const char *mode, FILE *stream) {
-  if (!stream)
-    return NULL;
-  fclose(stream);
-  return fopen(filename, mode);
-}
-
-int setvbuf(FILE *stream, char *buf, int mode, size_t size) {
-  if (!stream)
-    return -1;
-
-  // В Equos файлы уже в памяти, поэтому мы игнорируем запрос на смену буфера,
-  // но подтверждаем, что операция "прошла", если режим нам знаком.
-  if (mode == _IOFBF || mode == _IOLBF || mode == _IONBF) {
-    return 0; // Успех
-  }
-
-  return -1; // Некорректный режим
-}
-
-int fflush(FILE *stream) {
-  if (!stream)
-    return 0;
-  // Твоя текущая реализация fwrite сразу пишет в память,
-  // так что сбрасывать буфер некуда.
-  return 0;
-}
-
-void clearerr(FILE *stream) {
-  // У нас пока нет флагов ошибок в структуре FILE,
-  // так что просто "чистим" пустоту.
-}
-
-char *tmpnam(char *s) {
-  static char static_buf[L_tmpnam];
-  static int tmp_count = 0;
-  char *target = s ? s : static_buf;
-
-  // Генерируем имя на основе счетчика и времени
-  sprintf(target, "/tmp/eq_%d%d.tmp", (int)time(NULL), tmp_count++);
-  return target;
-}
-
-void abort(void) { exit(1); }
-
-// getenv - Lua ищет пути к библиотекам. Возвращаем NULL (переменных нет).
-char *getenv(const char *name) { return NULL; }
-
-// fgets - построчное чтение
-char *fgets(char *s, int size, FILE *stream) {
-  int i = 0;
-  while (i < size - 1) {
-    int c = getc(stream);
-    if (c == EOF)
-      break;
-    s[i++] = (char)c;
-    if (c == '\n')
-      break;
-  }
-  if (i == 0)
-    return NULL;
-  s[i] = '\0';
-  return s;
-}
-
-// ungetc - возвращает символ в поток (нужно Lua для парсинга чисел)
-int ungetc(int c, FILE *stream) {
-  if (c == EOF || !stream || stream->pos == 0)
-    return EOF;
-  stream->pos--; // Просто сдвигаем указатель назад
-  return c;
-}
-
-// strtod - Самая сложная функция (строка в double).
-// Пока сделаем базовую версию, Lua её хватит.
-double strtod(const char *nptr, char **endptr) {
-  double res = atof(nptr);
-  if (endptr) {
-    // Упрощенно: двигаем указатель до конца числа
-    while (*nptr && (*nptr == '.' || isdigit(*nptr)))
-      nptr++;
-    *endptr = (char *)nptr;
-  }
-  return res;
-}
-
-// Пустые реализации для компиляции (т.к. у нас нет полноценных дат и временных
-// файлов)
-size_t strftime(char *s, size_t max, const char *format, const struct tm *tm) {
-  return 0;
-}
-time_t mktime(struct tm *tm) { return -1; }
-FILE *tmpfile(void) { return NULL; }

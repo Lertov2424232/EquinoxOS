@@ -2,6 +2,7 @@
 #include "../include/string.h"
 #include "../include/equos.h"
 #include <stdarg.h>
+#include <stdlib.h>
 
 static FILE _stdin = {0};
 static FILE _stdout = {0};
@@ -10,9 +11,6 @@ static FILE _stderr = {0};
 FILE* stdin = &_stdin;
 FILE* stdout = &_stdout;
 FILE* stderr = &_stderr;
-
-// Базовый движок форматирования строк
-// sdk/lib/stdio.c
 
 int vsprintf(char* buffer, const char* format, va_list args) {
     char* ptr = buffer;
@@ -30,19 +28,16 @@ int vsprintf(char* buffer, const char* format, va_list args) {
         int has_precision = 0;
         char pad_char = ' ';
 
-        // 1. Обработка флага '0' (набивка нулями)
         if (*f == '0') {
             pad_char = '0';
             f++;
         }
 
-        // 2. Читаем ширину поля (например, %5d)
         while (*f >= '0' && *f <= '9') {
             width = width * 10 + (*f - '0');
             f++;
         }
 
-        // 3. Читаем точность (тот самый случай %.3d)
         if (*f == '.') {
             f++;
             has_precision = 1;
@@ -52,10 +47,8 @@ int vsprintf(char* buffer, const char* format, va_list args) {
             }
         }
 
-        // 4. Пропускаем модификаторы длины (l, ll, h, z)
         while (*f == 'l' || *f == 'h' || *f == 'z') f++;
 
-        // 5. Обработка спецификаторов
         if (*f == 'd' || *f == 'i' || *f == 'u') {
             char temp_buf[64];
             if (*f == 'u') {
@@ -70,16 +63,13 @@ int vsprintf(char* buffer, const char* format, va_list args) {
             int sign = (temp_buf[0] == '-') ? 1 : 0;
             int digits_len = len - sign;
 
-            // Определяем, сколько нулей нужно добавить
             int pad_count = 0;
             if (has_precision) {
-                // Если есть точка, она имеет приоритет над флагом '0'
                 if (precision > digits_len) pad_count = precision - digits_len;
             } else if (pad_char == '0' && width > len) {
                 pad_count = width - len;
             }
 
-            // Печатаем знак, потом нули, потом само число
             if (sign) *ptr++ = '-';
             while (pad_count-- > 0) *ptr++ = '0';
             
@@ -97,16 +87,15 @@ int vsprintf(char* buffer, const char* format, va_list args) {
             char* t = temp_buf;
             while (*t) *ptr++ = *t++;
         } else {
-            // Если символ неизвестен (или это %), просто выводим его
             *ptr++ = *f;
         }
 
-        if (*f) f++; // Переходим к следующему символу формата
+        if (*f) f++;
     }
     *ptr = '\0';
     return (int)(ptr - buffer);
 }
-// РЕАЛИЗАЦИЯ SPRINTF (для Змейки)
+
 int sprintf(char* buffer, const char* format, ...) {
     va_list args;
     va_start(args, format);
@@ -115,24 +104,16 @@ int sprintf(char* buffer, const char* format, ...) {
     return len;
 }
 
-// РЕАЛИЗАЦИЯ VSNPRINTF (для Doom)
-// sdk/lib/stdio.c
-
 int vsnprintf(char* str, size_t size, const char* format, va_list ap) {
     if (str == NULL || size == 0) return 0;
-    
-    // Создаем временный буфер, чтобы не повредить память приложения, 
-    // если форматная строка окажется слишком длинной
-    char tmp[1024]; 
+    char tmp[2048]; 
     int res = vsprintf(tmp, format, ap);
-    
     size_t copy_len = (res >= (int)size) ? (size - 1) : (size_t)res;
     memcpy(str, tmp, copy_len);
     str[copy_len] = '\0';
-    
     return res;
 }
-// РЕАЛИЗАЦИЯ SNPRINTF
+
 int snprintf(char* str, size_t size, const char* format, ...) {
     va_list args;
     va_start(args, format);
@@ -141,9 +122,8 @@ int snprintf(char* str, size_t size, const char* format, ...) {
     return res;
 }
 
-// ПЕЧАТЬ В ТЕРМИНАЛ (Ring 3 -> Syscall)
 int printf(const char* format, ...) {
-    char buffer[2048]; // Увеличили буфер
+    char buffer[2048];
     va_list args;
     va_start(args, format);
     int len = vsprintf(buffer, format, args);
@@ -152,14 +132,10 @@ int printf(const char* format, ...) {
     return len;
 }
 
-int fprintf(FILE* stream, const char* format, ...) {
-    char buffer[1024];
-    va_list args;
-    va_start(args, format);
-    int len = vsprintf(buffer, format, args);
-    va_end(args);
-    _syscall(1, (uint64_t)buffer, 0, 0, 0, 0);
-    return len;
+int putchar(int c) {
+    char buf[2] = {(char)c, 0};
+    _syscall(1, (uint64_t)buf, 0, 0, 0, 0);
+    return c;
 }
 
 int puts(const char* s) {
@@ -167,15 +143,21 @@ int puts(const char* s) {
     return 0;
 }
 
-int putchar(int c) {
-    char buf[2] = {(char)c, 0};
-    _syscall(1, (uint64_t)buf, 0, 0, 0, 0);
-    return c;
+int fprintf(FILE* stream, const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    int len = vfprintf(stream, format, args);
+    va_end(args);
+    return len;
 }
 
 int vfprintf(FILE* stream, const char* format, va_list ap) {
-    char buffer[2048]; // Был 512, стал 2048
+    char buffer[2048];
     int len = vsprintf(buffer, format, ap);
-    _syscall(1, (uint64_t)buffer, 0, 0, 0, 0);
+    if (stream == stdout || stream == stderr || !stream) {
+        _syscall(1, (uint64_t)buffer, 0, 0, 0, 0);
+    } else {
+        fwrite(buffer, 1, len, stream);
+    }
     return len;
 }

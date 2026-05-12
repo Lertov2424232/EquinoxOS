@@ -135,6 +135,8 @@ doom.elf: $(SDK_OBJS) $(DOOM_OBJS)
 # --- СБОРКА ПРИЛОЖЕНИЙ ---
 apps: $(SDK_OBJS) $(LUA_OBJS)
 	$(CC) $(USER_CFLAGS) -c app/snake.c -o app/snake.o
+	$(CC) $(USER_CFLAGS) -Isdk/lua -c sdk/lua_cli/lua.c -o sdk/lua_cli/lua.o
+	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) $(LUA_OBJS) sdk/lua_cli/lua.o -o $(ISO_ROOT)/lua.elf
 	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) app/snake.o -o $(ISO_ROOT)/snake.elf
 	$(CC) $(USER_CFLAGS) -c app/htmlview.c -o app/htmlview.o
 	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) app/htmlview.o -o $(ISO_ROOT)/htmlview.elf
@@ -142,8 +144,8 @@ apps: $(SDK_OBJS) $(LUA_OBJS)
 	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) app/niplay.o -o $(ISO_ROOT)/niplay.elf
 	$(CC) $(USER_CFLAGS) -c app/luagui.c -o app/luagui.o
 	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) $(LUA_OBJS) app/luagui.o -o $(ISO_ROOT)/luagui.elf
-# $(CC) $(USER_CFLAGS) -c app/bmpview.c -o app/bmpview.o
-# $(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) app/bmpview.o -o $(ISO_ROOT)/bmpview.elf
+#	$(CC) $(USER_CFLAGS) -c app/bmpview.c -o app/bmpview.o
+#	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) app/bmpview.o -o $(ISO_ROOT)/bmpview.elf
 
 # --- СИСТЕМНЫЕ ПРАВИЛА ---
 
