@@ -15,6 +15,9 @@ char* itoa(int value, char* str, int base);
 int atoi(const char* s);
 double atof(const char* s);
 int system(const char* command);
+char *getenv(const char *name);
+double strtod(const char *nptr, char **endptr);
+void abort(void);
 
 #define EXIT_SUCCESS 0
 #define EXIT_FAILURE 1

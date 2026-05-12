@@ -369,7 +369,7 @@ void syscall_handler(syscall_regs_t *regs) {
     uint32_t pages = (size + 4095) / 4096;
 
     // ВНИМАНИЕ: Это опасный вызов. В будущем добавь проверку прав!
-    uint64_t virt = 0xFE000000000; // Фиксированный адрес для видеопамяти
+    uint64_t virt = 0x20000000000; // Фиксированный адрес для видеопамяти
 
     page_table_t *pml4 = (page_table_t *)VIRT(current_task->cr3);
     for (uint32_t i = 0; i < pages; i++) {
@@ -385,15 +385,28 @@ void syscall_handler(syscall_regs_t *regs) {
     break;
   }
 
-  case 32: { // SYS_GET_VESA_INFO
-    extern uintptr_t fb_base_addr;
+  case 32: {                       // SYS_GET_VESA_INFO
+    extern uintptr_t fb_base_addr; // Виртуальный адрес от Limine (0xFFFF...)
     extern uint32_t screen_width, screen_height, screen_pitch;
+    extern uint64_t hhdm_offset;
 
-    // Возвращаем структуру через регистры (HAL в чистом виде)
-    regs->rax = fb_base_addr;
+    // ПОЛУЧАЕМ ЧИСТЫЙ ФИЗИЧЕСКИЙ АДРЕС (например, 0xFD000000)
+    uint64_t phys_fb = (uint64_t)fb_base_addr - hhdm_offset;
+
+    regs->rax = phys_fb;
     regs->rbx = screen_width;
     regs->rcx = screen_height;
     regs->rdx = screen_pitch;
+    break;
+  }
+  case 33: { // SYS_GET_WINDOW_POS
+    if (app_win) {
+      regs->rax = app_win->x;
+      regs->rbx = app_win->y;
+    } else {
+      regs->rax = 0;
+      regs->rbx = 0;
+    }
     break;
   }
   case 40: { // SYS_NET_DNS_RESOLVE

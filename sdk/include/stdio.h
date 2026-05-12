@@ -50,11 +50,16 @@ int rename(const char* old_name, const char* new_name);
 int feof(FILE *stream);
 int ferror(FILE *stream);
 int getc(FILE *stream);
+int ungetc(int c, FILE *stream);
+int fputs(const char *s, FILE *stream);
+char *fgets(char *s, int size, FILE *stream);
 FILE *freopen(const char *filename, const char *mode, FILE *stream);
 int setvbuf(FILE *stream, char *buf, int mode, size_t size);
 int fflush(FILE *stream);
 void clearerr(FILE *stream);
+void rewind(FILE *stream);
 
 char *tmpnam(char *s);
+FILE *tmpfile(void);
 
 #endif
