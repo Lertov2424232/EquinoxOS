@@ -24,5 +24,8 @@ time_t time(time_t *t);
 clock_t clock(void);
 struct tm *gmtime(const time_t *timep);
 struct tm *localtime(const time_t *timep);
+size_t strftime(char *s, size_t max, const char *format, const struct tm *tm);
+time_t mktime(struct tm *tm);
+double difftime(time_t time1, time_t time0);
 
 #endif
