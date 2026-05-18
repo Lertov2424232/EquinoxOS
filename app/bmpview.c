@@ -2,6 +2,12 @@
 #include <equos.h>
 #include <stdint.h>
 
+// --- ФИКСЫ ДЛЯ СОВМЕСТИМОСТИ С EID.H ---
+#define EID_CLR_BG 0x1e1e1e
+#define EID_CLR_TEXT 0xffffff
+#define EID_CLR_DANGER 0xff0000
+#define EID_CLR_BAR 0x333333
+
 #pragma pack(push, 1)
 typedef struct {
   uint16_t type;
@@ -27,11 +33,18 @@ typedef struct {
 #define WIN_H 350
 uint32_t app_buffer[WIN_W * WIN_H];
 
+// Локальная функция для отрисовки заголовка (так как в eid.h нет window_frame)
+void draw_ui_header(const char *title) {
+  // Рисуем верхнюю панель (rect принимает: fb, win_w, win_h, x, y, w, h, color)
+  eid_draw_rect(app_buffer, WIN_W, WIN_H, 0, 0, WIN_W, 30, EID_CLR_BAR);
+  // Рисуем текст (text принимает: fb, win_w, win_h, x, y, text, color)
+  eid_draw_text(app_buffer, WIN_W, WIN_H, 10, 8, title, EID_CLR_TEXT);
+}
+
 int main(int argc, char **argv) {
   eid_init();
 
   char filename[16];
-  // По умолчанию ставим "IMAGE.BMP" (по буквам, чтобы без багов strcpy)
   filename[0] = 'L';
   filename[1] = 'O';
   filename[2] = 'G';
@@ -42,17 +55,12 @@ int main(int argc, char **argv) {
   filename[7] = 'P';
   filename[8] = '\0';
 
-  // Жесткий и надежный парсинг аргументов
   if (argc > 1 && argv[1] != 0) {
     char *arg = argv[1];
     int start = 0;
-
-    // Пропускаем "--" если они есть
     if (arg[0] == '-' && arg[1] == '-')
       start = 2;
-
     int i = 0;
-    // Копируем только видимые символы
     while (arg[start + i] != '\0' && arg[start + i] != '\r' &&
            arg[start + i] != '\n' && arg[start + i] != ' ' && i < 15) {
       filename[i] = arg[start + i];
@@ -61,7 +69,6 @@ int main(int argc, char **argv) {
     filename[i] = '\0';
   }
 
-  // --- ОТЛАДКА В ТЕРМИНАЛ (МЫ УВИДИМ, ЧТО ИМЕННО ОН ПАРСИТ) ---
   _syscall(SYS_PRINT, (uint64_t)"[APP] Trying to read: '", 0, 0, 0, 0);
   _syscall(SYS_PRINT, (uint64_t)filename, 0, 0, 0, 0);
   _syscall(SYS_PRINT, (uint64_t)"'\n", 0, 0, 0, 0);
@@ -76,7 +83,7 @@ int main(int argc, char **argv) {
 
   if (file_data) {
     _syscall(SYS_PRINT, (uint64_t)"[APP] File loaded SUCCESS!\n", 0, 0, 0, 0);
-    eid_draw_window_frame(app_buffer, WIN_W, WIN_W, WIN_H, filename);
+    draw_ui_header(filename);
 
     bmp_fh_t *fh = (bmp_fh_t *)file_data;
     bmp_ih_t *ih = (bmp_ih_t *)(file_data + sizeof(bmp_fh_t));
@@ -98,9 +105,11 @@ int main(int argc, char **argv) {
     }
   } else {
     _syscall(SYS_PRINT, (uint64_t)"[APP] File read FAILED!\n", 0, 0, 0, 0);
-    eid_draw_window_frame(app_buffer, WIN_W, WIN_W, WIN_H, "Error");
-    eid_draw_text(app_buffer, WIN_W, 20, 50, "File not found:", EID_CLR_DANGER);
-    eid_draw_text(app_buffer, WIN_W, 20, 70, filename, EID_CLR_TEXT);
+    draw_ui_header("Error");
+    // Исправлено: добавили WIN_H в аргументы (их должно быть 7)
+    eid_draw_text(app_buffer, WIN_W, WIN_H, 20, 50,
+                  "File not found:", EID_CLR_DANGER);
+    eid_draw_text(app_buffer, WIN_W, WIN_H, 20, 70, filename, EID_CLR_TEXT);
   }
 
   _syscall(SYS_DRAW_BUFFER, 150, 150, WIN_W, WIN_H, (uint64_t)app_buffer);
@@ -109,8 +118,6 @@ int main(int argc, char **argv) {
     uint8_t key = (uint8_t)_syscall(SYS_GET_SCANCODE, 0, 0, 0, 0, 0);
     if (key == 0x01)
       break; // ESC
-
-    // КРИТИЧНО: Спим 10мс (1 кадр таймера), чтобы не жрать 100% CPU
     sleep(10);
   }
 

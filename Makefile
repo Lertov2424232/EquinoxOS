@@ -2,66 +2,68 @@ CC = x86_64-elf-gcc
 LD = x86_64-elf-ld
 ASM = nasm
 
-# --- НАСТРОЙКИ ПУТЕЙ ---
+# --- PATHS ---
 OBJ_DIR = obj
 SDK_LIB_DIR = sdk/lib
 ISO_ROOT = iso_root
 
-# --- ФЛАГИ ЯДРА ---
+# --- KERNEL FLAGS ---
 CFLAGS = -ffreestanding -O2 -Wall -Wextra -fno-exceptions -std=c11 \
          -Isrc -Isrc/drivers -Isrc/shell -Isrc/boot/limine -Isrc/net \
          -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 \
-         -fno-stack-protector -fno-pic -g
+         -fno-stack-protector -fno-pic -g -MMD -MP
 
 LDFLAGS = -nostdlib -T src/linker.ld -z max-page-size=0x1000
 ASMFLAGS = -f elf64
 
-# --- ФЛАГИ SDK (ПРИЛОЖЕНИЯ) ---
+# --- SDK FLAGS (APPS) ---
 SDK_INC = -I./sdk/include
 USER_CFLAGS = -ffreestanding -mcmodel=small -mno-red-zone -fno-stack-protector -fno-pic -g \
-              -fno-omit-frame-pointer $(SDK_INC) -DLUA_USE_C89
+              -fno-omit-frame-pointer $(SDK_INC) -DLUA_USE_C89 -MMD -MP
 
-# --- ОБЪЕКТЫ SDK ---
-# Добавили setjmp.o и syscall_wrappers.o
-SDK_OBJS = $(SDK_LIB_DIR)/crt0.o \
-           $(SDK_LIB_DIR)/setjmp.o \
-           $(SDK_LIB_DIR)/syscall_wrappers.o \
-           $(SDK_LIB_DIR)/stdio.o \
-           $(SDK_LIB_DIR)/string.o \
-           $(SDK_LIB_DIR)/eid.o \
-           $(SDK_LIB_DIR)/posix.o \
-           $(SDK_LIB_DIR)/malloc.o \
-		   $(SDK_LIB_DIR)/math.o \
-		   $(SDK_LIB_DIR)/font_ttf.o
+# --- KERNEL SOURCES ---
+# Automatically find all C sources in src/ and subdirectories
+KERNEL_SRCS = $(shell dir /s /b src\*.c)
+# On Windows 'dir /s /b' works, but let's try to be more cross-platform if possible.
+# Actually, the user is on Windows, so we can use a small hack or just stick to what works.
+# But for "Perfection", let's use a more robust way.
+# Since we don't have a reliable 'find' on Windows CMD without tools, we'll list the main directories
+# but use wildcards.
 
-# --- ОБЪЕКТЫ ЯДРА ---
-KERNEL_OBJS = $(OBJ_DIR)/kernel.o $(OBJ_DIR)/io.o $(OBJ_DIR)/keyboard.o $(OBJ_DIR)/rtl8139.o \
-              $(OBJ_DIR)/vfs.o $(OBJ_DIR)/gui.o $(OBJ_DIR)/syscall.o $(OBJ_DIR)/ac97.o \
-              $(OBJ_DIR)/gdt_flush.o $(OBJ_DIR)/idt.o $(OBJ_DIR)/stdio.o $(OBJ_DIR)/pci.o \
-              $(OBJ_DIR)/pmm.o $(OBJ_DIR)/shell.o $(OBJ_DIR)/eqstart.o $(OBJ_DIR)/pic.o \
-              $(OBJ_DIR)/interrupt.o $(OBJ_DIR)/timer.o $(OBJ_DIR)/ata.o $(OBJ_DIR)/bmp.o \
-              $(OBJ_DIR)/task.o $(OBJ_DIR)/fat32.o $(OBJ_DIR)/serial.o $(OBJ_DIR)/memory.o \
-              $(OBJ_DIR)/fs.o $(OBJ_DIR)/vesa.o $(OBJ_DIR)/mouse.o $(OBJ_DIR)/string.o \
-              $(OBJ_DIR)/panic.o $(OBJ_DIR)/vmm.o $(OBJ_DIR)/gdt.o $(OBJ_DIR)/pcspeaker.o \
-              $(OBJ_DIR)/terminal.o $(OBJ_DIR)/ext2.o $(OBJ_DIR)/ext2_tests.o $(OBJ_DIR)/shm.o \
-              $(OBJ_DIR)/net.o $(OBJ_DIR)/arp.o $(OBJ_DIR)/ipv4.o $(OBJ_DIR)/udp.o $(OBJ_DIR)/tcp.o $(OBJ_DIR)/icmp.o $(OBJ_DIR)/dns.o
+SRC_DIRS = src src/system src/net src/drivers src/drivers/keyboard src/shell \
+           src/drivers/disk src/fs src/drivers/vga src/drivers/serial \
+           src/drivers/audio src/libc src/io src/gui src/drivers/mouse \
+           src/drivers/pci src/drivers/net src/drivers/pcspeaker
 
-# --- НАСТРОЙКИ LUA ---
+KERNEL_C_SRCS = $(foreach dir,$(SRC_DIRS),$(wildcard $(dir)/*.c))
+KERNEL_ASM_SRCS = $(wildcard src/system/*.asm)
+
+KERNEL_OBJS = $(patsubst src/%.c,$(OBJ_DIR)/%.o,$(filter %.c,$(KERNEL_C_SRCS))) \
+              $(patsubst src/system/%.asm,$(OBJ_DIR)/system/%.o,$(KERNEL_ASM_SRCS))
+
+# --- SDK OBJECTS ---
+SDK_C_SRCS = $(wildcard $(SDK_LIB_DIR)/*.c)
+SDK_ASM_SRCS = $(wildcard $(SDK_LIB_DIR)/*.asm)
+SDK_OBJS = $(patsubst $(SDK_LIB_DIR)/%.c,$(SDK_LIB_DIR)/%.o,$(SDK_C_SRCS)) \
+           $(patsubst $(SDK_LIB_DIR)/%.asm,$(SDK_LIB_DIR)/%.o,$(SDK_ASM_SRCS))
+
+# --- LUA ---
 LUA_DIR = sdk/lua
 LUA_SRCS = $(wildcard $(LUA_DIR)/*.c)
 LUA_OBJS = $(patsubst $(LUA_DIR)/%.c, $(OBJ_DIR)/lua/%.o, $(LUA_SRCS))
 
-# --- НАСТРОЙКИ DOOM ---
+# --- DOOM ---
 DOOM_DIR = app/doom
 DOOM_SRCS = $(wildcard $(DOOM_DIR)/*.c)
 DOOM_OBJS = $(patsubst $(DOOM_DIR)/%.c, $(OBJ_DIR)/doom/%.o, $(DOOM_SRCS))
 
-# --- ОСНОВНЫЕ ПРАВИЛА ---
+# --- MAIN RULES ---
 
 all: setup kernel.elf apps doom.elf create_hdd iso
 
 setup:
 	@if not exist $(OBJ_DIR) mkdir $(OBJ_DIR)
+	@for %%d in ($(subst /,\\,$(SRC_DIRS))) do @if not exist $(OBJ_DIR)\%%d mkdir $(OBJ_DIR)\%%d 2>nul
 	@if not exist $(OBJ_DIR)\doom mkdir $(OBJ_DIR)\doom
 	@if not exist $(OBJ_DIR)\lua mkdir $(OBJ_DIR)\lua
 
@@ -69,90 +71,64 @@ kernel.elf: $(KERNEL_OBJS)
 	$(LD) $(LDFLAGS) $(KERNEL_OBJS) -o kernel.elf
 	copy /Y kernel.elf $(ISO_ROOT)\kernel.elf
 
-# --- СБОРКА ЯДРА ---
+# --- KERNEL BUILD RULES ---
 $(OBJ_DIR)/%.o: src/%.c
+	@if not exist $(dir $(subst /,\,$(@))) mkdir $(dir $(subst /,\,$(@))) 2>nul
 	$(CC) $(CFLAGS) -c $< -o $@
-$(OBJ_DIR)/%.o: src/system/%.c
-	$(CC) $(CFLAGS) -c $< -o $@
-$(OBJ_DIR)/%.o: src/net/%.c
-	$(CC) $(CFLAGS) -c $< -o $@
-$(OBJ_DIR)/%.o: src/drivers/keyboard/%.c
-	$(CC) $(CFLAGS) -c $< -o $@
-$(OBJ_DIR)/%.o: src/shell/%.c
-	$(CC) $(CFLAGS) -c $< -o $@
-$(OBJ_DIR)/%.o: src/drivers/disk/%.c
-	$(CC) $(CFLAGS) -c $< -o $@
-$(OBJ_DIR)/%.o: src/fs/%.c
-	$(CC) $(CFLAGS) -c $< -o $@
-$(OBJ_DIR)/%.o: src/drivers/vga/%.c
-	$(CC) $(CFLAGS) -c $< -o $@
-$(OBJ_DIR)/%.o: src/drivers/serial/%.c
-	$(CC) $(CFLAGS) -c $< -o $@
-$(OBJ_DIR)/%.o: src/drivers/audio/%.c
-	$(CC) $(CFLAGS) -c $< -o $@
-$(OBJ_DIR)/%.o: src/libc/%.c
-	$(CC) $(CFLAGS) -c $< -o $@
-$(OBJ_DIR)/%.o: src/io/%.c
-	$(CC) $(CFLAGS) -c $< -o $@
-$(OBJ_DIR)/%.o: src/gui/%.c
-	$(CC) $(CFLAGS) -c $< -o $@
-$(OBJ_DIR)/%.o: src/drivers/mouse/%.c
-	$(CC) $(CFLAGS) -c $< -o $@
-$(OBJ_DIR)/%.o: src/drivers/pci/%.c
-	$(CC) $(CFLAGS) -c $< -o $@
-$(OBJ_DIR)/%.o: src/drivers/net/%.c
-	$(CC) $(CFLAGS) -c $< -o $@
-$(OBJ_DIR)/%.o: src/drivers/pcspeaker/%.c
-	$(CC) $(CFLAGS) -c $< -o $@
-$(OBJ_DIR)/gdt_flush.o: src/system/gdt_flush.asm
-	$(ASM) $(ASMFLAGS) $< -o $@
-$(OBJ_DIR)/interrupt.o: src/system/interrupt.asm
+
+$(OBJ_DIR)/system/%.o: src/system/%.asm
 	$(ASM) $(ASMFLAGS) $< -o $@
 
+# --- SDK BUILD RULES ---
 $(SDK_LIB_DIR)/%.o: $(SDK_LIB_DIR)/%.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
 $(SDK_LIB_DIR)/%.o: $(SDK_LIB_DIR)/%.asm
 	$(ASM) -f elf64 $< -o $@
 
-# --- СБОРКА LUA CORE ---
+# --- LUA BUILD RULES ---
 $(OBJ_DIR)/lua/%.o: $(LUA_DIR)/%.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
-$(SDK_LIB_DIR)/%.o: $(SDK_LIB_DIR)/%.c
-	$(CC) $(USER_CFLAGS) -c $< -o $@
-
-$(SDK_LIB_DIR)/%.o: $(SDK_LIB_DIR)/%.asm
-	$(ASM) -f elf64 $< -o $@
-
-# --- СБОРКА DOOM ---
+# --- DOOM BUILD RULES ---
 $(OBJ_DIR)/doom/%.o: $(DOOM_DIR)/%.c
 	$(CC) $(USER_CFLAGS) -DDOOMGENERIC_RESX=640 -DDOOMGENERIC_RESY=400 -DFEATURE_SOUND -c $< -o $@
 
 doom.elf: $(SDK_OBJS) $(DOOM_OBJS)
 	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) $(DOOM_OBJS) -o $(ISO_ROOT)/doom.elf
 
-# --- СБОРКА ПРИЛОЖЕНИЙ ---
-apps: $(SDK_OBJS) $(LUA_OBJS)
-	$(CC) $(USER_CFLAGS) -c app/snake.c -o app/snake.o
-	$(CC) $(USER_CFLAGS) -Isdk/lua -c sdk/lua_cli/lua.c -o sdk/lua_cli/lua.o
-	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) $(LUA_OBJS) sdk/lua_cli/lua.o -o $(ISO_ROOT)/lua.elf
-	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) app/snake.o -o $(ISO_ROOT)/snake.elf
-	$(CC) $(USER_CFLAGS) -c app/htmlview.c -o app/htmlview.o
-	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) app/htmlview.o -o $(ISO_ROOT)/htmlview.elf
-	$(CC) $(USER_CFLAGS) -c app/niplay.c -o app/niplay.o
-	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) app/niplay.o -o $(ISO_ROOT)/niplay.elf
-	$(CC) $(USER_CFLAGS) -c app/luagui.c -o app/luagui.o
-	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) $(LUA_OBJS) app/luagui.o -o $(ISO_ROOT)/luagui.elf
-#	$(CC) $(USER_CFLAGS) -c app/bmpview.c -o app/bmpview.o
-#	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) app/bmpview.o -o $(ISO_ROOT)/bmpview.elf
+# --- APPS BUILD RULES ---
+APP_SRCS = $(wildcard app/*.c)
+# Убираем luagui из общего списка, чтобы для него сработало спец. правило
+APP_OBJS = $(patsubst app/%.c,app/%.o,$(APP_SRCS))
+APP_ELFS_SIMPLE = $(ISO_ROOT)/snake.elf $(ISO_ROOT)/bmpview.elf $(ISO_ROOT)/htmlview.elf $(ISO_ROOT)/niplay.elf
 
-# --- СИСТЕМНЫЕ ПРАВИЛА ---
+apps: $(SDK_OBJS) $(LUA_OBJS) $(APP_ELFS_SIMPLE) $(ISO_ROOT)/luagui.elf $(ISO_ROOT)/lua.elf
+
+# Обычное правило для простых приложений (без Lua)
+$(ISO_ROOT)/%.elf: app/%.o $(SDK_OBJS)
+	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) $< -o $@
+
+# СПЕЦИАЛЬНОЕ ПРАВИЛО ДЛЯ LUAGUI (Линкуем с LUA_OBJS)
+$(ISO_ROOT)/luagui.elf: app/luagui.o $(SDK_OBJS) $(LUA_OBJS)
+	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) $(LUA_OBJS) $< -o $@
+
+app/%.o: app/%.c
+	$(CC) $(USER_CFLAGS) -c $< -o $@
+
+# Lua CLI остается как был
+$(ISO_ROOT)/lua.elf: sdk/lua_cli/lua.o $(SDK_OBJS) $(LUA_OBJS)
+	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) $(LUA_OBJS) $< -o $@
+
+
+# --- SYSTEM RULES ---
 
 clean:
 	@if exist $(OBJ_DIR) rmdir /s /q $(OBJ_DIR)
 	@if exist sdk\lib\*.o del /q sdk\lib\*.o
+	@if exist sdk\lib\*.d del /q sdk\lib\*.d
 	@if exist app\*.o del /q app\*.o
+	@if exist app\*.d del /q app\*.d
 	@if exist kernel.elf del /q kernel.elf
 	@if exist equos.iso del /q equos.iso
 
@@ -167,3 +143,8 @@ run:
 	qemu-system-x86_64 -m 512M -boot d -drive file=hdd.img,format=raw,index=0,media=disk -cdrom equos.iso -serial stdio -netdev user,id=n0,hostfwd=tcp::2222-:22 -device rtl8139,netdev=n0 -device ac97,audiodev=snd0 -audiodev dsound,id=snd0 -d int,guest_errors,mmu -D qemu.log 
 
 cleanrun: clean all run
+
+# Include dependency files
+-include $(KERNEL_OBJS:.o=.d)
+-include $(SDK_OBJS:.o=.d)
+-include $(APP_SRCS:.c=.d)
