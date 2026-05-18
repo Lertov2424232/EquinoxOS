@@ -1,5 +1,6 @@
 #include "terminal.h"
 #include "../libc/string.h"
+#include "../system/timer.h"
 
 #define TERM_LINES 35
 #define TERM_COLS 100
@@ -114,16 +115,42 @@ void terminal_print(const char *str) {
 }
 
 void terminal_render(window_t *self) {
+  // 1. Фон - глубокий черный
   gui_window_draw_rect(self, 0, 0, self->w, self->h, 0x0F0F12);
 
-  // Рисуем текст с учетом цветов каждого символа
-  for (int y = 0; y < TERM_LINES; y++) {
+  // 2. Считаем, сколько строк влезет в окно
+  // Заголовок окна у нас 25 пикселей, плюс отступы
+  int line_height = 14;
+  int visible_lines = (self->h - 10) / line_height;
+
+  // 3. ЛОГИКА КАМЕРЫ:
+  // Мы должны показывать последние visible_lines, где находится курсор
+  int start_line = 0;
+  if (cursor_y >= visible_lines) {
+    start_line = cursor_y - visible_lines + 1;
+  }
+
+  // 4. Отрисовка
+  for (int i = 0; i < visible_lines; i++) {
+    int line_idx = start_line + i;
+    if (line_idx >= TERM_LINES)
+      break;
+
     for (int x = 0; x < TERM_COLS; x++) {
-      if (term_buffer[y][x] != 0) {
-        char s[2] = {term_buffer[y][x], 0};
-        gui_window_draw_string(self, s, 8 + x * 8, 30 + y * 14,
-                               color_buffer[y][x]);
+      char c = term_buffer[line_idx][x];
+      if (c != 0 && c != ' ') {
+        char s[2] = {c, 0};
+        // Рисуем от самого верха буфера окна (y * 14 + 5 пикселей отступа)
+        gui_window_draw_string(self, s, 5 + x * 8, 5 + i * line_height,
+                               color_buffer[line_idx][x]);
       }
     }
+  }
+
+  // 5. Курсор (мигающий прямоугольник)
+  if ((tick / 50) % 2 == 0) {
+    int cur_v_y = (cursor_y >= visible_lines) ? (visible_lines - 1) : cursor_y;
+    gui_window_draw_rect(self, 5 + cursor_x * 8, 5 + cur_v_y * line_height + 10,
+                         8, 2, 0xFFFFFF);
   }
 }
