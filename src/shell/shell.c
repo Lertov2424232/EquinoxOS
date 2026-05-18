@@ -133,6 +133,10 @@ void shell_handle_char(char c) {
       task_exec(filename);
     } else if (strcmp(shell_buffer, "beep") == 0) {
       pcspeaker_beep(1000, 1000);
+    }
+    if (strcmp(shell_buffer, "color") == 0) {
+      terminal_print(
+          "\e[31mRED \e[32mGREEN \e[33mYELLOW \e[34mPURPLE \e[36mCYAN\e[0m\n");
     } else if (strcmp(shell_buffer, "speakeron") == 0) {
       pcspeaker_play(1000);
       term_print("Speaker ON (1000Hz). Type 'speakeroff' to stop.\n");
