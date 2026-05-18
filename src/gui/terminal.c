@@ -2,15 +2,15 @@
 #include "../libc/string.h"
 #include "../system/timer.h"
 
-#define TERM_LINES 35
-#define TERM_COLS 100
+#define TERM_LINES 100
+#define TERM_COLS 80
 
+extern char shell_buffer[256]; // Твой буфер ввода из shell.c
 static char term_buffer[TERM_LINES][TERM_COLS];
-static uint32_t color_buffer[TERM_LINES]
-                            [TERM_COLS]; // Храним цвет каждого символа
+static uint32_t color_buffer[TERM_LINES][TERM_COLS];
 static int cursor_x = 0;
 static int cursor_y = 0;
-static uint32_t current_fg = 0x50FA7B; // По умолчанию Mint (Dracula style)
+static uint32_t current_fg = 0x50FA7B;
 
 // Состояния парсера ANSI
 typedef enum {
@@ -102,11 +102,14 @@ void terminal_print_char(char c) {
   }
 }
 void terminal_clear() {
-    for (int i = 0; i < TERM_LINES; i++) {
-        memset(term_buffer[i], 0, TERM_COLS);
+  for (int i = 0; i < TERM_LINES; i++) {
+    memset(term_buffer[i], 0, TERM_COLS);
+    for (int j = 0; j < TERM_COLS; j++) {
+      color_buffer[i][j] = 0x50FA7B; // Гарантируем, что цвет не 0
     }
-    cursor_x = 0;
-    cursor_y = 0;
+  }
+  cursor_x = 0;
+  cursor_y = 0;
 }
 void terminal_print(const char *str) {
   while (*str) {
@@ -115,22 +118,29 @@ void terminal_print(const char *str) {
 }
 
 void terminal_render(window_t *self) {
-  // 1. Фон - глубокий черный
+  // 1. Фон терминала
   gui_window_draw_rect(self, 0, 0, self->w, self->h, 0x0F0F12);
 
-  // 2. Считаем, сколько строк влезет в окно
-  // Заголовок окна у нас 25 пикселей, плюс отступы
-  int line_height = 14;
-  int visible_lines = (self->h - 10) / line_height;
+  // 2. Рамка для области ввода (внизу)
+  int prompt_y = self->h - 25;
+  gui_window_draw_rect(self, 0, prompt_y, self->w, 25, 0x1A1A24);
+  gui_window_draw_rect(self, 0, prompt_y, self->w, 1, 0x333344); // Разделитель
 
-  // 3. ЛОГИКА КАМЕРЫ:
-  // Мы должны показывать последние visible_lines, где находится курсор
+  // 3. РИСУЕМ ТО, ЧТО ТЫ ПЕЧАТАЕШЬ ПРЯМО СЕЙЧАС
+  gui_window_draw_string(self, ">>", 8, prompt_y + 6, 0x8BE9FD); // Синий промпт
+  gui_window_draw_string(self, shell_buffer, 32, prompt_y + 6,
+                         0xF8F8F2); // Белый текст юзера
+
+  // 4. Считаем область для истории (буфера)
+  int line_height = 14;
+  int visible_lines = (prompt_y - 10) / line_height;
+
   int start_line = 0;
   if (cursor_y >= visible_lines) {
     start_line = cursor_y - visible_lines + 1;
   }
 
-  // 4. Отрисовка
+  // 5. РИСУЕМ ИСТОРИЮ (ANSI БУФЕР)
   for (int i = 0; i < visible_lines; i++) {
     int line_idx = start_line + i;
     if (line_idx >= TERM_LINES)
@@ -138,19 +148,19 @@ void terminal_render(window_t *self) {
 
     for (int x = 0; x < TERM_COLS; x++) {
       char c = term_buffer[line_idx][x];
-      if (c != 0 && c != ' ') {
+      if (c != 0) {
         char s[2] = {c, 0};
-        // Рисуем от самого верха буфера окна (y * 14 + 5 пикселей отступа)
-        gui_window_draw_string(self, s, 5 + x * 8, 5 + i * line_height,
-                               color_buffer[line_idx][x]);
+        uint32_t color = color_buffer[line_idx][x];
+        if (color == 0)
+          color = 0x50FA7B; // Защита от "невидимки"
+        gui_window_draw_string(self, s, 8 + x * 8, 8 + i * line_height, color);
       }
     }
   }
 
-  // 5. Курсор (мигающий прямоугольник)
+  // 6. Мигающий курсор в строке ввода
   if ((tick / 50) % 2 == 0) {
-    int cur_v_y = (cursor_y >= visible_lines) ? (visible_lines - 1) : cursor_y;
-    gui_window_draw_rect(self, 5 + cursor_x * 8, 5 + cur_v_y * line_height + 10,
-                         8, 2, 0xFFFFFF);
+    int input_cursor_x = 32 + strlen(shell_buffer) * 8;
+    gui_window_draw_rect(self, input_cursor_x, prompt_y + 16, 8, 2, 0x8BE9FD);
   }
 }
