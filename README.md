@@ -153,9 +153,9 @@ x86_64-elf-addr2line -e kernel.elf <RIP_ADDRESS>
 13. Make your OWN FS
 14. Port any SECOND FS (EXT3/EXT4/UFS/ZFS)
 15. Make OS SERIOUS (Fix ANY of the stubs | Polishing)
-16. Port any language (AS USERSPACE) - C#, C++, Lua, Python [Better to now implement HTML, JS, CSS (Because htmlview.elf)]
-16.1. If needed, write SOMETHING IN THE KERNEL on the language implemented (Like UI on lua)
-17. Text browser (Maybe will be deleted soon bcs of htmlview.elf)
+~~16. Port any language (AS USERSPACE) - Lua~~
+17. Port second language (C#/C++)
+~~17. Browser~~
 18. HTTPS 
 19 - VERY…
 ~~19.1 - Very better VESA | Maybe OWN graphical?~~
@@ -163,6 +163,7 @@ x86_64-elf-addr2line -e kernel.elf <RIP_ADDRESS>
 ~~19.3 - Very better EID (Equinox Interface Designer)~~
 19.4. OS is INSTALLABLE/Archiveable so it’s able to separate
 19.5 - General separation. Kernel is separated from anything including GUI (except Drivers). 
+
 
 
 

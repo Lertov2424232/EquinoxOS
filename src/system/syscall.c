@@ -14,6 +14,7 @@
 #include "shm.h"
 #include "task.h"
 #include "vmm.h"
+#include "cpu.h"
 #include <stdint.h>
 
 extern volatile uint32_t tick;
@@ -61,8 +62,10 @@ uint64_t copy_to_user(void *kernel_buf, uint64_t size) {
 
     // Копируем по кусочкам
     uint64_t to_copy = (size > 4096) ? 4096 : size;
+    stac();
     memcpy((void *)(target_virt + (i * 4096)),
            (uint8_t *)kernel_buf + (i * 4096), to_copy);
+    clac();
     size -= to_copy;
   }
 
@@ -74,7 +77,9 @@ void syscall_handler(syscall_regs_t *regs) {
 
   switch (num) {
   case 1: // SYS_PRINT
+    stac();
     term_print((const char *)regs->rdi);
+    clac();
     break;
   case 2: { // SYS_READ_FILE (Now VFS-agnostic)
     const char *filename = (const char *)regs->rdi;
@@ -88,8 +93,10 @@ void syscall_handler(syscall_regs_t *regs) {
       break;
     }
 
+    stac();
     if (out_size_ptr)
       *out_size_ptr = size;
+    clac();
 
     uint32_t pages_needed = (size + 4095) / 4096;
     static uint64_t next_file_vaddr = 0xA0000000;
@@ -111,7 +118,9 @@ void syscall_handler(syscall_regs_t *regs) {
 
       uint32_t to_copy =
           (size - (i * 4096) > 4096) ? 4096 : (size - (i * 4096));
+      stac();
       memcpy((void *)v, file_data + (i * 4096), to_copy);
+      clac();
     }
 
     kfree(file_data);
@@ -130,7 +139,9 @@ void syscall_handler(syscall_regs_t *regs) {
       if (dev->write) {
         vfs_node_t file_node;
         memset(&file_node, 0, sizeof(vfs_node_t));
+        stac();
         strcpy(file_node.name, filename);
+        clac();
         dev->write(&file_node, 0, size, (uint8_t *)data);
         regs->rax = size;
         break;
@@ -140,8 +151,10 @@ void syscall_handler(syscall_regs_t *regs) {
     break;
   }
   case 5: // SYS_DRAW_BUFFER
+    stac();
     sys_draw_app_buffer(regs->rdi, regs->rsi, regs->rdx, regs->rcx,
                         (uint32_t *)regs->r8);
+    clac();
     break;
   case 6:                  // SYS_GET_TIME
     regs->rax = tick * 10; // Возвращаем время в RAX
@@ -420,7 +433,9 @@ void syscall_handler(syscall_regs_t *regs) {
     // Enable interrupts so network_thread can process packets
     __asm__ volatile("sti");
 
+    stac();
     dns_query(iface, hostname);
+    clac();
 
     // Wait for resolution — interrupts MUST be on for network_thread
     uint32_t timeout = 1000;
@@ -474,8 +489,11 @@ void syscall_handler(syscall_regs_t *regs) {
 
     if (http_finished && http_response_buf) {
       regs->rax = copy_to_user(http_response_buf, http_response_len);
-      if (regs->rsi)
+      if (regs->rsi) {
+        stac();
         *(uint32_t *)regs->rsi = http_response_len;
+        clac();
+      }
     } else {
       regs->rax = 0;
     }

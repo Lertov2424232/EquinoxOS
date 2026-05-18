@@ -33,29 +33,20 @@
 // --- ФАЙЛОВАЯ СИСТЕМА И ОБОЛОЧКА ---
 #include "fs/fat32.h"
 #include "fs/ext2.h"
-#include "fs/fat32.h"
 #include "fs/fs.h"
 #include "fs/vfs.h"
 #include "gui/terminal.h"
 #include "shell/shell.h"
+#include "gui/gui_apps.h"
 
-// --- ВНЕШНИЕ ПЕРЕМЕННЫЕ И ФУНКЦИИ ---
+// --- EXTERNAL VARIABLES ---
 void term_print(const char *str);
 extern size_t used_memory;
 extern volatile uint32_t tick;
 extern char shell_buffer[64];
 uint64_t hhdm_offset = 0;
-typedef struct {
-  char name[128];
-  uint32_t size;
-  vfs_node_t *dev;
-  uint32_t inode;
-} explorer_file_t;
 
-static explorer_file_t real_files[256];
-uint64_t canary_safety = 0xDEADBEEFCAFEBABE;
-
-// --- ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ---
+// --- GLOBAL STATE ---
 bool is_app_running = false;
 bool should_run_app = false;
 volatile uint8_t last_scancode = 0;
@@ -72,474 +63,8 @@ LIMINE_REQ static volatile struct limine_module_request module_request = {
 
 LIMINE_REQ static volatile struct limine_hhdm_request hhdm_request = {
     .id = LIMINE_HHDM_REQUEST_ID,
-    .revision = 3 // ТРЕБУЕМ СОВРЕМЕННЫЙ ПРОТОКОЛ
+    .revision = 3 
 };
-
-// LIMINE_REQ static volatile struct limine_paging_mode_request paging_request =
-// {
-//    .id = LIMINE_PAGING_MODE_REQUEST_ID,
-//    .revision = 0,
-//    .mode = LIMINE_PAGING_MODE_X86_64_4LVL, // ПРИНУДИТЕЛЬНО 4 УРОВНЯ
-//    .max_mode = LIMINE_PAGING_MODE_X86_64_4LVL,
-//    .min_mode = LIMINE_PAGING_MODE_X86_64_4LVL
-// };
-// =========================================================================
-//                              GUI & WINDOWS
-// (TODO: В будущем вынести в отдельный gui.c / gui.h)
-// =========================================================================
-
-void draw_cursor(int x, int y) {
-  static const int cursor_map[8][8] = {
-      {2, 0, 0, 0, 0, 0, 0, 0}, {2, 2, 0, 0, 0, 0, 0, 0},
-      {2, 1, 2, 0, 0, 0, 0, 0}, {2, 1, 1, 2, 0, 0, 0, 0},
-      {2, 1, 1, 1, 2, 0, 0, 0}, {2, 1, 1, 1, 1, 2, 0, 0},
-      {2, 2, 2, 2, 2, 2, 2, 0}, {0, 0, 2, 2, 2, 0, 0, 0}};
-  for (int i = 0; i < 8; i++) {
-    for (int j = 0; j < 8; j++) {
-      if (cursor_map[i][j] == 1)
-        put_pixel(x + j, y + i, 0xFFFFFF);
-      else if (cursor_map[i][j] == 2)
-        put_pixel(x + j, y + i, 0x000000);
-    }
-  }
-}
-
-static uint8_t prev_mouse_left = 0;
-static uint32_t paint_color = 0x000000;
-static int paint_prev_x = -1;
-static int paint_prev_y = -1;
-
-// Notepad state
-#define NOTEPAD_MAX_LINES 16
-#define NOTEPAD_LINE_LEN 48
-static char notepad_buf[NOTEPAD_MAX_LINES][NOTEPAD_LINE_LEN];
-static int notepad_line = 0;
-static int notepad_col = 0;
-static bool notepad_inited = false;
-
-void notepad_load_content(const char *data, uint32_t size) {
-  // Полностью очищаем блокнот перед загрузкой
-  for (int i = 0; i < NOTEPAD_MAX_LINES; i++) {
-    memset(notepad_buf[i], 0, NOTEPAD_LINE_LEN);
-  }
-  notepad_line = 0;
-  notepad_col = 0;
-
-  if (!data)
-    return;
-
-  for (uint32_t i = 0; i < size; i++) {
-    char c = data[i];
-    if (c == '\0')
-      break;
-
-    if (c == '\n' || c == '\r') {
-      if (notepad_line < NOTEPAD_MAX_LINES - 1) {
-        notepad_line++;
-        notepad_col = 0;
-      }
-      // Пропускаем \n если это \r\n
-      if (c == '\r' && i + 1 < size && data[i + 1] == '\n')
-        i++;
-    } else {
-      if (notepad_col < NOTEPAD_LINE_LEN - 1) {
-        notepad_buf[notepad_line][notepad_col++] = c;
-      }
-    }
-  }
-}
-
-void notepad_handle_char(char c) {
-  if (!notepad_inited)
-    return;
-  if (c == '\b') {
-    if (notepad_col > 0) {
-      notepad_col--;
-      notepad_buf[notepad_line][notepad_col] = '\0';
-    } else if (notepad_line > 0) {
-      notepad_line--;
-      notepad_col = strlen(notepad_buf[notepad_line]);
-    }
-  } else if (c == '\n') {
-    if (notepad_line < NOTEPAD_MAX_LINES - 1) {
-      notepad_line++;
-      notepad_col = 0;
-    }
-  } else {
-    if (notepad_col < NOTEPAD_LINE_LEN - 1) {
-      notepad_buf[notepad_line][notepad_col] = c;
-      notepad_col++;
-      notepad_buf[notepad_line][notepad_col] = '\0';
-    }
-  }
-}
-
-// Explorer state
-static char explorer_files[16][13]; // FAT32 8.3 names
-static int explorer_file_count = 0;
-static bool explorer_scanned = false;
-static int explorer_scroll = 0;
-window_t *focused_window = NULL;
-
-void update_gui() {
-  uint8_t mouse_just_pressed = (mouse_left_button && !prev_mouse_left);
-
-  // --- ОБРАБОТКА КЛИКА (Только в момент нажатия!) ---
-  if (mouse_just_pressed) {
-    window_t *clicked_win = gui_find_window_at(mouse_x, mouse_y);
-
-    if (clicked_win) {
-      // 1. Меняем фокус и выносим на передний план
-      focused_window = clicked_win;
-      window_bring_to_front(clicked_win);
-
-      // 2. Проверяем кнопку закрытия (уже внутри окна)
-      if (gui_check_close_button(mouse_x, mouse_y)) {
-        // Окно закрылось, сбрасываем фокус если надо
-        if (focused_window == clicked_win)
-          focused_window = NULL;
-      }
-    } else {
-      // Кликнули мимо всех окон
-      focused_window = NULL;
-
-      // 3. Проверяем иконки десктопа
-      int icon = gui_check_icon_click(mouse_x, mouse_y);
-      switch (icon) {
-      case ICON_TERMINAL:
-        term_win->active = true;
-        window_bring_to_front(term_win);
-        focused_window = term_win; // Сразу даем фокус
-        break;
-      case ICON_SYSMONITOR:
-        main_win->active = true;
-        window_bring_to_front(main_win);
-        focused_window = main_win;
-        break;
-      case ICON_PAINT:
-        paint_win->active = true;
-        window_bring_to_front(paint_win);
-        focused_window = paint_win;
-        break;
-      case ICON_EXPLORER:
-        explorer_win->active = true;
-        explorer_scanned = false;
-        window_bring_to_front(explorer_win);
-        focused_window = explorer_win;
-        break;
-      case ICON_NOTEPAD:
-        notepad_win->active = true;
-        if (!notepad_inited) {
-          for (int i = 0; i < NOTEPAD_MAX_LINES; i++)
-            memset(notepad_buf[i], 0, NOTEPAD_LINE_LEN);
-          notepad_line = 0;
-          notepad_col = 0;
-          notepad_inited = true;
-        }
-        window_bring_to_front(notepad_win);
-        focused_window = notepad_win;
-        break;
-      }
-    }
-  }
-  window_t *curr = window_list_head;
-  while (curr) {
-    if (curr->active && curr->on_draw) {
-      curr->on_draw(curr); // Теперь терминал рисуется здесь!
-    }
-    curr = curr->next;
-  }
-  // 2. System Monitor
-  if (main_win && main_win->active) {
-    gui_window_draw_rect(main_win, 0, 0, main_win->w, main_win->h, 0xFFFFFF);
-
-    char info[64];
-    uint32_t used_mb = (uint32_t)(pmm_get_used_memory() / 1024 / 1024);
-    uint32_t total_mb = (uint32_t)(pmm_get_total_memory() / 1024 / 1024);
-
-    sprintf(info, "System RAM: %u / %u MB", used_mb, total_mb);
-    gui_window_draw_string(main_win, info, 15, 20, 0x000000);
-
-    // Рисуем полоску
-    gui_window_draw_rect(main_win, 15, 35, 150, 10, 0xDDDDDD);
-    int bar_w = (used_mb * 150) / total_mb;
-    gui_window_draw_rect(main_win, 15, 35, bar_w, 10, 0x0078D7);
-
-    // КРАСИВЫЙ UPTIME (теперь с нулями!)
-    uint32_t s = tick / 100;
-    sprintf(info, "Uptime: %02u:%02u:%02u", s / 3600, (s % 3600) / 60, s % 60);
-    gui_window_draw_string(main_win, info, 15, 85, 0x555555);
-  }
-  // 3. Paint — smooth line drawing with Bresenham interpolation
-  if (paint_win && paint_win->active) {
-    // Color palette bar (top 20px)
-    gui_window_draw_rect(paint_win, 0, 0, paint_win->w, 20, 0xCCCCCC);
-    gui_window_draw_rect(paint_win, 4, 2, 16, 16, 0x000000);
-    gui_window_draw_rect(paint_win, 24, 2, 16, 16, 0xFF0000);
-    gui_window_draw_rect(paint_win, 44, 2, 16, 16, 0x00FF00);
-    gui_window_draw_rect(paint_win, 64, 2, 16, 16, 0x0000FF);
-    gui_window_draw_rect(paint_win, 84, 2, 16, 16, 0xFFFF00);
-    gui_window_draw_rect(paint_win, 104, 2, 16, 16, 0xFFFFFF);
-    gui_window_draw_rect(paint_win, 124, 2, 16, 16, 0xFF00FF);
-    gui_window_draw_rect(paint_win, 144, 2, 16, 16, 0x00FFFF);
-    // Current color indicator
-    gui_window_draw_rect(paint_win, paint_win->w - 22, 2, 16, 16, paint_color);
-    // "Clear" button
-    gui_window_draw_string(paint_win, "CLR", paint_win->w - 60, 6, 0x333333);
-    gui_window_draw_rect(paint_win, paint_win->w - 110, 2, 45, 15, 0x444444);
-    gui_window_draw_string(paint_win, "SAVE", paint_win->w - 105, 6, 0xFFFFFF);
-
-    if (mouse_left_button && !prev_mouse_left) {
-      int rel_x = mouse_x - paint_win->x;
-      int rel_y = mouse_y - paint_win->y;
-
-      // Клик по SAVE в Paint
-      if (rel_y >= 2 && rel_y < 17 && rel_x >= paint_win->w - 110 &&
-          rel_x < paint_win->w - 65) {
-        term_print("Paint: Generating BMP...\n");
-
-        uint32_t bmp_size = 0;
-        uint8_t *bmp_data = bmp_create_from_window(paint_win, &bmp_size);
-
-        if (bmp_data) {
-          // Сохраняем на диск.
-          // ВАЖНО: Сейчас твоя fat32_save_file запишет только первые 512 байт!
-          fat32_save_file("IMAGE.BMP`", (char *)bmp_data, bmp_size);
-          kfree(bmp_data);
-          term_print("Paint: Saved to IMAGE.BMP (Check size limit!)\n");
-          explorer_scanned = false; // Чтобы Explorer увидел файл
-        }
-      }
-    }
-    if (mouse_left_button) {
-      int rel_x = mouse_x - paint_win->x;
-      int rel_y = mouse_y - paint_win->y;
-      // Color selection on click
-      if (rel_y >= 0 && rel_y < 20 && mouse_just_pressed) {
-        if (rel_x >= 4 && rel_x < 20)
-          paint_color = 0x000000;
-        else if (rel_x >= 24 && rel_x < 40)
-          paint_color = 0xFF0000;
-        else if (rel_x >= 44 && rel_x < 60)
-          paint_color = 0x00FF00;
-        else if (rel_x >= 64 && rel_x < 80)
-          paint_color = 0x0000FF;
-        else if (rel_x >= 84 && rel_x < 100)
-          paint_color = 0xFFFF00;
-        else if (rel_x >= 104 && rel_x < 120)
-          paint_color = 0xFFFFFF;
-        else if (rel_x >= 124 && rel_x < 140)
-          paint_color = 0xFF00FF;
-        else if (rel_x >= 144 && rel_x < 160)
-          paint_color = 0x00FFFF;
-        else if (rel_x >= paint_win->w - 60 && rel_x < paint_win->w - 24) {
-          // Clear canvas
-          gui_window_draw_rect(paint_win, 0, 20, paint_win->w,
-                               paint_win->h - 20, 0xFFFFFF);
-        }
-      }
-      // Canvas drawing with line interpolation
-      else if (rel_y >= 20 && rel_x >= 0 && rel_x < paint_win->w &&
-               rel_y < paint_win->h) {
-        if (paint_prev_x >= 0 && paint_prev_y >= 0) {
-          gui_window_draw_line(paint_win, paint_prev_x, paint_prev_y, rel_x,
-                               rel_y, 1, paint_color);
-        } else {
-          for (int dy = -1; dy <= 1; dy++)
-            for (int dx = -1; dx <= 1; dx++)
-              gui_window_put_pixel(paint_win, rel_x + dx, rel_y + dy,
-                                   paint_color);
-        }
-        paint_prev_x = rel_x;
-        paint_prev_y = rel_y;
-      }
-    } else {
-      paint_prev_x = -1;
-      paint_prev_y = -1;
-    }
-  }
-
-  // 4. Explorer — graphical file browser
-  if (explorer_win && explorer_win->active) {
-    gui_window_draw_rect(explorer_win, 0, 0, explorer_win->w, explorer_win->h,
-                         0xFFFFFF);
-
-    // Панель инструментов
-    gui_window_draw_rect(explorer_win, 0, 0, explorer_win->w, 24, 0xF0F0F0);
-    gui_window_draw_string(explorer_win, "Path: / (All VFS Volumes)", 8, 7,
-                           0x333333);
-
-    // Кнопка Refresh (Обновить)
-    gui_window_draw_rect(explorer_win, explorer_win->w - 60, 3, 52, 18,
-                         0xDDDDDD);
-    gui_window_draw_string(explorer_win, "REFR", explorer_win->w - 50, 7,
-                           0x333333);
-    gui_window_draw_rect(explorer_win, 0, 24, explorer_win->w, 1, 0xCCCCCC);
-
-    // Сканируем VFS, если окно только открыто или нажали Refresh
-    if (!explorer_scanned) {
-      explorer_file_count = 0;
-      vfs_node_t *dev = vfs_root->next; // Skip the "root" container
-      while (dev && explorer_file_count < 256) {
-        // List files from each device root (only if it has a readdir function)
-        if (dev->readdir) {
-          for (int i = 0; i < 32; i++) {
-            vfs_dirent_t *de = dev->readdir(dev, i);
-            if (!de)
-              break;
-
-            strcpy(real_files[explorer_file_count].name, de->name);
-            real_files[explorer_file_count].size = de->size;
-            real_files[explorer_file_count].dev = dev;
-            real_files[explorer_file_count].inode = de->inode;
-            explorer_file_count++;
-            if (explorer_file_count >= 256)
-              break;
-          }
-        }
-        dev = dev->next;
-      }
-      explorer_scanned = true;
-    }
-
-    // Обработка клика по кнопке Refresh
-    if (mouse_just_pressed) {
-      int rx = mouse_x - explorer_win->x;
-      int ry = mouse_y - explorer_win->y;
-      if (rx >= explorer_win->w - 60 && rx < explorer_win->w - 8 && ry >= 3 &&
-          ry < 21) {
-        explorer_scanned = false;
-      }
-    }
-
-    // Список файлов
-    int y_off = 30;
-    if (explorer_file_count == 0) {
-      gui_window_draw_string(explorer_win, "No files found on VFS.", 20, 40,
-                             0x999999);
-    }
-
-    for (int i = 0; i < explorer_file_count; i++) {
-      int row_y = y_off - 2;
-
-      if (i % 2 == 0) {
-        gui_window_draw_rect(explorer_win, 0, row_y, explorer_win->w, 18,
-                             0xF5F5F5);
-      }
-
-      // Иконка (цвет зависит от ФС)
-      uint32_t icon_color = (strcmp(real_files[i].dev->name, "EXT2_DISK") == 0)
-                                ? 0x40C0F0
-                                : 0xF0C040;
-      gui_window_draw_rect(explorer_win, 5, y_off + 2, 8, 8, icon_color);
-      gui_window_draw_string(explorer_win, real_files[i].name, 20, y_off,
-                             0x000000);
-
-      // Источник
-      gui_window_draw_string(explorer_win, real_files[i].dev->name,
-                             explorer_win->w - 100, y_off, 0x888888);
-
-      // ПРОВЕРКА КЛИКА ПО ФАЙЛУ
-      if (mouse_just_pressed) {
-        int rx = mouse_x - explorer_win->x;
-        int ry = mouse_y - explorer_win->y;
-
-        if (rx > 0 && rx < explorer_win->w && ry >= row_y && ry < row_y + 18) {
-          term_print("Explorer: Opening ");
-          term_print(real_files[i].name);
-          term_print("\n");
-
-          vfs_node_t *dev = real_files[i].dev;
-          vfs_node_t file_node;
-          memset(&file_node, 0, sizeof(vfs_node_t));
-          file_node.inode = real_files[i].inode;
-          strcpy(file_node.name, real_files[i].name);
-
-          uint8_t *file_data = kmalloc(real_files[i].size + 1);
-          uint32_t read_bytes =
-              dev->read(&file_node, 0, real_files[i].size, file_data);
-
-          if (read_bytes > 0) {
-            file_data[read_bytes] = '\0';
-            notepad_load_content((char *)file_data, read_bytes);
-            notepad_win->active = true;
-            window_bring_to_front(notepad_win);
-            kfree(file_data);
-          } else {
-            term_print("Explorer: Failed to read file via VFS!\n");
-            kfree(file_data);
-          }
-        }
-      }
-      y_off += 18;
-    }
-  }
-
-  // 5. Notepad
-  if (notepad_win && notepad_win->active) {
-    gui_window_draw_rect(notepad_win, 0, 0, notepad_win->w, notepad_win->h,
-                         0xFFFFFF);
-    // Menu bar
-    gui_window_draw_rect(notepad_win, 0, 0, notepad_win->w, 18, 0xF0F0F0);
-    gui_window_draw_string(notepad_win, "Notepad - EquinoxOS", 8, 5, 0x333333);
-    // Separator
-    gui_window_draw_rect(notepad_win, 0, 18, notepad_win->w, 1, 0xCCCCCC);
-    gui_window_draw_rect(notepad_win, notepad_win->w - 80, 2, 50, 15,
-                         0x228B22); // Лесной зеленый
-    gui_window_draw_string(notepad_win, "SAVE", notepad_win->w - 75, 6,
-                           0xFFFFFF);
-    if (mouse_left_button && !prev_mouse_left) {
-      int rx = mouse_x - notepad_win->x;
-      int ry = mouse_y - notepad_win->y;
-
-      // Проверка нажатия на SAVE
-      if (rx >= notepad_win->w - 80 && rx < notepad_win->w - 30 && ry >= 2 &&
-          ry < 17) {
-        char save_buffer[2048] = {0};
-        for (int i = 0; i <= notepad_line; i++) {
-          strcat(save_buffer, notepad_buf[i]);
-          strcat(save_buffer, "\n");
-        }
-        // Сохраняем как NOTES.TXT на ПЕРВОЕ попавшееся устройство с поддержкой
-        // записи
-        vfs_node_t *dev = vfs_root->next;
-        while (dev) {
-          if (dev->write) {
-            vfs_node_t file_node;
-            memset(&file_node, 0, sizeof(vfs_node_t));
-            strcpy(file_node.name, "NOTES.TXT");
-
-            dev->write(&file_node, 0, strlen(save_buffer),
-                       (uint8_t *)save_buffer);
-            term_print("Notepad: Saved to ");
-            term_print(dev->name);
-            term_print("\n");
-            break;
-          }
-          dev = dev->next;
-        }
-
-        // Заставляем Explorer пересканировать диск
-        explorer_scanned = false;
-      }
-    }
-    for (int i = 0; i < NOTEPAD_MAX_LINES; i++) {
-      gui_window_draw_string(notepad_win, notepad_buf[i], 8, 22 + i * 14,
-                             0x000000);
-    }
-    // Cursor blink (simple block)
-    int cx = 8 + notepad_col * 8;
-    int cy = 22 + notepad_line * 14;
-    if ((tick / 50) % 2 == 0) {
-      gui_window_draw_rect(notepad_win, cx, cy, 2, 10, 0x000000);
-    }
-  }
-
-  prev_mouse_left = mouse_left_button;
-
-  gui_compositor_render();
-  vesa_update();
-}
 
 // =========================================================================
 //                              SYSTEM API
@@ -612,14 +137,15 @@ void init_sse() {
   cr0 |= (1 << 1);  // Установить MP (Monitor Coprocessor)
   __asm__ volatile("mov %0, %%cr0" : : "r"(cr0));
 
-  // 2. ОТКЛЮЧАЕМ SMAP (бит 21 в CR4) и включаем SSE в CR4
+  // 2. Включаем поддержку расширений в CR4
   uint64_t cr4;
   __asm__ volatile("mov %%cr4, %0" : "=r"(cr4));
   cr4 |= (1 << 9);  // OSFXSR (SSE support)
   cr4 |= (1 << 10); // OSXMMEXCPT (SSE exceptions)
-  cr4 &= ~(
-      1ULL
-      << 21); // КРИТИЧНО: Отключаем SMAP (чтобы ядро могло читать буферы юзера)
+
+  // !!! УДАЛИ ИЛИ ЗАКОММЕНТИРУЙ СТРОКУ НИЖЕ !!!
+  // cr4 |= (1ULL << 21); // SMAP - УБИЙЦА СТАРЫХ ПРОЦЕССОРОВ
+
   __asm__ volatile("mov %0, %%cr4" : : "r"(cr4));
 }
 
@@ -795,8 +321,11 @@ void kmain(void) {
   __asm__("sti"); // Включаем прерывания
   serial_puts(COM1, "Interrupts enabled\n");
 
-  // Даем таймеру "прокашляться" (небольшая задержка)
-  for (volatile int i = 0; i < 2000000; i++);
+  // Даем таймеру "прокашляться" (ждем 10 тиков = 100мс)
+  uint32_t start_tick = tick;
+  while (tick < start_tick + 10) {
+    __asm__ volatile("hlt");
+  }
    shm_init();
   // 4. ЗАПУСКАЕМ ТЕСТЫ (Теперь Цербер увидит тикающий таймер)
   serial_puts(COM1, "Running kernel tests...\n");
