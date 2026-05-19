@@ -53,22 +53,84 @@ uint8_t keyboard_pop() {
     return sc;
 }
 
+void keyboard_push_string(const char *s) {
+  while (*s) {
+    keyboard_push(*s++);
+  }
+}
+
 void keyboard_callback() {
-    uint8_t scancode = inb(0x60);
-    
-    // 1. Всегда кладем в буфер (для змейки и системных нужд)
-    keyboard_push(scancode);
-    
-    char c = get_ascii_char(scancode);
-    if (c > 0) {
-        // 2. МАРШРУТИЗАЦИЯ ПО ФОКУСУ
-        if (focused_window == notepad_win) {
-            notepad_handle_char(c);
-        } 
-        else if (focused_window == term_win) {
-            shell_handle_char(c);
-        }
-        // Если фокус на другом окне или приложении — 
-        // текстовый ввод просто игнорируется (или обрабатывается там)
+  uint8_t scancode = inb(0x60);
+
+  // Отслеживаем нажатия (Make) и отпускания (Break) модификаторов
+  switch (scancode) {
+  case 0x2A:
+  case 0x36:
+    shift_pressed = true;
+    return;
+  case 0xAA:
+  case 0xB6:
+    shift_pressed = false;
+    return;
+  case 0x1D:
+    ctrl_pressed = true;
+    return;
+  case 0x9D:
+    ctrl_pressed = false;
+    return;
+  case 0x38:
+    alt_pressed = true;
+    return;
+  case 0xB8:
+    alt_pressed = false;
+    return;
+  }
+
+  if (scancode & 0x80)
+    return; // Игнорируем остальные отпускания
+
+  // 1. Обработка стрелок (ANSI escape sequences)
+  switch (scancode) {
+  case 0x48:
+    keyboard_push_string("\e[A");
+    return; // UP
+  case 0x50:
+    keyboard_push_string("\e[B");
+    return; // DOWN
+  case 0x4D:
+    keyboard_push_string("\e[C");
+    return; // RIGHT
+  case 0x4B:
+    keyboard_push_string("\e[D");
+    return; // LEFT
+  case 0x47:
+    keyboard_push_string("\e[H");
+    return; // HOME
+  case 0x4F:
+    keyboard_push_string("\e[F");
+    return; // END
+  case 0x53:
+    keyboard_push_string("\e[3~");
+    return; // DELETE
+  }
+
+  // 2. Обработка букв с учетом CTRL
+  char c = get_ascii_char(scancode);
+  if (c > 0) {
+    if (ctrl_pressed) {
+      // Ctrl + Key превращается в коды 1-26
+      // Например, Ctrl+C станет кодом 3
+      if (c >= 'a' && c <= 'z')
+        c -= 'a' - 1;
+      else if (c >= 'A' && c <= 'Z')
+        c -= 'A' - 1;
+      keyboard_push(c);
+    } else {
+      // Обычный ввод (маршрутизация как раньше)
+      if (focused_window == term_win)
+        shell_handle_char(c);
+      else
+        keyboard_push(c);
     }
+  }
 }
