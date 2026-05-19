@@ -11,8 +11,10 @@ extern void notepad_handle_char(char c);
 static uint8_t key_buffer[128];
 static int key_head = 0;
 static int key_tail = 0;
-
 static bool shift_pressed = false;
+static bool ctrl_pressed = false;
+static bool alt_pressed = false;
+
 
 static const char ascii_table[] = {
     0,  27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b',
