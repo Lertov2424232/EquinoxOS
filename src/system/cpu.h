@@ -4,11 +4,11 @@
 #include <stdint.h>
 
 static inline void stac() {
-    __asm__ volatile("stac" ::: "cc");
+    // __asm__ volatile("stac" ::: "cc");
 }
 
 static inline void clac() {
-    __asm__ volatile("clac" ::: "cc");
+    // __asm__ volatile("clac" ::: "cc");
 }
 
 static inline uint64_t read_cr0() {
