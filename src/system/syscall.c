@@ -499,6 +499,28 @@ void syscall_handler(syscall_regs_t *regs) {
     }
     break;
   }
+  case 34: { // SYS_GET_USED_MEM
+    regs->rax = pmm_get_used_memory();
+    break;
+  }
+  case 35: { // SYS_GET_TOTAL_MEM
+    regs->rax = pmm_get_total_memory();
+    break;
+  }
+  case 50: { // SYS_EXEC
+    const char *cmd = (const char *)regs->rdi;
+    char cmd_buf[256];
+    stac();
+    int idx = 0;
+    while (idx < 255 && cmd[idx] != '\0') {
+      cmd_buf[idx] = cmd[idx];
+      idx++;
+    }
+    cmd_buf[idx] = '\0';
+    clac();
+    regs->rax = task_exec(cmd_buf) ? 1 : 0;
+    break;
+  }
   default:
     break;
   }

@@ -24,6 +24,9 @@
 #define SYS_GET_VESA_INFO 32
 #define SYS_NET_DNS_RESOLVE 40
 #define SYS_NET_HTTP_GET 41
+#define SYS_GET_USED_MEM 34
+#define SYS_GET_TOTAL_MEM 35
+#define SYS_EXEC 50
 
 // Переименовали в _syscall и всегда принимаем 5 аргументов + номер
 static inline uint64_t _syscall(uint64_t num, uint64_t a1, uint64_t a2,
@@ -75,5 +78,17 @@ static inline uint32_t net_dns_resolve(const char *hostname) {
 static inline void *net_http_get(uint32_t ip, uint32_t *out_size) {
   return (void *)_syscall(SYS_NET_HTTP_GET, (uint64_t)ip, (uint64_t)out_size, 0,
                           0, 0);
+}
+
+static inline uint64_t sys_get_used_mem() {
+  return _syscall(SYS_GET_USED_MEM, 0, 0, 0, 0, 0);
+}
+
+static inline uint64_t sys_get_total_mem() {
+  return _syscall(SYS_GET_TOTAL_MEM, 0, 0, 0, 0, 0);
+}
+
+static inline int sys_exec(const char *cmd) {
+  return (int)_syscall(SYS_EXEC, (uint64_t)cmd, 0, 0, 0, 0);
 }
 #endif

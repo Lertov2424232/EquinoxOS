@@ -118,6 +118,23 @@ static int l_get_time(lua_State *L) {
   return 1;
 }
 
+static int l_sys_exec(lua_State *L) {
+  const char *cmd = luaL_checkstring(L, 1);
+  int ret = sys_exec(cmd);
+  lua_pushboolean(L, ret == 1);
+  return 1;
+}
+
+static int l_get_used_mem(lua_State *L) {
+  lua_pushnumber(L, (double)sys_get_used_mem());
+  return 1;
+}
+
+static int l_get_total_mem(lua_State *L) {
+  lua_pushnumber(L, (double)sys_get_total_mem());
+  return 1;
+}
+
 int main(int argc, char **argv) {
   if (argc < 2) {
     printf("Usage: luagui.elf script.lua\n");
@@ -137,6 +154,9 @@ int main(int argc, char **argv) {
   lua_register(L, "draw_gradient", l_draw_gradient);
   lua_register(L, "get_mouse", l_get_mouse);
   lua_register(L, "get_time", l_get_time);
+  lua_register(L, "sys_exec", l_sys_exec);
+  lua_register(L, "get_used_mem", l_get_used_mem);
+  lua_register(L, "get_total_mem", l_get_total_mem);
   // 1. ЗАГРУЖАЕМ И ВЫПОЛНЯЕМ ФАЙЛ ТОЛЬКО ОДИН РАЗ
   if (luaL_dofile(L, argv[1])) {
     printf("Lua Error: %s\n", lua_tostring(L, -1));
@@ -172,6 +192,9 @@ int main(int argc, char **argv) {
     // Отрисовка
     bool open = true;
     eid_end(&ctx, win_x, win_y);
+
+    // Force Lua garbage collection step to prevent memory leaks from temp variables
+    lua_gc(L, LUA_GCSTEP, 0);
 
     if (ctx.last_key == 0x01)
       break; // ESC

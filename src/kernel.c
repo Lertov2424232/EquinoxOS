@@ -311,7 +311,7 @@ void kmain(void) {
   serial_puts(COM1, "IDT initialized\n");
   pic_remap(); // Перенаправляет PIC на 0x20+
   serial_puts(COM1, "PIC remapped\n");
-  init_timer(100); // Настраивает PIT на 100Гц
+  init_timer(50); // Настраивает PIT на 50Гц (компенсирует двоение частоты в QEMU)
   serial_puts(COM1, "Timer initialized (100Hz)\n");
   tick = 0;
   // !!! ВАЖНО: Ставим АСЕМБЛЕРНЫЙ обработчик СРАЗУ, до включения прерываний !!!

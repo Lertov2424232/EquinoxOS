@@ -268,7 +268,10 @@ char *setlocale(int category, const char *locale) { return "C"; }
 
 int remove(const char* path) { return 0; }
 int rename(const char* old_name, const char* new_name) { return 0; }
-int system(const char* command) { return -1; }
+int system(const char* command) {
+    if (!command) return 1;
+    return sys_exec(command) == 1 ? 0 : -1;
+}
 int mkdir(const char* path, mode_t mode) { return 0; }
 void DG_SetWindowTitle(const char* title) { }
 
