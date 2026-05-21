@@ -133,8 +133,21 @@ void shell_handle_char(char c) {
       task_exec(filename);
     } else if (strcmp(shell_buffer, "beep") == 0) {
       pcspeaker_beep(1000, 1000);
-    }
-    if (strcmp(shell_buffer, "color") == 0) {
+    } else if (strcmp(shell_buffer, "matrix") == 0) {
+      terminal_matrix_mode = !terminal_matrix_mode;
+      terminal_clear();
+    } else if (strcmp(shell_buffer, "neofetch") == 0) {
+      term_print("\e[36m    ___           _                  ____  _____\n");
+      term_print("\e[36m   / __\\__ _ _  _(_)_ __  _____ __  / __ \\/ ___/\n");
+      term_print("\e[34m  / _\\/ _ `/ |/ / /  _ \\/ _ \\ \\/ / / /_/ /\\__ \\\n");
+      term_print("\e[35m / /_/ /_/ /|  / / / // / /_/ />  <  \\____/___/ /\n");
+      term_print("\e[31m \\___\\__, / |_/_/_/ //_/\\____/_/\\_\\         /_/\n");
+      term_print("\e[31m       /_/\e[0m\n\n");
+      term_print("\e[32m OS:\e[0m EquinoxOS x86_64\n");
+      term_print("\e[32m Kernel:\e[0m Equinox Core\n");
+      term_print("\e[32m GUI:\e[0m Equinox Window Manager\n");
+      term_print("\e[32m Shell:\e[0m eqsh\n");
+    } else if (strcmp(shell_buffer, "color") == 0) {
       terminal_print(
           "\e[31mRED \e[32mGREEN \e[33mYELLOW \e[34mPURPLE \e[36mCYAN\e[0m\n");
     } else if (strcmp(shell_buffer, "speakeron") == 0) {

@@ -148,10 +148,27 @@ end
 -- --- TAB VIEWS ---
 function UI:draw_dashboard()
     self:panel("RESOURCE MONITOR", 20, 80, 280, 180)
-    draw_text("CPU LOAD:", 40, 115, THEME.text_dim)
+    
+    -- CPU Load (Simulated)
+    draw_text("CPU LOAD:", 40, 110, THEME.text_dim)
     local cpu_load = 0.5 + 0.3 * math.sin(self.time * 2)
-    draw_rect(40, 135, 240, 15, 0x333333)
-    draw_rect(40, 135, math.floor(240 * cpu_load), 15, THEME.accent)
+    draw_rect(40, 125, 240, 10, 0x333333)
+    draw_rect(40, 125, math.floor(240 * cpu_load), 10, THEME.accent)
+    
+    -- RAM Load (REAL!)
+    draw_text("RAM LOAD:", 40, 145, THEME.text_dim)
+    local used_bytes = get_used_mem and get_used_mem() or (42 * 1024 * 1024)
+    local total_bytes = get_total_mem and get_total_mem() or (512 * 1024 * 1024)
+    local ram_ratio = used_bytes / total_bytes
+    if ram_ratio > 1.0 then ram_ratio = 1.0 end
+    draw_rect(40, 160, 240, 10, 0x333333)
+    draw_rect(40, 160, math.floor(240 * ram_ratio), 10, THEME.success)
+    
+    -- RAM Stats Text
+    local used_mb = math.floor(used_bytes / 1024 / 1024)
+    local total_mb = math.floor(total_bytes / 1024 / 1024)
+    local stat_str = string.format("RAM: %d MB / %d MB (%d%%)", used_mb, total_mb, math.floor(ram_ratio * 100))
+    draw_text(stat_str, 40, 180, THEME.text)
     
     self:panel("DISK ACTIVITY", 320, 80, 280, 180)
     Graph:update(0.5 + 0.4 * math.sin(self.time * 5) * math.cos(self.time * 2))
