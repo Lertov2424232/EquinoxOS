@@ -1,6 +1,6 @@
-#include "drivers/mouse/mouse.h"
-#include "io/io.h"
-#include "drivers/vga/vesa.h" // Нужен только для screen_width / screen_height
+#include "system/drivers/devices/mouse/mouse.h"
+#include "system/core/io.h"
+#include "system/drivers/vesa/vesa.h"
 
 extern void term_print(const char* str); // Для аккуратного вывода в терминал
 

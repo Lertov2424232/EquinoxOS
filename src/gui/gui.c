@@ -1,11 +1,11 @@
-#include "gui.h"
-#include "../drivers/mouse/mouse.h"
-#include "../drivers/vga/vesa.h"
-#include "../libc/string.h"
-#include "../system/memory.h"
-#include "../system/task.h"
-#include "terminal.h"
-#include "../drivers/audio/ac97.h"
+#include "gui/gui.h"
+#include "system/drivers/devices/mouse/mouse.h"
+#include "system/drivers/vesa/vesa.h"
+#include "syslibc/string.h"
+#include "system/mem/memory.h"
+#include "system/usr/task.h"
+#include "gui/terminal.h"
+#include "system/drivers/devices/audio/ac97.h"
 
 #include <stdbool.h>
 

@@ -1,6 +1,6 @@
-#include "terminal.h"
-#include "../libc/string.h"
-#include "../system/timer.h"
+#include "gui/terminal.h"
+#include "syslibc/string.h"
+#include "system/misc/timer.h"
 
 #define TERM_LINES 100
 #define TERM_COLS 80

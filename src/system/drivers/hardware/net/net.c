@@ -1,8 +1,8 @@
-#include "net.h"
-#include "arp.h"
-#include "ipv4.h"
-#include "../libc/string.h"
-#include "../libc/stdio.h"
+#include "system/drivers/hardware/net/net.h"
+#include "system/drivers/hardware/net/arp.h"
+#include "system/drivers/hardware/net/ipv4.h"
+#include "syslibc/string.h"
+#include "syslibc/stdio.h"
 
 extern void term_print(const char* str);
 

@@ -1,7 +1,7 @@
-#include "keyboard.h"
-#include "../../io/io.h"
-#include "../../shell/shell.h"
-#include "../../gui/gui.h"
+#include "system/drivers/devices/keyboard/keyboard.h"
+#include "system/core/io.h"
+#include "system/shell/shell.h"
+#include "gui/gui.h"
 #include <stdint.h>
 #include <stdbool.h>
 

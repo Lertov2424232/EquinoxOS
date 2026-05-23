@@ -1,8 +1,8 @@
 #ifndef ICMP_H
 #define ICMP_H
 
-#include "net.h"
-#include "ipv4.h"
+#include "system/drivers/hardware/net/net.h"
+#include "system/drivers/hardware/net/ipv4.h"
 
 typedef struct {
     uint8_t  type;
