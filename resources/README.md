@@ -1,0 +1,1 @@
+This folder is OS resources such as Logos, Backgrounds. However it doesn't include the "terry.wav" file, or any of Lua scripts. Not WAD files of DOOM and not a single TTF/PSF/OTF file.
