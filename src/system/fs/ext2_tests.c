@@ -1,6 +1,6 @@
-#include "ext2.h"
-#include "../system/memory.h"
-#include "../libc/stdio.h"
+#include "system/fs/ext2.h"
+#include "system/mem/memory.h"
+#include "syslibc/stdio.h"
 #include <stdbool.h>
 
 extern void term_print(const char* str);
@@ -107,7 +107,7 @@ void ext2_stress_test_phase3() {
 }
 
 extern void ext2_overwrite(const char* name, const char* data, uint32_t size);
-#include "../libc/string.h"
+#include "syslibc/string.h"
 
 void ext2_stress_test_phase4() {
     uint32_t existing = ext2_resolve_path("/write_test.txt");

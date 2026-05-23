@@ -1,13 +1,13 @@
-#include "eqstart.h"
-#include "../drivers/vga/vesa.h"
-#include "../libc/stdio.h"
-#include "../libc/string.h"
-#include "gdt.h"
-#include "idt.h"
-#include "memory.h"
-#include "pmm.h"
-#include "timer.h"
-#include "vmm.h"
+#include "boot/eqstart.h"
+#include "system/drivers/vesa/vesa.h"
+#include "syslibc/stdio.h"
+#include "syslibc/string.h"
+#include "system/core/gdt.h"
+#include "system/core/idt.h"
+#include "system/mem/memory.h"
+#include "system/mem/pmm.h"
+#include "system/misc/timer.h"
+#include "system/mem/vmm.h"
 #include <stdbool.h>
 #include <stdint.h>
 

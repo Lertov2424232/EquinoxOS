@@ -1,9 +1,9 @@
-#include "fat32.h"
-#include "vfs.h"
-#include "../drivers/disk/ata.h"
-#include "../system/memory.h"
-#include "../libc/string.h"
-#include "../drivers/vga/vesa.h"
+#include "system/fs/fat32.h"
+#include "system/fs/vfs.h"
+#include "system/drivers/hardware/disk/ata.h"
+#include "system/mem/memory.h"
+#include "syslibc/string.h"
+#include "system/drivers/vesa/vesa.h"
 
 extern void term_print(const char* str);
 

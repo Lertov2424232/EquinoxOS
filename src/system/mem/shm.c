@@ -1,11 +1,11 @@
 // src/system/shm.c
-#include "shm.h"
-#include "../libc/stdio.h"
-#include "../libc/string.h"
-#include "memory.h"
-#include "pmm.h"
-#include "task.h"
-#include "vmm.h"
+#include "system/mem/shm.h"
+#include "syslibc/stdio.h"
+#include "syslibc/string.h"
+#include "system/mem/memory.h"
+#include "system/mem/pmm.h"
+#include "system/usr/task.h"
+#include "system/mem/vmm.h"
 
 
 #define MAX_SHM_SEGMENTS 128

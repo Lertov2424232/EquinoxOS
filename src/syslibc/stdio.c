@@ -1,5 +1,5 @@
-#include "stdio.h"
-#include "string.h"
+#include "syslibc/stdio.h"
+#include "syslibc/string.h"
 
 // Нам нужно знать про функцию терминала (она в kernel.c)
 extern void term_print(const char *str);

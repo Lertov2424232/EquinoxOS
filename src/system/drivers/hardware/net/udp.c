@@ -1,8 +1,8 @@
-#include "udp.h"
-#include "../libc/stdio.h"
-#include "../libc/string.h"
-#include "../system/memory.h"
-#include "ipv4.h"
+#include "system/drivers/hardware/net/udp.h"
+#include "syslibc/stdio.h"
+#include "syslibc/string.h"
+#include "system/mem/memory.h"
+#include "system/drivers/hardware/net/ipv4.h"
 
 extern void term_print(const char *str);
 

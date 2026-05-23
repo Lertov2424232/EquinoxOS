@@ -1,7 +1,7 @@
-#include "../drivers/vga/vesa.h"
-#include "../drivers/serial/serial.h"
+#include "system/drivers/vesa/vesa.h"
+#include "system/drivers/hardware/serial/serial.h"
 #include <stdint.h>
-#include "../drivers/audio/ac97.h"
+#include "system/drivers/devices/audio/ac97.h"
 
 typedef struct {
     uint64_t r15, r14, r13, r12, r11, r10, r9, r8;

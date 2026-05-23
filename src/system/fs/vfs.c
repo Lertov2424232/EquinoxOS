@@ -1,7 +1,7 @@
-#include "vfs.h"
-#include "../system/memory.h"
-#include "../libc/string.h"
-#include "../libc/stdio.h"
+#include "system/fs/vfs.h"
+#include "system/mem/memory.h"
+#include "syslibc/string.h"
+#include "syslibc/stdio.h"
 
 vfs_node_t* vfs_root = NULL;
 

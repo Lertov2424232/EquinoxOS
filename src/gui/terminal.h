@@ -1,7 +1,7 @@
 #ifndef TERMINAL_H
 #define TERMINAL_H
 
-#include "gui.h"
+#include "gui/gui.h"
 
 void terminal_print(const char* str);
 void terminal_render(window_t* self);

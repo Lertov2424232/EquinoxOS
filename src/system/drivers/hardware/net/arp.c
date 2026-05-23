@@ -1,6 +1,6 @@
-#include "arp.h"
-#include "../libc/string.h"
-#include "../libc/stdio.h"
+#include "system/drivers/hardware/net/arp.h"
+#include "syslibc/string.h"
+#include "syslibc/stdio.h"
 
 extern void term_print(const char* str);
 

@@ -9,7 +9,7 @@ ISO_ROOT = iso_root
 
 # --- KERNEL FLAGS ---
 CFLAGS = -ffreestanding -O2 -Wall -Wextra -fno-exceptions -std=c11 \
-         -Isrc -Isrc/drivers -Isrc/shell -Isrc/boot/limine -Isrc/net \
+         -Isrc -Isrc/system -Isrc/system/core -Isrc/syslibc -Isrc/boot/limine \
          -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 \
          -fno-stack-protector -fno-pic -g -MMD -MP
 
@@ -22,24 +22,28 @@ USER_CFLAGS = -ffreestanding -mcmodel=small -mno-red-zone -fno-stack-protector -
               -fno-omit-frame-pointer $(SDK_INC) -DLUA_USE_C89 -MMD -MP
 
 # --- KERNEL SOURCES ---
-# Automatically find all C sources in src/ and subdirectories
-KERNEL_SRCS = $(shell dir /s /b src\*.c)
-# On Windows 'dir /s /b' works, but let's try to be more cross-platform if possible.
-# Actually, the user is on Windows, so we can use a small hack or just stick to what works.
-# But for "Perfection", let's use a more robust way.
-# Since we don't have a reliable 'find' on Windows CMD without tools, we'll list the main directories
-# but use wildcards.
-
-SRC_DIRS = src src/system src/net src/drivers src/drivers/keyboard src/shell \
-           src/drivers/disk src/fs src/drivers/vga src/drivers/serial \
-           src/drivers/audio src/libc src/io src/gui src/drivers/mouse \
-           src/drivers/pci src/drivers/net src/drivers/pcspeaker
+SRC_DIRS = src src/boot src/gui src/syslibc \
+           src/system/core \
+           src/system/drivers/devices/audio \
+           src/system/drivers/devices/keyboard \
+           src/system/drivers/devices/mouse \
+           src/system/drivers/devices/pci \
+           src/system/drivers/devices/pcspeaker \
+           src/system/drivers/hardware/disk \
+           src/system/drivers/hardware/net \
+           src/system/drivers/hardware/serial \
+           src/system/drivers/vesa \
+           src/system/fs \
+           src/system/mem \
+           src/system/misc \
+           src/system/shell \
+           src/system/usr
 
 KERNEL_C_SRCS = $(foreach dir,$(SRC_DIRS),$(wildcard $(dir)/*.c))
-KERNEL_ASM_SRCS = $(wildcard src/system/*.asm)
+KERNEL_ASM_SRCS = $(wildcard src/system/core/*.asm)
 
 KERNEL_OBJS = $(patsubst src/%.c,$(OBJ_DIR)/%.o,$(filter %.c,$(KERNEL_C_SRCS))) \
-              $(patsubst src/system/%.asm,$(OBJ_DIR)/system/%.o,$(KERNEL_ASM_SRCS))
+              $(patsubst src/%.asm,$(OBJ_DIR)/%.o,$(KERNEL_ASM_SRCS))
 
 # --- SDK OBJECTS ---
 SDK_C_SRCS = $(wildcard $(SDK_LIB_DIR)/*.c)
@@ -81,7 +85,8 @@ $(OBJ_DIR)/%.o: src/%.c
 	@if not exist $(dir $(subst /,\,$(@))) mkdir $(dir $(subst /,\,$(@))) 2>nul
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(OBJ_DIR)/system/%.o: src/system/%.asm
+$(OBJ_DIR)/%.o: src/%.asm
+	@if not exist $(dir $(subst /,\,$(@))) mkdir $(dir $(subst /,\,$(@))) 2>nul
 	$(ASM) $(ASMFLAGS) $< -o $@
 
 # --- SDK BUILD RULES ---
