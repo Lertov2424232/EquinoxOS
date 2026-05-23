@@ -24,16 +24,12 @@
 ### Screenshots
 
 <img width="1278" height="805" alt="EquinoxOS Desktop" src="https://github.com/user-attachments/assets/8ed14d39-b20f-4268-b6cb-b40d0beda5df" />
-<br><sub>Desktop with Compositing Window Manager, taskbar, and desktop icons</sub>
 
 <img width="1283" height="802" alt="EquinoxOS GUI Apps" src="https://github.com/user-attachments/assets/bf378308-364d-41f6-80ac-3446b5ab0c3a" />
-<br><sub>Paint app with Bresenham rendering + Terminal with command history</sub>
 
 <img width="1277" height="805" alt="EquinoxOS Explorer" src="https://github.com/user-attachments/assets/5b0c8d2d-14c2-42a8-b338-527108dcc8fc" />
-<br><sub>File Explorer navigating EXT2/FAT32 volumes — launching ELF executables</sub>
 
 <img width="644" height="448" alt="EquinoxOS on real hardware" src="https://github.com/user-attachments/assets/99d3e6b5-459b-4ccc-8976-516775a7bb1c" />
-<br><sub>Running on physical hardware</sub>
 
 </div>
 
