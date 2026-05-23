@@ -99,27 +99,22 @@ doom.elf: $(SDK_OBJS) $(DOOM_OBJS)
 
 # --- APPS BUILD RULES ---
 APP_SRCS = $(wildcard app/*.c)
-# Убираем luagui из общего списка, чтобы для него сработало спец. правило
 APP_OBJS = $(patsubst app/%.c,app/%.o,$(APP_SRCS))
 APP_ELFS_SIMPLE = $(ISO_ROOT)/snake.elf $(ISO_ROOT)/bmpview.elf $(ISO_ROOT)/htmlview.elf $(ISO_ROOT)/niplay.elf
 
 apps: $(SDK_OBJS) $(LUA_OBJS) $(APP_ELFS_SIMPLE) $(ISO_ROOT)/luagui.elf $(ISO_ROOT)/lua.elf
 
-# Обычное правило для простых приложений (без Lua)
 $(ISO_ROOT)/%.elf: app/%.o $(SDK_OBJS)
 	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) $< -o $@
 
-# СПЕЦИАЛЬНОЕ ПРАВИЛО ДЛЯ LUAGUI (Линкуем с LUA_OBJS)
 $(ISO_ROOT)/luagui.elf: app/luagui.o $(SDK_OBJS) $(LUA_OBJS)
 	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) $(LUA_OBJS) $< -o $@
 
 app/%.o: app/%.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
-# Lua CLI остается как был
 $(ISO_ROOT)/lua.elf: sdk/lua_cli/lua.o $(SDK_OBJS) $(LUA_OBJS)
 	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) $(LUA_OBJS) $< -o $@
-
 
 # --- SYSTEM RULES ---
 
