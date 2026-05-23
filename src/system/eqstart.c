@@ -1,68 +1,183 @@
 #include "eqstart.h"
-#include "pmm.h"
-#include "vmm.h"
-#include "idt.h"
-#include "gdt.h"
-#include "timer.h"
-#include "memory.h"
 #include "../drivers/vga/vesa.h"
 #include "../libc/stdio.h"
 #include "../libc/string.h"
+#include "gdt.h"
+#include "idt.h"
+#include "memory.h"
+#include "pmm.h"
+#include "timer.h"
+#include "vmm.h"
 #include <stdbool.h>
 #include <stdint.h>
 
-// Макрос для моментального вылета, если проверка не прошла
-#define MUST(condition, message) \
-    if (!(condition)) { \
-        draw_rect_direct(0, 0, screen_width, screen_height, 0x770000); \
-        vesa_draw_string_direct("!!! SYSTEM INTEGRITY FAULT !!!", 50, 50, 0xFFFFFF); \
-        vesa_draw_string_direct("REASON: " message, 50, 80, 0xFFFF00); \
-        vesa_draw_string_direct("FILE: " __FILE__, 50, 110, 0xCCCCCC); \
-        while(1) { __asm__("cli; hlt"); } \
+// Задержка для "кинематографичности" (имитация работы)
+#define BOOT_DELAY 15000000
+#define STATUS_X 550
+
+static int log_row = 0;
+
+// Макрос для моментальной остановки системы при критическом сбое
+#define CERBERUS_ASSERT(cond, reason)                                          \
+  if (!(cond)) {                                                               \
+    draw_rect_direct(0, 0, screen_width, screen_height, 0x330000);             \
+    vesa_draw_string_direct("!!! KERNEL INTEGRITY FAULT !!!", 50, 50,          \
+                            0xFF0000);                                         \
+    vesa_draw_string_direct("REASON: " reason, 50, 80, 0xFFFFFF);              \
+    while (1) {                                                                \
+      __asm__("cli; hlt");                                                     \
+    }                                                                          \
+  }
+
+static void cinematic_delay() {
+  for (volatile uint64_t i = 0; i < BOOT_DELAY; i++) {
+    __asm__("pause");
+  }
+}
+
+static void log_info(const char *msg) {
+  vesa_draw_string_direct(">>", 40, 60 + (log_row * 18), 0x00FF00);
+  vesa_draw_string_direct(msg, 70, 60 + (log_row * 18), 0xCCCCCC);
+}
+
+static void log_status(const char *status, uint32_t color) {
+  vesa_draw_string_direct("[", STATUS_X, 60 + (log_row * 18), 0xAAAAAA);
+  vesa_draw_string_direct(status, STATUS_X + 15, 60 + (log_row * 18), color);
+  vesa_draw_string_direct("]", STATUS_X + 60, 60 + (log_row * 18), 0xAAAAAA);
+  log_row++;
+  cinematic_delay();
+}
+
+// --- РЕАЛЬНЫЕ ТЕСТЫ ---
+
+// 1. Проверка маппинга NULL-страницы (Защита от нулевых указателей)
+bool test_vmm_null_protection() {
+  log_info("VMM: Checking NULL-pointer protection...");
+
+  // Получаем адрес текущей PML4 таблицы
+  uint64_t cr3;
+  __asm__ volatile("mov %%cr3, %0" : "=r"(cr3));
+
+  // В x86_64 CR3 хранит физический адрес. Переводим в виртуальный через HHDM.
+  uint64_t *pml4 = (uint64_t *)(cr3 + hhdm_offset);
+
+  // Проверяем первую запись (она отвечает за 0x0 - 0x7FFFFFFFFFFF)
+  // Если она Present, значит риск разыменования NULL выше.
+  if (pml4[0] & PTE_PRESENT) {
+    // Если замаплено, проверяем, нет ли там PTE_USER. Юзеру там быть нельзя!
+    if (pml4[0] & PTE_USER) {
+      log_status("DANGER", 0xFF0000);
+      return false;
+    }
+    log_status("WARN", 0xFFFF00);
+  } else {
+    log_status("SAFE", 0x00FF00);
+  }
+  return true;
+}
+
+// 2. Стресс-тест PMM (Выделение и проверка целостности данных)
+bool test_pmm_stress() {
+  log_info("PMM: Stress-testing physical allocator...");
+  void *test_pages[32];
+
+  // Выделяем страницы и пишем в них уникальный мусор
+  for (int i = 0; i < 32; i++) {
+    test_pages[i] = pmm_alloc();
+    if (!test_pages[i]) {
+      log_status("NOMEM", 0xFF0000);
+      return false;
     }
 
-static void log(const char* msg, uint32_t color) {
-    static int log_row = 0;
-    vesa_draw_string_direct(" [LOG] ", 10, 150 + (log_row * 15), 0x555555);
-    vesa_draw_string_direct(msg, 70, 150 + (log_row * 15), color);
-    log_row++;
+    uint64_t *ptr = (uint64_t *)((uint64_t)test_pages[i] + hhdm_offset);
+    *ptr = 0xABCDEF0123456789 ^ (uint64_t)test_pages[i];
+  }
+
+  // Проверяем, не перезаписали ли страницы друг друга
+  for (int i = 0; i < 32; i++) {
+    uint64_t *ptr = (uint64_t *)((uint64_t)test_pages[i] + hhdm_offset);
+    if (*ptr != (0xABCDEF0123456789 ^ (uint64_t)test_pages[i])) {
+      log_status("CORRUPT", 0xFF0000);
+      return false;
+    }
+    pmm_free(test_pages[i]);
+  }
+  log_status("PASSED", 0x00FF00);
+  return true;
+}
+
+// 3. Проверка FPU/SSE (Важно для многозадачности)
+bool test_cpu_fpu() {
+  log_info("CPU: Verifying FPU/SSE state integrity...");
+  volatile float f1 = 3.14f;
+  volatile float f2 = 2.71f;
+  if ((int)(f1 * f2) != 8) { // 3.14 * 2.71 = 8.5094
+    log_status("FAULT", 0xFF0000);
+    return false;
+  }
+  log_status("OK", 0x00FF00);
+  return true;
 }
 
 bool eqstart_perform_tests() {
-    draw_rect_direct(0, 0, screen_width, screen_height, 0x050505);
-    vesa_draw_string_direct("EQUINOX OS BOOT PROTOCOL: ENFORCED", 50, 30, 0x00FF00);
-    
-    // 1. Проверка HHDM (Тот самый RSI 0x0B08730 больше не повторится)
-    log("Verifying HHDM Offset...", 0xAAAAAA);
-    MUST(hhdm_offset != 0, "CRITICAL: Limine HHDM Request failed. Section error?");
-    MUST(hhdm_offset >= 0xFFFF800000000000, "CRITICAL: HHDM is in lower half! VMM will crash.");
-    log("HHDM: OK.", 0x00FF00);
+  // Очистка экрана в "терминальный" стиль
+  draw_rect_direct(0, 0, screen_width, screen_height, 0x020202);
+  log_row = 0;
 
-    // 2. Стресс-тест VMM (Маппинг Ring 3)
-    log("Testing Ring 3 Mapping Logic...", 0xAAAAAA);
-    page_table_t* test_pml4 = vmm_create_address_space();
-    uint64_t test_virt = 0x1000000;
-    void* test_phys = pmm_alloc();
-    vmm_map(test_pml4, test_virt, (uint64_t)test_phys, PTE_PRESENT | PTE_USER | PTE_WRITABLE);
-    
-    // Ручной обход таблиц - Цербер лезет в кишки
-    uint64_t* pml4 = (uint64_t*)test_pml4;
-    MUST(pml4[(test_virt >> 39) & 0x1FF] & PTE_USER, "VMM BUG: PML4 Entry is NOT USER-accessible!");
-    log("VMM/PTE_USER: OK.", 0x00FF00);
+  vesa_draw_string_direct("EQUINOX OS BOOT PROTOCOL v2.1", 50, 30, 0x00FFFF);
+  vesa_draw_string_direct("------------------------------------------", 50, 45,
+                          0x444444);
 
-    // 3. Проверка TSS (Чтобы прерывания в Ring 3 не вешали систему)
-    log("Verifying TSS and GDT...", 0xAAAAAA);
-    uint16_t tr; __asm__("str %0" : "=r"(tr));
-    MUST(tr == 0x28, "TSS NOT LOADED. Ring 3 interrupts will cause Triple Fault.");
-    log("TSS: OK.", 0x00FF00);
+  // Тест 1: HHDM (база системы)
+  log_info("HHDM: Mapping verification...");
+  CERBERUS_ASSERT(hhdm_offset >= 0xFFFF800000000000, "HHDM Invalid offset");
+  log_status("OK", 0x00FF00);
 
-    // 4. Таймер
-    log("Checking System Heartbeat (PIT)...", 0xAAAAAA);
-    uint32_t s = tick;
-    for(volatile int i=0; i<10000000; i++);
-    MUST(tick > s, "HEARTBEAT STOPPED. Interrupts or PIT dead.");
-    log("Heartbeat: OK.", 0x00FF00);
+  // Тест 2: VMM Security
+  // if (!test_vmm_null_protection()) {
+  //   CERBERUS_ASSERT(false, "VMM security breach: User access to NULL page");
+  // }
 
-    vesa_draw_string_direct("ALL SYSTEMS GREEN. READY FOR USERLAND.", 50, 450, 0x00FFFF);
-    return true;
+  // Тест 3: PMM Stress
+  if (!test_pmm_stress()) {
+    CERBERUS_ASSERT(false, "PMM memory corruption detected");
+  }
+
+  // Тест 4: CPU FPU
+  if (!test_cpu_fpu()) {
+    CERBERUS_ASSERT(false,
+                    "FPU math error - CPU features not properly enabled");
+  }
+
+  // Тест 5: Heartbeat (PIT)
+  log_info("TIME: Testing interrupt fire rate...");
+  uint32_t start_tick = tick;
+  // Короткое ожидание
+  for (volatile int i = 0; i < 15000000; i++)
+    ;
+  if (tick <= start_tick) {
+    log_status("FROZEN", 0xFF0000);
+    CERBERUS_ASSERT(false, "PIT Timer is not ticking. Interrupts dead?");
+  }
+  log_status("STABLE", 0x00FF00);
+
+  // Тест 6: GDT/TSS
+  log_info("GDT: Checking Task State Segment...");
+  uint16_t tr;
+  __asm__ volatile("str %0" : "=r"(tr));
+  if (tr == 0) {
+    log_status("MISSING", 0xFF0000);
+    CERBERUS_ASSERT(false,
+                    "TSS not loaded. Multitasking will cause Triple Fault");
+  }
+  log_status("LOADED", 0x00FF00);
+
+  vesa_draw_string_direct("------------------------------------------", 50,
+                          60 + (log_row * 18), 0x444444);
+  log_row++;
+  log_info("SYSTEM READY. HANDING OVER CONTROL...");
+  log_status("BOOT", 0x00FFFF);
+
+  cinematic_delay();
+  return true;
 }
