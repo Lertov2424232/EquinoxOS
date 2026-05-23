@@ -1,7 +1,7 @@
 #ifndef TCP_H
 #define TCP_H
 
-#include "net.h"
+#include "system/drivers/hardware/net/net.h"
 #include <stdbool.h>
 
 typedef enum {

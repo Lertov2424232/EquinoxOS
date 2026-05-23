@@ -1,7 +1,7 @@
-#include "icmp.h"
-#include "ipv4.h"
-#include "../libc/string.h"
-#include "../libc/stdio.h"
+#include "system/drivers/hardware/net/icmp.h"
+#include "system/drivers/hardware/net/ipv4.h"
+#include "syslibc/string.h"
+#include "syslibc/stdio.h"
 
 extern void term_print(const char* str);
 

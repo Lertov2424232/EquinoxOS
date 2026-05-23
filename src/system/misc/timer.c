@@ -1,6 +1,6 @@
 // timer.c
-#include "timer.h"
-#include "../io/io.h"
+#include "system/misc/timer.h"
+#include "system/core/io.h"
 
 // volatile крайне важен, чтобы компилятор не оптимизировал проверки в sleep()
 volatile uint32_t tick = 0;

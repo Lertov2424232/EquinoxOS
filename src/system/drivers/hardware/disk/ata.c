@@ -1,5 +1,5 @@
-#include "ata.h"
-#include "../../io/io.h"
+#include "system/drivers/hardware/disk/ata.h"
+#include "system/core/io.h"
 
 extern void term_print(const char* str);
 

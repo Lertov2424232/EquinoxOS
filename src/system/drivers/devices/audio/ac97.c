@@ -1,8 +1,8 @@
-#include "ac97.h"
-#include "../../io/io.h"
-#include "../../system/pmm.h"
-#include "../../libc/string.h"
-#include "../../libc/stdio.h"
+#include "system/drivers/devices/audio/ac97.h"
+#include "system/core/io.h"
+#include "system/mem/pmm.h"
+#include "syslibc/string.h"
+#include "syslibc/stdio.h"
 
 static uint32_t bar_nam; 
 static uint32_t bar_nab; 

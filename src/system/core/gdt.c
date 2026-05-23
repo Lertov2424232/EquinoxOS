@@ -1,5 +1,5 @@
-#include "gdt.h"
-#include "../libc/string.h"
+#include "system/core/gdt.h"
+#include "syslibc/string.h"
 
 gdt_table_t gdt;
 gdt_ptr_t gdt_ptr;

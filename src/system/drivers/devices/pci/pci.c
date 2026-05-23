@@ -1,8 +1,8 @@
-#include "../pci/pci.h"
-#include "../../io/io.h"
-#include "../../libc/stdio.h"
-#include "../net/rtl8139.h"
-#include "../audio/ac97.h"
+#include "system/drivers/devices/pci/pci.h"
+#include "system/core/io.h"
+#include "syslibc/stdio.h"
+#include "system/drivers/hardware/net/rtl8139.h"
+#include "system/drivers/devices/audio/ac97.h"
 
 
 extern void term_print(const char* str); 

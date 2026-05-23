@@ -1,12 +1,12 @@
-#include "rtl8139.h"
-#include "net.h"
-#include "../../system/memory.h"
-#include "../../io/io.h"
-#include "../../fs/vfs.h"
-#include "../../libc/string.h"
-#include "../../libc/stdio.h"
-#include "../../api.h"
-#include "../../system/vmm.h"
+#include "system/drivers/hardware/net/rtl8139.h"
+#include "system/drivers/hardware/net/net.h"
+#include "system/mem/memory.h"
+#include "system/core/io.h"
+#include "system/fs/vfs.h"
+#include "syslibc/string.h"
+#include "syslibc/stdio.h"
+#include "api.h"
+#include "system/mem/vmm.h"
 
 extern void term_print(const char* str);
 
