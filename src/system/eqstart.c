@@ -29,12 +29,6 @@ static int log_row = 0;
     }                                                                          \
   }
 
-static void cinematic_delay() {
-  for (volatile uint64_t i = 0; i < BOOT_DELAY; i++) {
-    __asm__("pause");
-  }
-}
-
 static void log_info(const char *msg) {
   vesa_draw_string_direct(">>", 40, 60 + (log_row * 18), 0x00FF00);
   vesa_draw_string_direct(msg, 70, 60 + (log_row * 18), 0xCCCCCC);
@@ -45,7 +39,6 @@ static void log_status(const char *status, uint32_t color) {
   vesa_draw_string_direct(status, STATUS_X + 15, 60 + (log_row * 18), color);
   vesa_draw_string_direct("]", STATUS_X + 60, 60 + (log_row * 18), 0xAAAAAA);
   log_row++;
-  cinematic_delay();
 }
 
 // --- РЕАЛЬНЫЕ ТЕСТЫ ---
@@ -177,7 +170,5 @@ bool eqstart_perform_tests() {
   log_row++;
   log_info("SYSTEM READY. HANDING OVER CONTROL...");
   log_status("BOOT", 0x00FFFF);
-
-  cinematic_delay();
   return true;
 }
