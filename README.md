@@ -19,22 +19,6 @@
 
 ---
 
-<div align="center">
-
-### Screenshots
-
-<img width="1278" height="805" alt="EquinoxOS Desktop" src="https://github.com/user-attachments/assets/8ed14d39-b20f-4268-b6cb-b40d0beda5df" />
-
-<img width="1283" height="802" alt="EquinoxOS GUI Apps" src="https://github.com/user-attachments/assets/bf378308-364d-41f6-80ac-3446b5ab0c3a" />
-
-<img width="1277" height="805" alt="EquinoxOS Explorer" src="https://github.com/user-attachments/assets/5b0c8d2d-14c2-42a8-b338-527108dcc8fc" />
-
-<img width="644" height="448" alt="EquinoxOS on real hardware" src="https://github.com/user-attachments/assets/99d3e6b5-459b-4ccc-8976-516775a7bb1c" />
-
-</div>
-
----
-
 ## What is EquinoxOS?
 
 **EquinoxOS** is a from-scratch hobby operating system for `x86_64` written in C and NASM. It boots via the Limine bootloader in 64-bit Higher Half mode, runs a compositing window manager with drop shadows and z-ordering, supports true preemptive multitasking with Ring 3 user-space isolation, dual filesystem support (FAT32 + EXT2), a full TCP/IP network stack, AC97 audio, and even runs a port of **DOOM**.
@@ -375,6 +359,22 @@ PCI initialized  |  GUI initialized  |  Shell initialized
 - [ ] HTTPS (TLS)
 - [ ] Own filesystem format
 - [ ] OS installable/archiveable
+
+---
+
+<div align="center">
+
+### Screenshots
+
+<img width="1278" height="805" alt="EquinoxOS Desktop" src="https://github.com/user-attachments/assets/8ed14d39-b20f-4268-b6cb-b40d0beda5df" />
+
+<img width="1283" height="802" alt="EquinoxOS GUI Apps" src="https://github.com/user-attachments/assets/bf378308-364d-41f6-80ac-3446b5ab0c3a" />
+
+<img width="1277" height="805" alt="EquinoxOS Explorer" src="https://github.com/user-attachments/assets/5b0c8d2d-14c2-42a8-b338-527108dcc8fc" />
+
+<img width="644" height="448" alt="EquinoxOS on real hardware" src="https://github.com/user-attachments/assets/99d3e6b5-459b-4ccc-8976-516775a7bb1c" />
+
+</div>
 
 ---
 
