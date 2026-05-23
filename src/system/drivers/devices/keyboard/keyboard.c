@@ -1,13 +1,7 @@
-#include "system/drivers/devices/keyboard/keyboard.h"
-#include "system/core/io.h"
-#include "system/shell/shell.h"
-#include "gui/gui.h"
 #include <stdint.h>
 #include <stdbool.h>
 
 extern volatile uint8_t last_scancode;
-extern bool is_app_running;
-extern void notepad_handle_char(char c);
 static uint8_t key_buffer[128];
 static int key_head = 0;
 static int key_tail = 0;
@@ -126,11 +120,7 @@ void keyboard_callback() {
         c -= 'A' - 1;
       keyboard_push(c);
     } else {
-      // Обычный ввод (маршрутизация как раньше)
-      if (focused_window == term_win)
-        shell_handle_char(c);
-      else
-        keyboard_push(c);
+      keyboard_push(c);
     }
   }
 }
