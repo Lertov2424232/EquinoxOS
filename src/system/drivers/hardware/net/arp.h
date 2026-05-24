@@ -1,7 +1,7 @@
 #ifndef ARP_H
 #define ARP_H
 
-#include "system/drivers/hardware/net/net.h"
+#include "net.h"
 
 void handle_arp(net_interface_t* iface, uint8_t* packet);
 void send_arp_request(net_interface_t* iface, uint32_t target_ip);

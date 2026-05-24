@@ -1,7 +1,7 @@
 #ifndef GUI_APPS_H
 #define GUI_APPS_H
 
-#include "gui/gui.h"
+#include "gui.h"
 #include <stdint.h>
 
 // Notepad limits

@@ -1,8 +1,7 @@
-#include "system/drivers/hardware/net/dns.h"
-#include "system/drivers/hardware/net/udp.h"
-#include "syslibc/string.h"
-#include "syslibc/stdio.h"
-#include "system/mem/memory.h"
+#include "dns.h"
+#include "udp.h"
+#include "../../../../syslibc/string.h"
+#include "../../../../syslibc/stdio.h"
 
 extern void term_print(const char* str);
 

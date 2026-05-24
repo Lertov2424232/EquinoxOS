@@ -1,7 +1,7 @@
 #ifndef DNS_H
 #define DNS_H
 
-#include "system/drivers/hardware/net/net.h"
+#include "net.h"
 #include <stdint.h>
 
 typedef struct {

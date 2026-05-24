@@ -1,11 +1,10 @@
-#include "system/fs/ext2.h"
-#include "system/drivers/hardware/disk/ata.h"
-#include "system/mem/memory.h"
-#include "system/drivers/hardware/serial/serial.h"
-#include "system/fs/vfs.h"
-#include "system/drivers/hardware/serial/serial.h"
-#include "syslibc/string.h"
-#include "syslibc/stdio.h"
+#include "ext2.h"
+#include "../drivers/hardware/disk/ata.h"
+#include "../mem/memory.h"
+#include "../drivers/hardware/serial/serial.h"
+#include "vfs.h"
+#include "../drivers/hardware/serial/serial.h"
+#include "../../syslibc/string.h"
 
 extern void term_print(const char* str);
 

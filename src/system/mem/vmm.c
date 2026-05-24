@@ -1,8 +1,7 @@
-#include "system/mem/vmm.h"
-#include "system/drivers/vesa/vesa.h"
-#include "syslibc/string.h"
-#include "syslibc/stdio.h"
-#include "system/mem/pmm.h"
+#include "vmm.h"
+#include "../drivers/vesa/vesa.h"
+#include "../../syslibc/string.h"
+#include "../mem/pmm.h"
 
 static page_table_t *kernel_pml4;
 uint64_t kernel_cr3;

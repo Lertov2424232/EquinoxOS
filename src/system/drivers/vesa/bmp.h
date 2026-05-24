@@ -2,7 +2,7 @@
 #define BMP_H
 
 #include <stdint.h>
-#include "gui/gui.h"
+#include "../../../gui/gui.h"
 
 #pragma pack(push, 1)
 typedef struct {

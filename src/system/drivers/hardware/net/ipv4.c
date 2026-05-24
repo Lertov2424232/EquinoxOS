@@ -1,10 +1,9 @@
-#include "system/drivers/hardware/net/ipv4.h"
-#include "system/drivers/hardware/net/udp.h"
-#include "system/drivers/hardware/net/tcp.h"
-#include "system/drivers/hardware/net/arp.h"
-#include "system/drivers/hardware/net/icmp.h"
-#include "syslibc/string.h"
-#include "syslibc/stdio.h"
+#include "ipv4.h"
+#include "udp.h"
+#include "tcp.h"
+#include "arp.h"
+#include "icmp.h"
+#include "../../../../syslibc/string.h"
 
 extern void term_print(const char* str);
 

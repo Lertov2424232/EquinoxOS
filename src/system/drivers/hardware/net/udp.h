@@ -1,7 +1,7 @@
 #ifndef UDP_H
 #define UDP_H
 
-#include "system/drivers/hardware/net/net.h"
+#include "net.h"
 #include <stdbool.h>
 
 typedef void (*udp_callback_t)(uint32_t src_ip, uint16_t src_port,

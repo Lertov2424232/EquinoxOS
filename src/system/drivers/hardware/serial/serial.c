@@ -1,5 +1,5 @@
-#include "system/drivers/hardware/serial/serial.h"
-#include "system/core/io.h"
+#include "serial.h"
+#include "../../../core/io.h"
 
 // Serial port register offsets
 #define SERIAL_DATA         0
