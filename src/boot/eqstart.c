@@ -1,13 +1,8 @@
-#include "boot/eqstart.h"
-#include "system/drivers/vesa/vesa.h"
-#include "syslibc/stdio.h"
-#include "syslibc/string.h"
-#include "system/core/gdt.h"
-#include "system/core/idt.h"
-#include "system/mem/memory.h"
-#include "system/mem/pmm.h"
-#include "system/misc/timer.h"
-#include "system/mem/vmm.h"
+#include "eqstart.h"
+#include "../system/drivers/vesa/vesa.h"
+#include "../system/mem/pmm.h"
+#include "../system/misc/timer.h"
+#include "../system/mem/vmm.h"
 #include <stdbool.h>
 #include <stdint.h>
 

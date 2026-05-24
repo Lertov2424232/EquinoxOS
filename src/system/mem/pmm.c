@@ -1,7 +1,7 @@
-#include "system/mem/pmm.h"
-#include "boot/limine/limine.h"
-#include "syslibc/string.h"
-#include "system/mem/memory.h"
+#include "pmm.h"
+#include "../../boot/limine/limine.h"
+#include "../../syslibc/string.h"
+
 #include <stdint.h>
 
 // --- МАКРОСЫ ДЛЯ РАБОТЫ С БИТАМИ ---

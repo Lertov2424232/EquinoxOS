@@ -1,6 +1,6 @@
-#include "system/drivers/devices/mouse/mouse.h"
-#include "system/core/io.h"
-#include "system/drivers/vesa/vesa.h"
+#include "mouse.h"
+#include "../../../core/io.h"
+#include "../../vesa/vesa.h"
 
 extern void term_print(const char* str); // Для аккуратного вывода в терминал
 

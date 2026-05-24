@@ -1,5 +1,5 @@
-#include "system/drivers/devices/pcspeaker/pcspeaker.h"
-#include "system/core/io.h"
+#include "pcspeaker.h"
+#include "../../../core/io.h"
 
 // PIT and Speaker ports
 #define PIT_CHAN2_DATA   0x42

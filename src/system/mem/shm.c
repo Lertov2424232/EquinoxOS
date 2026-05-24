@@ -1,11 +1,9 @@
 // src/system/shm.c
 #include "shm.h"
-#include "syslibc/stdio.h"
-#include "syslibc/string.h"
-#include "system/mem/memory.h"
-#include "system/mem/pmm.h"
-#include "system/usr/task.h"
-#include "system/mem/vmm.h"
+#include "../../syslibc/string.h"
+#include "../mem/pmm.h"
+#include "../usr/task.h"
+#include "../mem/vmm.h"
 
 extern void term_print(const char *str);
 

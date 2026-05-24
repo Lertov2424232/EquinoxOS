@@ -1,6 +1,6 @@
-#include "system/mem/memory.h"
-#include "syslibc/stdio.h"
-#include "syslibc/string.h"
+#include "memory.h"
+#include "../../syslibc/stdio.h"
+#include "../../syslibc/string.h"
 
 static block_header_t *heap_start = NULL;
 size_t used_memory = 0;

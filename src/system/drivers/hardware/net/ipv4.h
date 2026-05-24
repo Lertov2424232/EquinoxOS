@@ -1,7 +1,7 @@
 #ifndef IPV4_H
 #define IPV4_H
 
-#include "system/drivers/hardware/net/net.h"
+#include "net.h"
 
 uint16_t ip_checksum(void* vdata, uint32_t length);
 void handle_ipv4(net_interface_t* iface, uint8_t* packet);
