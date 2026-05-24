@@ -1,5 +1,5 @@
 // src/system/shm.c
-#include "system/mem/shm.h"
+#include "shm.h"
 #include "syslibc/stdio.h"
 #include "syslibc/string.h"
 #include "system/mem/memory.h"
