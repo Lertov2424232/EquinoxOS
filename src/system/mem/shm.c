@@ -7,6 +7,7 @@
 #include "system/usr/task.h"
 #include "system/mem/vmm.h"
 
+extern void term_print(const char *str);
 
 #define MAX_SHM_SEGMENTS 128
 #define SHM_START_VADDR 0xD0000000000 // Высокий адрес в юзерспейсе для SHM
