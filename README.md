@@ -21,7 +21,7 @@
 
 ## What is EquinoxOS?
 
-**EquinoxOS** is a from-scratch hobby operating system for `x86_64` written in C and NASM. It boots via the Limine bootloader in 64-bit Higher Half mode, runs a compositing window manager with drop shadows and z-ordering, supports true preemptive multitasking with Ring 3 user-space isolation, dual filesystem support (FAT32 + EXT2), a full TCP/IP network stack, AC97 audio, and even runs a port of **DOOM**.
+**EquinoxOS** is a from-scratch hobby operating system for `x86_64` written in C and ASM. It boots via the Limine bootloader in 64-bit Higher Half mode, runs a compositing window manager with drop shadows and z-ordering, supports true preemptive multitasking with Ring 3 user-space isolation, dual filesystem support (FAT32 + EXT2), a full TCP/IP network stack, AC97 audio, and even runs a port of **DOOM**.
 
 > It's made to be *minimally daily-usable* while staying readable and educational.
 
