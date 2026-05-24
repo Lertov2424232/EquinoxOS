@@ -1,0 +1,4 @@
+[submodule "app/sysgui"]
+	path = app/sysgui
+	url = https://github.com/Equinox-Collective/enGUI.git
+	branch = main
