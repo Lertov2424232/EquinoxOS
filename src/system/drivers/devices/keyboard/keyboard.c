@@ -64,19 +64,34 @@ uint8_t keyboard_pop() {
 
 void keyboard_callback() {
   uint8_t scancode = inb(0x60);
-
-  // 1. Всегда кладем в буфер (для змейки и системных нужд)
   keyboard_push(scancode);
 
+  // Обработка управляющих клавиш (Ctrl, Alt)
+  if (scancode == 0x1D)
+    ctrl_pressed = true;
+  if (scancode == 0x9D)
+    ctrl_pressed = false;
+
   char c = get_ascii_char(scancode);
-  if (c > 0) {
-    // 2. МАРШРУТИЗАЦИЯ ПО ФОКУСУ
-    if (focused_window == notepad_win) {
-      notepad_handle_char(c);
-    } else if (focused_window == term_win) {
+
+  if (focused_window == term_win) {
+    if (c > 0) {
       shell_handle_char(c);
+    } else if (!(scancode & 0x80)) {
+      // Если это нажатие (не отпускание) и ASCII нет — проверяем спец-коды
+      switch (scancode) {
+      case 0x48:
+        shell_handle_char('\x11');
+        break; // Вверх (задаем свой код)
+      case 0x50:
+        shell_handle_char('\x12');
+        break; // Вниз
+      case 0x0F:
+        shell_handle_char('\t');
+        break; // Tab
+      }
     }
-    // Если фокус на другом окне или приложении —
-    // текстовый ввод просто игнорируется (или обрабатывается там)
+  } else if (focused_window == notepad_win && c > 0) {
+    notepad_handle_char(c);
   }
 }
