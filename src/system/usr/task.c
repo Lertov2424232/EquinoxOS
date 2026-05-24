@@ -1,15 +1,15 @@
-#include "system/usr/task.h"
-#include "system/core/gdt.h"
-#include "system/mem/pmm.h"
+#include "task.h"
+#include "../core/gdt.h"
+#include "../mem/pmm.h"
+#include "../mem/memory.h"
+#include "../fs/elf.h"
+#include "../mem/vmm.h"
+#include "../../syslibc/stdio.h"
+#include "../../syslibc/string.h"
+#include "../fs/vfs.h"
+#include <stdint.h>
 
-extern void term_print(const char* str);
-#include "system/mem/memory.h"
-#include "syslibc/string.h"
-#include "system/fs/elf.h"
-#include "system/fs/fat32.h"
-#include "system/mem/vmm.h"
-#include "syslibc/stdio.h"
-#include "system/fs/vfs.h"
+extern void term_print(const char *str);
 
 #define IA32_FS_BASE_MSR 0xC0000100
 #define IA32_GS_BASE_MSR 0xC0000101

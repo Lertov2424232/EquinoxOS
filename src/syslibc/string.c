@@ -1,4 +1,4 @@
-#include "syslibc/string.h"
+#include "string.h"
 
 // Копирует блок памяти из src в dest
 void *memcpy(void *dest, const void *src, size_t n) {

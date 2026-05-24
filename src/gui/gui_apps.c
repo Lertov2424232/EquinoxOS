@@ -1,16 +1,13 @@
-#include "../gui/gui_apps.h"
+#include "gui_apps.h"
 #include "../syslibc/stdio.h"
 #include "../syslibc/string.h"
-#include "../system/mem/pmm.h"
-#include "../system/mem/vmm.h"
-#include "../system/usr/task.h"
-#include "../system/fs/vfs.h"
-#include "../system/drivers/vesa/bmp.h"
-#include "../system/drivers/vesa/vesa.h"
 #include "../system/drivers/devices/mouse/mouse.h"
-#include "../system/mem/memory.h"
+#include "../system/drivers/vesa/vesa.h"
 #include "../system/fs/fat32.h"
 #include "../system/fs/vfs.h"
+#include "../system/drivers/vesa/bmp.h"
+#include "../system/mem/memory.h"
+#include "../system/mem/pmm.h"
 
 // --- APP STATES ---
 static explorer_file_t real_files[256];

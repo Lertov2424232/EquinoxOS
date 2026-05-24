@@ -1,11 +1,11 @@
 
-#include "syslibc/string.h"
-#include "system/mem/memory.h"
-#include "system/drivers/vesa/vesa.h"
-#include "system/drivers/vesa/font8x8.h"
-#include "syslibc/string.h"
-#include "system/mem/memory.h"
-#include "system/fs/vfs.h"
+#include "../../../syslibc/string.h"
+#include "../../mem/memory.h"
+#include "vesa.h"
+#include "font8x8.h"
+#include "../../../syslibc/string.h"
+#include "../../mem/memory.h"
+#include "../../fs/vfs.h"
 
 #include <stdint.h>
 

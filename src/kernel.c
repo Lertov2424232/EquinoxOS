@@ -7,7 +7,6 @@
 #include "boot/limine/limine.h"
 #include "system/fs/elf.h"
 #include "gui/gui.h"
-#include "syslibc/stdio.h"
 #include "syslibc/string.h"
 
 // --- СИСТЕМНЫЕ ПОДСИСТЕМЫ ---
@@ -27,13 +26,11 @@
 #include "system/drivers/devices/pci/pci.h"
 #include "system/drivers/devices/pcspeaker/pcspeaker.h"
 #include "system/drivers/hardware/serial/serial.h"
-#include "system/drivers/vesa/bmp.h"
 #include "system/drivers/vesa/vesa.h"
 
 // --- ФАЙЛОВАЯ СИСТЕМА И ОБОЛОЧКА ---
 #include "system/fs/fat32.h"
 #include "system/fs/ext2.h"
-#include "system/fs/fs.h"
 #include "system/fs/vfs.h"
 #include "gui/terminal.h"
 #include "system/shell/shell.h"

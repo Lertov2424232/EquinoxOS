@@ -1,7 +1,7 @@
-#include "system/fs/fs.h"
-#include "system/drivers/hardware/disk/ata.h"
-#include "system/mem/memory.h"
-#include "syslibc/string.h"
+#include "fs.h"
+#include "../drivers/hardware/disk/ata.h"
+#include "../mem/memory.h"
+#include "../../syslibc/string.h"
 
 extern void term_print(const char* str);
 
