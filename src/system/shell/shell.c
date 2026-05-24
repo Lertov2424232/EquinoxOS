@@ -8,6 +8,7 @@
 #include "../../syslibc/string.h"
 #include "../mem/memory.h"
 #include "../usr/task.h"
+#include "../mem/pmm.h"
 #include "../drivers/hardware/net/arp.h"
 #include "../drivers/hardware/net/dns.h"
 #include "../drivers/hardware/net/icmp.h"
@@ -42,168 +43,114 @@ extern void show();
 
 char shell_buffer[64] = {0};
 int shell_idx = 0;
+#define MAX_HISTORY 10
+char history[MAX_HISTORY][64];
+int history_count = 0;
+int history_browse_idx = -1;
+
+void print_logo() {
+  term_print("\e[36m        eeeeeeee        \n");
+  term_print("\e[36m      eee      eee      \n");
+  term_print("\e[36m     eee      eee      \e[37mEquinox\e[0m OS\n");
+  term_print("\e[36m    eeeeeeeeeee         \e[37mCore: \e[32mx86_64\n");
+  term_print("\e[36m    eee                 \e[37mShell: \e[32meqsh 1.0\n");
+  term_print("\e[36m     eee      eee      \n");
+  term_print("\e[36m      eeeeeeeeee       \n");
+  term_print("\e[0m\n");
+}
+
+void shell_prompt() { term_print("\e[32muser@equos\e[0m:\e[34m/\e[0m$ "); }
 
 void shell_init() {
-  memset(shell_buffer, 0, 64);
-  shell_idx = 0;
+  terminal_clear();
+  print_logo();
+  shell_prompt();
+}
+
+void shell_execute(char *cmd) {
+  if (cmd[0] == '\0')
+    return;
+
+  // Сохраняем в историю
+  if (history_count < MAX_HISTORY) {
+    strcpy(history[history_count++], cmd);
+  } else {
+    for (int i = 0; i < MAX_HISTORY - 1; i++)
+      strcpy(history[i], history[i + 1]);
+    strcpy(history[MAX_HISTORY - 1], cmd);
+  }
+  history_browse_idx = history_count;
+
+  term_print("\n");
+
+  // ЛОГИКА КОМАНД
+  if (strcmp(cmd, "ls") == 0) {
+    // Цветной вывод: папки синим, файлы белым
+    vfs_node_t *dev = vfs_root->next;
+    while (dev) {
+      term_print("\e[34m[");
+      term_print(dev->name);
+      term_print("]\e[0m  ");
+      dev = dev->next;
+    }
+    term_print("\n");
+  } else if (strcmp(cmd, "fetch") == 0) {
+    print_logo();
+    char mem[64];
+    sprintf(mem, "Memory: %d MB / %d MB\n", pmm_get_used_memory() / 1024 / 1024,
+            pmm_get_total_memory() / 1024 / 1024);
+    term_print(mem);
+  } else if (strcmp(cmd, "clear") == 0) {
+    terminal_clear();
+  } else if (strcmp(cmd, "gui") == 0) {
+    term_print("Starting Equinox GUI...\n");
+    // Здесь будет вызов переключения в GUI
+  } else if (memcmp(cmd, "run ", 4) == 0) {
+    task_exec(cmd + 4);
+  } else {
+    term_print("\e[31mCommand not found: \e[0m");
+    term_print(cmd);
+    term_print("\n");
+  }
+
+  shell_prompt();
 }
 
 void shell_handle_char(char c) {
-  if (c == '\b') {
+  if (c == '\n') {
+    shell_execute(shell_buffer);
+    memset(shell_buffer, 0, 64);
+    shell_idx = 0;
+  } else if (c == '\b') { // Backspace
     if (shell_idx > 0) {
       shell_idx--;
       shell_buffer[shell_idx] = '\0';
     }
-  } else if (c == '\n') {
-    term_print(shell_buffer);
-    term_print("\n");
-
-    net_interface_t *iface = net_get_primary_interface();
-
-    if (strcmp(shell_buffer, "panic") == 0) {
-      __asm__ volatile("ud2");
-    } else if (strcmp(shell_buffer, "ls") == 0) {
-      vfs_ls();
-    } else if (memcmp(shell_buffer, "ping ", 5) == 0) {
-      if (iface) {
-        uint32_t ip = parse_ip(shell_buffer + 5);
-        icmp_send_echo_request(iface, ip);
-      } else {
-        term_print("No network interface!\n");
+  } else if (c == '\t') { // Tab Completion (Простейшее)
+    if (shell_idx > 0) {
+      // Если начали писать run, дописываем .elf
+      if (strstr(shell_buffer, "run ") == shell_buffer) {
+        strcat(shell_buffer, ".elf");
+        shell_idx = strlen(shell_buffer);
       }
-    } else if (memcmp(shell_buffer, "dns ", 4) == 0) {
-      if (iface) {
-          dns_query(iface, shell_buffer + 4);
-      } else {
-          term_print("No network interface!\n");
-      }
-    } else if (strcmp(shell_buffer, "clear") == 0) {
-      terminal_clear();
-    } else if (memcmp(shell_buffer, "wget ", 5) == 0) {
-      if (iface) {
-        uint32_t ip = parse_ip(shell_buffer + 5);
-        net_wget(iface, ip);
-      } else {
-        term_print("No network interface!\n");
-      }
-    } else if (strcmp(shell_buffer, "wget") == 0) {
-      if (iface)
-        net_wget(iface, 0x0A000202); // 10.0.2.2
-      else
-        term_print("No network interface!\n");
-    } else if (strcmp(shell_buffer, "arp") == 0) {
-      arp_print_cache();
-    } else if (strcmp(shell_buffer, "nettest") == 0) {
-      if (iface) {
-        send_arp_request(iface, 0x0A000202);
-        term_print("[NET] ARP Request sent!\n");
-      } else
-        term_print("No network interface!\n");
-    } else if (strcmp(shell_buffer, "gettime") == 0) {
-      if (iface)
-        send_ntp_request(iface);
-      else
-        term_print("No network interface!\n");
-    } else if (strcmp(shell_buffer, "netif") == 0) {
-      if (iface) {
-        char buf[128];
-        sprintf(buf,
-                "Interface: %s\nMAC: %02x:%02x:%02x:%02x:%02x:%02x\nIP: "
-                "%d.%d.%d.%d\n",
-                iface->name, iface->mac[0], iface->mac[1], iface->mac[2],
-                iface->mac[3], iface->mac[4], iface->mac[5],
-                (iface->ip >> 24) & 0xFF, (iface->ip >> 16) & 0xFF,
-                (iface->ip >> 8) & 0xFF, iface->ip & 0xFF);
-        term_print(buf);
-      } else
-        term_print("No network interface!\n");
-    } else if (strcmp(shell_buffer, "malloc") == 0) {
-      kmalloc(1024 * 1024);
-    } else if (memcmp(shell_buffer, "run ", 4) == 0) {
-      char *filename = shell_buffer + 4;
-      int len = strlen(filename);
-      while (len > 0 &&
-             (filename[len - 1] == ' ' || filename[len - 1] == '\r' ||
-              filename[len - 1] == '\n')) {
-        filename[len - 1] = '\0';
-        len--;
-      }
-      task_exec(filename);
-    } else if (strcmp(shell_buffer, "beep") == 0) {
-      pcspeaker_beep(1000, 1000);
-    } else if (strcmp(shell_buffer, "matrix") == 0) {
-      terminal_matrix_mode = !terminal_matrix_mode;
-      terminal_clear();
-    } else if (strcmp(shell_buffer, "neofetch") == 0) {
-      term_print("\e[36m    ___           _                  ____  _____\n");
-      term_print("\e[36m   / __\\__ _ _  _(_)_ __  _____ __  / __ \\/ ___/\n");
-      term_print("\e[34m  / _\\/ _ `/ |/ / /  _ \\/ _ \\ \\/ / / /_/ /\\__ \\\n");
-      term_print("\e[35m / /_/ /_/ /|  / / / // / /_/ />  <  \\____/___/ /\n");
-      term_print("\e[31m \\___\\__, / |_/_/_/ //_/\\____/_/\\_\\         /_/\n");
-      term_print("\e[31m       /_/\e[0m\n\n");
-      term_print("\e[32m OS:\e[0m EquinoxOS x86_64\n");
-      term_print("\e[32m Kernel:\e[0m Equinox Core\n");
-      term_print("\e[32m GUI:\e[0m Equinox Window Manager\n");
-      term_print("\e[32m Shell:\e[0m eqsh\n");
-    } else if (strcmp(shell_buffer, "color") == 0) {
-      terminal_print(
-          "\e[31mRED \e[32mGREEN \e[33mYELLOW \e[34mPURPLE \e[36mCYAN\e[0m\n");
-    } else if (strcmp(shell_buffer, "speakeron") == 0) {
-      pcspeaker_play(1000);
-      term_print("Speaker ON (1000Hz). Type 'speakeroff' to stop.\n");
-    } else if (strcmp(shell_buffer, "speakeroff") == 0) {
-      pcspeaker_stop();
-      term_print("Speaker OFF.\n");
-    } else if (strcmp(shell_buffer, "melody") == 0) {
-      term_print("Playing melody...\n");
-      pcspeaker_test_melody();
-      term_print("Done!\n");
-    } else if (memcmp(shell_buffer, "tone ", 5) == 0) {
-      char *freq_str = shell_buffer + 5;
-      uint32_t freq = 0;
-      uint32_t duration = 500;
-      int i = 0;
-      while (freq_str[i] >= '0' && freq_str[i] <= '9') {
-        freq = freq * 10 + (freq_str[i] - '0');
-        i++;
-      }
-      if (freq_str[i] == ' ') {
-        i++;
-        duration = 0;
-        while (freq_str[i] >= '0' && freq_str[i] <= '9') {
-          duration = duration * 10 + (freq_str[i] - '0');
-          i++;
-        }
-      }
-      if (freq > 0 && freq < 20000) {
-        pcspeaker_beep(freq, duration);
-        term_print("Played tone.\n");
-      } else {
-        term_print("Invalid frequency (1-19999 Hz)\n");
-      }
-    } else if (memcmp(shell_buffer, "show ", 5) == 0) {
-      if (strlen(shell_buffer) <= 5) {
-        term_print("Usage: show [filename]\n");
-      } else {
-        char *filename = shell_buffer + 5;
-        uint32_t size = 0;
-        uint8_t *data = vfs_read_file(filename, &size);
-        if (data) {
-          bmp_draw_to_window(term_win, data, 10, 50);
-          kfree(data);
-        } else {
-          term_print("File not found!\n");
-        }
-      }
-    } else if (shell_buffer[0] != '\0') {
-      term_print("Unknown command: ");
-      term_print(shell_buffer);
-      term_print("\n");
     }
-
-    memset(shell_buffer, 0, 64);
-    shell_idx = 0;
-  } else if (shell_idx < 62) {
+  } else if (c == '\x11') { // UP Arrow (История)
+    if (history_count > 0 && history_browse_idx > 0) {
+      history_browse_idx--;
+      strcpy(shell_buffer, history[history_browse_idx]);
+      shell_idx = strlen(shell_buffer);
+    }
+  } else if (c == '\x12') { // DOWN Arrow
+    if (history_browse_idx < history_count - 1) {
+      history_browse_idx++;
+      strcpy(shell_buffer, history[history_browse_idx]);
+      shell_idx = strlen(shell_buffer);
+    } else {
+      history_browse_idx = history_count;
+      memset(shell_buffer, 0, 64);
+      shell_idx = 0;
+    }
+  } else if (shell_idx < 62 && c >= 32 && c <= 126) {
     shell_buffer[shell_idx++] = c;
     shell_buffer[shell_idx] = '\0';
   }
