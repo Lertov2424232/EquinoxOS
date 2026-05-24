@@ -52,7 +52,7 @@ SDK_OBJS = $(patsubst $(SDK_LIB_DIR)/%.c,$(SDK_LIB_DIR)/%.o,$(SDK_C_SRCS)) \
            $(patsubst $(SDK_LIB_DIR)/%.asm,$(SDK_LIB_DIR)/%.o,$(SDK_ASM_SRCS))
 
 # --- LUA ---
-LUA_DIR = sdk/lua
+LUA_DIR = -I./sdk/include 
 LUA_SRCS = $(wildcard $(LUA_DIR)/*.c)
 LUA_OBJS = $(patsubst $(LUA_DIR)/%.c, $(OBJ_DIR)/lua/%.o, $(LUA_SRCS))
 
