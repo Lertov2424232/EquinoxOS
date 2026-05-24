@@ -114,7 +114,7 @@ APP_SRCS = $(wildcard app/*.c)
 APP_OBJS = $(patsubst app/%.c,app/%.o,$(APP_SRCS))
 APP_ELFS_SIMPLE = $(ISO_ROOT)/bin/snake.elf $(ISO_ROOT)/bin/bmpview.elf $(ISO_ROOT)/bin/htmlview.elf $(ISO_ROOT)/bin/niplay.elf
 
-apps: $(SDK_OBJS) $(LUA_OBJS) $(APP_ELFS_SIMPLE) $(ISO_ROOT)/bin/luagui.elf $(ISO_ROOT)/bin/lua.elf
+apps: $(SDK_OBJS) $(LUA_OBJS) $(APP_ELFS_SIMPLE) $(ISO_ROOT)/bin/luagui.elf $(ISO_ROOT)/bin/lua.elf sysgui_app
 
 $(ISO_ROOT)/bin/%.elf: app/%.o $(SDK_OBJS)
 	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) $< -o $@
@@ -127,6 +127,11 @@ app/%.o: app/%.c
 
 $(ISO_ROOT)/bin/lua.elf: sdk/lua_cli/lua.o $(SDK_OBJS) $(LUA_OBJS)
 	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) $(LUA_OBJS) $< -o $@
+
+sysgui_app:
+	@echo "=== Building sysgui (enGUI) ==="
+	$(MAKE) -C app/sysgui
+	cp app/sysgui/sysgui.elf iso_root/bin/sysgui.elf
 
 # --- SYSTEM RULES ---
 
