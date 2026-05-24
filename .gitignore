@@ -3,8 +3,10 @@ limine.exe
 obj/
 *.o
 .vscode/
+equos.iso
 *.swp
 *~
 test.bin
 qemu.log
 hdd.img
+*.d
