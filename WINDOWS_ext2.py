@@ -235,15 +235,24 @@ class Ext2Generator:
         self.write_block(INODE_BITMAP_BLOCK, self.inode_bitmap)
 
     def generate(self, source_dir):
-        print(f"[EXT2GEN] Creating {self.filename} from {source_dir}...")
+        print(f"[EXT2GEN] Creating {self.filename} with hierarchy...")
 
-        for fname in sorted(os.listdir(source_dir)):
-            fpath = os.path.join(source_dir, fname)
-            if os.path.isfile(fpath):
+        # Проходим по всем подпапкам в iso_root
+        for root, dirs, files in os.walk(source_dir):
+            for fname in files:
+                fpath = os.path.join(root, fname)
+                # Вычисляем относительный путь, например "bin/doom.elf"
+                rel_path = os.path.relpath(fpath, source_dir).replace("\\", "/")
+                
                 with open(fpath, "rb") as f:
-                    self.add_file(fname, f.read())
+                    content = f.read()
+                    inode = self.alloc_inode()
+                    block_pointers, blocks_used = self.make_file_blocks(content)
+                    self.write_inode(inode, 0x81A4, len(content), block_pointers, 1, blocks_used)
+                    # Сохраняем файл с полным путем в имени (для твоей текущей VFS это сработает)
+                    self.root_entries.append((inode, rel_path, 1))
+                    print(f"  + {rel_path} -> Inode {inode}")
 
-        self.add_file("large.bin", b"X" * 32768)
         self.write_root_directory()
         self.flush_bitmaps()
         self.write_group_descriptor()
@@ -251,8 +260,7 @@ class Ext2Generator:
 
         with open(self.filename, "wb") as f:
             f.write(self.data)
-        print("[EXT2GEN] Done.")
-
+        print("[EXT2GEN] Done. hdd.img is now structured.")
 
 if __name__ == "__main__":
     gen = Ext2Generator("hdd.img")
