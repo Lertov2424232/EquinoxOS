@@ -19,7 +19,7 @@ ASMFLAGS = -f elf64
 # --- SDK FLAGS (APPS) ---
 SDK_INC = -I./sdk/include
 USER_CFLAGS = -ffreestanding -mcmodel=small -mno-red-zone -fno-stack-protector -fno-pic -g \
-              -fno-omit-frame-pointer $(SDK_INC) -DLUA_USE_C89 -MMD -MP
+              -fno-omit-frame-pointer $(SDK_INC) -MMD -MP
 
 # --- KERNEL SOURCES ---
 SRC_DIRS = src src/boot src/gui src/syslibc \
@@ -51,11 +51,6 @@ SDK_ASM_SRCS = $(wildcard $(SDK_LIB_DIR)/*.asm)
 SDK_OBJS = $(patsubst $(SDK_LIB_DIR)/%.c,$(SDK_LIB_DIR)/%.o,$(SDK_C_SRCS)) \
            $(patsubst $(SDK_LIB_DIR)/%.asm,$(SDK_LIB_DIR)/%.o,$(SDK_ASM_SRCS))
 
-# --- LUA ---
-LUA_DIR = sdk/lua
-LUA_SRCS = $(wildcard $(LUA_DIR)/*.c)
-LUA_OBJS = $(patsubst $(LUA_DIR)/%.c, $(OBJ_DIR)/lua/%.o, $(LUA_SRCS))
-
 # --- DOOM ---
 DOOM_DIR = app/doom
 DOOM_SRCS = $(wildcard $(DOOM_DIR)/*.c)
@@ -67,7 +62,6 @@ all: setup kernel.elf apps doom.elf create_hdd iso
 
 setup:
 	@if not exist $(OBJ_DIR) mkdir $(OBJ_DIR)
-	@if not exist $(OBJ_DIR)\lua mkdir $(OBJ_DIR)\lua
 	@if not exist $(OBJ_DIR)\doom mkdir $(OBJ_DIR)\doom
 	@if not exist $(OBJ_DIR)\system mkdir $(OBJ_DIR)\system
 	@if not exist $(ISO_ROOT)\sys mkdir $(ISO_ROOT)\sys
@@ -96,11 +90,6 @@ $(SDK_LIB_DIR)/%.o: $(SDK_LIB_DIR)/%.c
 $(SDK_LIB_DIR)/%.o: $(SDK_LIB_DIR)/%.asm
 	$(ASM) -f elf64 $< -o $@
 
-# --- LUA BUILD RULES ---
-$(OBJ_DIR)/lua/%.o: $(LUA_DIR)/%.c
-	@if not exist $(OBJ_DIR)\lua mkdir $(OBJ_DIR)\lua 2>nul
-	$(CC) $(USER_CFLAGS) -c $< -o $@
-
 # --- DOOM BUILD RULES ---
 $(OBJ_DIR)/doom/%.o: $(DOOM_DIR)/%.c
 	@if not exist $(OBJ_DIR)\doom mkdir $(OBJ_DIR)\doom 2>nul
@@ -114,19 +103,13 @@ APP_SRCS = $(wildcard app/*.c)
 APP_OBJS = $(patsubst app/%.c,app/%.o,$(APP_SRCS))
 APP_ELFS_SIMPLE = $(ISO_ROOT)/bin/snake.elf $(ISO_ROOT)/bin/bmpview.elf $(ISO_ROOT)/bin/htmlview.elf $(ISO_ROOT)/bin/niplay.elf
 
-apps: $(SDK_OBJS) $(LUA_OBJS) $(APP_ELFS_SIMPLE) $(ISO_ROOT)/bin/luagui.elf $(ISO_ROOT)/bin/lua.elf sysgui_app
+apps: $(SDK_OBJS) $(APP_ELFS_SIMPLE) sysgui_app
 
 $(ISO_ROOT)/bin/%.elf: app/%.o $(SDK_OBJS)
 	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) $< -o $@
 
-$(ISO_ROOT)/bin/luagui.elf: app/luagui.o $(SDK_OBJS) $(LUA_OBJS)
-	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) $(LUA_OBJS) $< -o $@
-
 app/%.o: app/%.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
-
-$(ISO_ROOT)/bin/lua.elf: sdk/lua_cli/lua.o $(SDK_OBJS) $(LUA_OBJS)
-	$(LD) -nostdlib -Ttext=0x1000000 -e _start $(SDK_OBJS) $(LUA_OBJS) $< -o $@
 
 sysgui_app:
 	@echo "=== Building sysgui (enGUI) ==="
